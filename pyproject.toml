@@ -1,0 +1,40 @@
+[project]
+name = "fpledge"
+version = "0.1.0"
+description = "FPL-first prediction system: one Dixon-Coles engine feeding expected points (FPL) and an honest CLV/calibration benchmark (betting)."
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.31",
+  "pandas>=2.1",
+  "numpy>=1.26",
+  "duckdb>=0.10",
+  "pyarrow>=15",
+  "scikit-learn>=1.4",
+  "lightgbm>=4.3",
+  "pulp>=2.8",
+  "penaltyblog>=1.0",
+  "soccerdata>=1.6",
+  "mlflow>=2.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.4"]
+
+# NOTE: the core numeric modules (scoring, betting.odds, eval.metrics,
+# models.match_engine, features.pointintime) are deliberately STDLIB-ONLY so their
+# tests run with nothing but pytest installed. Heavy deps above are only needed
+# for ingestion, the DuckDB feature store, model fitting, and MLflow.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["fpledge*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
