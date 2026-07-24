@@ -22,7 +22,7 @@ DUCKDB_PATH = DATA_DIR / "fpledge.duckdb"
 # Data sources
 # --------------------------------------------------------------------------- #
 FPL_API_BASE = "https://fantasy.premierleague.com/api"
-SEASON = "2025-26"
+SEASON = "2026-27"  # the live FPL API serves the current game; update each season
 
 # Polite scraping/API defaults (the FPL API is unauthenticated but undocumented;
 # be a good citizen so you don't get rate-limited mid-season).
@@ -52,10 +52,11 @@ YELLOW_CARD_POINTS = -1
 RED_CARD_POINTS = -3
 OWN_GOAL_POINTS = -2
 
-# NEW for 2025/26 — Defensive Contribution (capped at +DC_POINTS per match).
+# Defensive Contribution (capped at +DC_POINTS per match). Introduced 2025/26;
+# thresholds UNCHANGED for 2026/27 (only a BPS tweak that season: 1 BPS per 3 CBI).
 # Defenders:            10+ CBIT  (clearances + blocks + interceptions + tackles)
 # Midfielders/Forwards: 12+ CBIRT (CBIT + ball recoveries)
-# Source: premierleague.com "What's new for 2025/26" (verify each season).
+# Source: premierleague.com / fantasyfootballscout.co.uk (verify each season).
 DC_POINTS = 2
 DC_THRESHOLD_DEF = 10
 DC_THRESHOLD_MID_FWD = 12

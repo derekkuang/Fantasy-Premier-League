@@ -28,8 +28,8 @@ def main() -> None:
     print(f"landed fixtures        -> {fp2}")
 
     n_players = len(boot.get("elements", []))
-    n_fixtures = len(fixtures)
-    print(f"ok: {n_players} players, {n_fixtures} fixtures for season {boot.get('events') and ''}")
+    n_teams = len(boot.get("teams", []))
+    print(f"ok: landed {n_teams} teams, {n_players} players, {len(fixtures)} fixtures")
 
 
 if __name__ == "__main__":
