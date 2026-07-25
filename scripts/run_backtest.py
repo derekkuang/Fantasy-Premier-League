@@ -41,22 +41,29 @@ def main() -> None:
     test_season = max(m["season"] for m in matches)
     test_start = min(m["date_ord"] for m in matches if m["season"] == test_season)
 
-    res = walk_forward(matches, test_start, DixonColesModel, refit_every=20)
+    res = walk_forward(matches, test_start, DixonColesModel, refit_every=10)
 
     print(f"\n=== WALK-FORWARD BACKTEST — test season {test_season} ===")
-    print(f"  matches scored : {res['n']}  (skipped {res['skipped_unknown_team']} unknown-team)")
-    print(f"  MODEL   log-loss {res['model_log_loss']:.4f}   Brier {res['model_brier']:.4f}")
+    print(f"  matches scored : {res['n']}  (odds-present {res['n_with_odds']}, "
+          f"skipped {res['skipped_unknown_team']} unknown-team)")
+    print(f"  fits           : {res['n_fits']}  ({res['n_nonconverged_fits']} non-converged)")
+    print(f"  MODEL log-loss {res['model_log_loss']:.4f}  Brier {res['model_brier']:.4f}  (full sample)")
     if res.get("market_log_loss") is not None:
-        print(f"  MARKET  log-loss {res['market_log_loss']:.4f}   Brier {res['market_brier']:.4f}"
-              "   <- de-vigged closing line, the benchmark to beat")
-        edge = res["market_log_loss"] - res["model_log_loss"]
-        verdict = "model edge" if edge > 0 else "NO edge (expected)"
-        print(f"  log-loss gap   : {edge:+.4f}  ({verdict})")
+        print("  head-to-head on the SAME odds-present matches:")
+        print(f"    MODEL  {res['model_log_loss_h2h']:.4f}    MARKET {res['market_log_loss']:.4f}"
+              "   <- de-vigged closing line")
+        gap = res["market_log_loss"] - res["model_log_loss_h2h"]
+        verdict = "model better" if gap > 0 else "market better (expected on EPL 1X2)"
+        print(f"    log-loss gap {gap:+.4f}  ({verdict})")
     if res.get("bet_n"):
-        print(f"  bets vs close  : {res['bet_n']} flat-stake bets, ROI {res['bet_roi'] * 100:+.1f}%"
-              f"  ({res['bet_profit_units']:+.1f} units)")
-        print("  honest read    : ROI ~0/negative = the market is efficient. That is the deliverable,")
-        print("                   not a failure. CLV, not this backtest ROI, is the real live metric.")
+        roi = res["bet_roi"] * 100.0
+        se = res["bet_roi_se"] * 100.0
+        lo, hi = roi - 1.96 * se, roi + 1.96 * se
+        sig = "consistent with ZERO — no edge" if lo <= 0 <= hi else "statistically non-zero"
+        print(f"  bets vs close  : {res['bet_n']} flat-stake bets, "
+              f"ROI {roi:+.1f}% (95% CI {lo:+.1f}%..{hi:+.1f}%) -> {sig}")
+        print("  honest read    : a positive point estimate inside a CI that straddles 0 is NOISE,")
+        print("                   not edge. CLV, not this backtest ROI, is the real live metric.")
     print(f"  home-win calibration bins: {len(res['calibration_home'])}")
 
 
