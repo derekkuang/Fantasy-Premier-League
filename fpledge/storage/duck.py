@@ -79,6 +79,19 @@ CREATE TABLE IF NOT EXISTS odds (
     captured_ts  TIMESTAMP
 );
 
+-- historical results + closing 1X2 odds (Football-Data.co.uk) for fitting/backtest
+CREATE TABLE IF NOT EXISTS hist_matches (
+    season       VARCHAR,
+    date         DATE,
+    home         VARCHAR,
+    away         VARCHAR,
+    home_goals   INTEGER,
+    away_goals   INTEGER,
+    close_h      DOUBLE,
+    close_d      DOUBLE,
+    close_a      DOUBLE
+);
+
 -- write-once predictions ---------------------------------------------------
 CREATE TABLE IF NOT EXISTS match_pred (
     fixture_id   INTEGER,

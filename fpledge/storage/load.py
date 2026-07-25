@@ -86,6 +86,21 @@ def load_fixtures(con, fixtures: list, season: str | None = None) -> None:  # no
     )
 
 
+def load_hist_matches(con, matches: list[dict]) -> int:  # noqa: ANN001
+    """Idempotently load historical results + closing odds into hist_matches."""
+    con.execute("DELETE FROM hist_matches")
+    rows = [
+        (
+            m["season"], m["date"], m["home"], m["away"],
+            m["home_goals"], m["away_goals"],
+            m["close_h"], m["close_d"], m["close_a"],
+        )
+        for m in matches
+    ]
+    con.executemany("INSERT INTO hist_matches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    return len(rows)
+
+
 def load_all(season: str | None = None, con=None) -> dict:  # noqa: ANN001
     """Init schema, load latest bootstrap + fixtures, return row counts per table."""
     season = season or config.SEASON
