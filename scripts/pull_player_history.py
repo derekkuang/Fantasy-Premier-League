@@ -59,6 +59,10 @@ def main() -> None:
                 "starts": (last or {}).get("starts", 0),
                 "xg": _f((last or {}).get("expected_goals")),
                 "xa": _f((last or {}).get("expected_assists")),
+                "ownership": _f(e.get("selected_by_percent")),
+                "ep_next": _f(e.get("ep_next")),
+                "dc": (last or {}).get("defensive_contribution", 0) or 0,
+                "bonus": (last or {}).get("bonus", 0) or 0,
             }
         )
         if (i + 1) % 100 == 0:
@@ -66,6 +70,7 @@ def main() -> None:
 
     landing.land(records, source="fpl_api", endpoint="player_history")
     con = duck.connect()
+    con.execute("DROP TABLE IF EXISTS player_season")  # recreate with the extended columns
     duck.init_schema(con)
     n = storeload.load_player_season(con, records)
     with_xg = con.execute("SELECT count(*) FROM player_season WHERE season=? AND xg>0", [config.SEASON]).fetchone()[0]

@@ -93,6 +93,10 @@ CREATE TABLE IF NOT EXISTS player_season (
     starts     INTEGER,
     xg         DOUBLE,      -- last season expected goals
     xa         DOUBLE,      -- last season expected assists
+    ownership  DOUBLE,      -- current selected_by_percent (for effective ownership)
+    ep_next    DOUBLE,      -- FPL's own expected points next GW (a benchmark)
+    dc         INTEGER,     -- last season defensive_contribution count (position-appropriate)
+    bonus      INTEGER,     -- last season total bonus points
     PRIMARY KEY (season, code)
 );
 

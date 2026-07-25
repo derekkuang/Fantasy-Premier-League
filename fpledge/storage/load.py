@@ -94,11 +94,12 @@ def load_player_season(con, records: list[dict], season: str | None = None) -> i
         (
             season, r["code"], r["element_id"], r["web_name"], r["team_id"], r["position"],
             r["minutes"], r["goals"], r["assists"], r["starts"], r["xg"], r["xa"],
+            r["ownership"], r["ep_next"], r["dc"], r["bonus"],
         )
         for r in records
     ]
     con.executemany(
-        "INSERT INTO player_season VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
+        "INSERT INTO player_season VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
     )
     return len(rows)
 
