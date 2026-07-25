@@ -79,6 +79,23 @@ CREATE TABLE IF NOT EXISTS odds (
     captured_ts  TIMESTAMP
 );
 
+-- last-season per-player aggregates (FPL history_past) for goal/assist shares
+CREATE TABLE IF NOT EXISTS player_season (
+    season     VARCHAR,     -- the CURRENT season this prior-season row informs
+    code       INTEGER,     -- stable FPL player code
+    element_id INTEGER,
+    web_name   VARCHAR,
+    team_id    INTEGER,     -- current team
+    position   VARCHAR,
+    minutes    INTEGER,
+    goals      INTEGER,
+    assists    INTEGER,
+    starts     INTEGER,
+    xg         DOUBLE,      -- last season expected goals
+    xa         DOUBLE,      -- last season expected assists
+    PRIMARY KEY (season, code)
+);
+
 -- historical results + closing 1X2 odds (Football-Data.co.uk) for fitting/backtest
 CREATE TABLE IF NOT EXISTS hist_matches (
     season       VARCHAR,

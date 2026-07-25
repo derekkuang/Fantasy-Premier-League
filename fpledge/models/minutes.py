@@ -42,3 +42,16 @@ class MinutesModel:
         return MinutesPrediction(
             p_play=min(p_play, 1.0), p_60=min(p_60, 1.0), x_minutes=x_minutes
         )
+
+    def from_season(
+        self, minutes: int, starts: int, games: int = 38
+    ) -> MinutesPrediction:
+        """Preseason proxy from last-season totals (no per-game history yet).
+
+        p_60 ~ start rate; p_play adds a sub allowance; x_minutes = minutes/games.
+        """
+        if games <= 0:
+            return MinutesPrediction(p_play=0.0, p_60=0.0, x_minutes=0.0)
+        p_60 = min(starts / games, 1.0)
+        p_play = min(p_60 + 0.15, 1.0) if minutes > 0 else 0.0
+        return MinutesPrediction(p_play=p_play, p_60=p_60, x_minutes=minutes / games)

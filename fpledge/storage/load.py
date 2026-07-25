@@ -86,6 +86,23 @@ def load_fixtures(con, fixtures: list, season: str | None = None) -> None:  # no
     )
 
 
+def load_player_season(con, records: list[dict], season: str | None = None) -> int:  # noqa: ANN001
+    """Idempotently load last-season per-player aggregates for goal/assist shares."""
+    season = season or config.SEASON
+    con.execute("DELETE FROM player_season WHERE season = ?", [season])
+    rows = [
+        (
+            season, r["code"], r["element_id"], r["web_name"], r["team_id"], r["position"],
+            r["minutes"], r["goals"], r["assists"], r["starts"], r["xg"], r["xa"],
+        )
+        for r in records
+    ]
+    con.executemany(
+        "INSERT INTO player_season VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
+    )
+    return len(rows)
+
+
 def load_hist_matches(con, matches: list[dict]) -> int:  # noqa: ANN001
     """Idempotently load historical results + closing odds into hist_matches."""
     con.execute("DELETE FROM hist_matches")

@@ -21,12 +21,15 @@ from .. import config
 class FPLClient:
     """Polite, retrying-free client. Add retries/backoff before going to prod."""
 
-    def __init__(self, session=None):  # noqa: ANN001
+    def __init__(self, session=None, min_interval: float | None = None):  # noqa: ANN001
         import requests  # noqa: PLC0415
 
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": config.HTTP_USER_AGENT})
         self._last_call = 0.0
+        self._min_interval = (
+            config.FPL_API_MIN_INTERVAL_S if min_interval is None else min_interval
+        )
 
     def _get(self, path: str):
         url = f"{config.FPL_API_BASE}/{path}"
@@ -36,8 +39,8 @@ class FPLClient:
 
     def _throttle(self) -> None:
         dt = time.monotonic() - self._last_call
-        if dt < config.FPL_API_MIN_INTERVAL_S:
-            time.sleep(config.FPL_API_MIN_INTERVAL_S - dt)
+        if dt < self._min_interval:
+            time.sleep(self._min_interval - dt)
         self._last_call = time.monotonic()
 
     # --- endpoints ------------------------------------------------------- #
