@@ -39,5 +39,30 @@ def captain_rank_score(xp: float, eo: float) -> float:
 
     Captaincy doubles a player; against the field, the rank benefit scales with how few
     others captain the same player. Rewards a high-xP pick the field is NOT piling on.
+
+    WARNING: this has no lower bound on xp, so it must NOT be used as a sole selector — an
+    unowned low-xP player would win. Always gate candidates through an xP floor first;
+    see `differential_captain_index`.
     """
     return 2.0 * xp * (1.0 - eo)
+
+
+def differential_captain_index(xps, eos, alpha: float = 0.8):  # noqa: ANN001
+    """Index of the best DIFFERENTIAL captain among parallel xps/eos, subject to an xP floor.
+
+    An unowned LOW-xP player is noise, not a rank play — captaining a 4.5-xP differential
+    over a 9-xP template loses rank in expectation. So only players within `alpha` of the
+    best available xP qualify; among those, maximise `captain_rank_score` (which then rewards
+    lower ownership). Returns None for an empty list.
+    """
+    if not xps:
+        return None
+    floor = alpha * max(xps)
+    best_i, best_score = None, float("-inf")
+    for i, (xp, eo) in enumerate(zip(xps, eos, strict=True)):
+        if xp < floor:
+            continue
+        score = captain_rank_score(xp, eo)
+        if score > best_score:
+            best_i, best_score = i, score
+    return best_i

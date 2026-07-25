@@ -82,6 +82,10 @@ def dc_point_probability(dc_per90: float, x_minutes: float, position: str) -> fl
     Models the per-match defensive-action count as Poisson(mean = per-90 rate x minutes/90)
     and returns the tail above the position threshold (DEF 10 CBIT; MID/FWD 12 CBIRT).
     GKs have no DC category -> 0.
+
+    Caveat: real defensive-action counts are mildly OVERDISPERSED (variance > mean) and
+    game-state dependent, so Poisson slightly understates the tail for busy defenders. A
+    negative-binomial refinement is future work; Poisson is an acceptable first cut.
     """
     if position == "DEF":
         threshold = config.DC_THRESHOLD_DEF

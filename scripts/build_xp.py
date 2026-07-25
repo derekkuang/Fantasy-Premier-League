@@ -138,11 +138,19 @@ def main() -> None:
 
     if reliable:
         safe = reliable[0]                             # max xP (already sorted)
-        diffcap = max(reliable, key=lambda r: r[8])    # max captain_rank_score
-        print(f"\n  captain — safe (max xP)       : {safe[1]} ({safe[3]}) — "
+        # Differential captain must clear an xP floor — an unowned low-xP player is noise,
+        # not a rank play (captaining 4.5 xP over 9 xP loses rank). See rank module.
+        xps = [r[0] for r in reliable]
+        eos = [rank.effective_ownership(r[6]) for r in reliable]
+        di = rank.differential_captain_index(xps, eos, alpha=0.8)
+        diffcap = reliable[di] if di is not None else None
+        print(f"\n  captain — safe (max xP)      : {safe[1]} ({safe[3]}) — "
               f"{safe[0]:.2f} xP, {safe[6]:.1f}% owned")
-        print(f"  captain — differential (rank) : {diffcap[1]} ({diffcap[3]}) — "
-              f"{diffcap[0]:.2f} xP, {diffcap[6]:.1f}% owned")
+        if diffcap is not None and diffcap[1] != safe[1]:
+            print(f"  captain — differential (higher-variance, xP within 80% of best): "
+                  f"{diffcap[1]} ({diffcap[3]}) — {diffcap[0]:.2f} xP, {diffcap[6]:.1f}% owned")
+        else:
+            print("  captain — differential       : none clears the xP floor; safe pick is the value pick too")
 
     low_teams = sorted(t for t, mins in coverage.items() if mins < LOW_COVERAGE)
     if low_teams:
