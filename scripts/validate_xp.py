@@ -31,26 +31,28 @@ def main() -> None:
     teams = vaastav.fetch_teams(SEASON)
     print(f"  {len(rows)} player-GWs, {len(fixtures)} fixtures. Walking forward...")
 
-    res = validate_xp(rows, fixtures, teams, burn_in=8)
-    if not res.get("n"):
+    print("  A/B: season-average vs recency-weighted minutes (two walk-forwards)...")
+    season = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="season")
+    recent = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent")
+    if not season.get("n"):
         print("no scored records.")
         return
 
-    def block(title: str, d: dict) -> None:
-        print(f"\n  {title}  ({d['n']} player-GWs)        MODEL    FPL xP")
-        print(f"    MAE vs actual points :  {d['mae_model']:.3f}    {d['mae_fpl']:.3f}")
-        print(f"    per-GW Spearman      :  {_fmt(d['gw_spearman_model'])}    {_fmt(d['gw_spearman_fpl'])}")
-        print(f"    GWs model MAE <= FPL :  {d['gws_model_mae_beats_fpl']}")
+    def ab(label: str, s_val, r_val, fpl_val) -> None:
+        print(f"    {label:20}  season {_fmt(s_val)}   recent {_fmt(r_val)}   |  FPL {_fmt(fpl_val)}")
 
-    print(f"\n=== xP VALIDATION — {SEASON} ({res['n']} player-GWs across {res['gws_scored']} GWs) ===")
-    print("  (lower MAE / higher Spearman is better; FPL's own xP is the baseline to beat)")
-    block("ALL players (incl. non-starters)", res["all_players"])
-    block("PLAYED only (minutes>0) — the honest 'who to pick' test", res["played_only"])
-    print("\n  model MAE by position (played only):")
-    for pos, m in res["mae_by_position_played"].items():
-        print(f"    {pos}: {m:.3f}")
-    print("\n  per-GW Spearman = how well xP RANKS players by actual points within a gameweek,")
-    print("  which is what matters for captaincy/transfer picks.")
+    print(f"\n=== xP VALIDATION A/B — {SEASON} ({season['n']} player-GWs, {season['gws_scored']} GWs) ===")
+    print("  (higher Spearman / lower MAE is better; FPL's own xP is the baseline to beat)")
+    for subset, title in (("played_only", "PLAYED only (who to pick)"), ("all_players", "ALL players")):
+        s, r = season[subset], recent[subset]
+        print(f"\n  {title}  ({s['n']} player-GWs):")
+        ab("per-GW Spearman", s["gw_spearman_model"], r["gw_spearman_model"], s["gw_spearman_fpl"])
+        ab("MAE vs actual", s["mae_model"], r["mae_model"], s["mae_fpl"])
+
+    d = recent["played_only"]["gw_spearman_model"] - season["played_only"]["gw_spearman_model"]
+    print(f"\n  Δ played-only per-GW Spearman (recency − season): {d:+.3f}")
+    print(f"  target = close the gap to FPL's {_fmt(season['played_only']['gw_spearman_fpl'])} "
+          "(better ranking of players who feature).")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ def compute_xp_records(
     engine,  # noqa: ANN001 — fitted DixonColesModel
     tmap: dict,
     prices: dict,
+    availability: dict | None = None,
     low_coverage: int = LOW_COVERAGE,
     min_rate_minutes: int = MIN_RATE_MINUTES,
 ):
@@ -37,7 +38,15 @@ def compute_xp_records(
     A fixture is skipped when either team is unknown to the engine (e.g. promoted).
     """
     minutes_model = MinutesModel()
-    minutes_pred = {p["code"]: minutes_model.from_season(p["minutes"], p["starts"]) for p in players}
+
+    def _pred(p):  # noqa: ANN001 — season proxy, discounted by live availability if provided
+        mp = minutes_model.from_season(p["minutes"], p["starts"])
+        if availability:
+            chance, status = availability.get(p["code"], (None, None))
+            mp = minutes_model.apply_availability(mp, chance, status)
+        return mp
+
+    minutes_pred = {p["code"]: _pred(p) for p in players}
     x_minutes = {code: mp.x_minutes for code, mp in minutes_pred.items()}
     shares = match_shares(players, x_minutes)
     coverage = team_minutes(players)

@@ -48,11 +48,19 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
 
     boot = storeload.latest_raw("fpl_api", "bootstrap")
     prices = {e["code"]: e["now_cost"] / 10.0 for e in boot["elements"]}
+    # live availability: (chance_of_playing_next_round, status) per player, to discount
+    # injured/doubtful players in the current-GW prediction (the production half of fix #2).
+    availability = {
+        e["code"]: (e.get("chance_of_playing_next_round"), e.get("status"))
+        for e in boot["elements"]
+    }
 
     matches = footballdata.load_seasons(seasons or SEASONS)
     engine = DixonColesModel(half_life_days=180).fit(matches)
     fd_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
     tmap = build_team_map(list(fpl_teams.values()), fd_names)
 
-    records, skipped, coverage = compute_xp_records(players, fpl_teams, fixtures, engine, tmap, prices)
+    records, skipped, coverage = compute_xp_records(
+        players, fpl_teams, fixtures, engine, tmap, prices, availability=availability
+    )
     return {"records": records, "skipped": skipped, "coverage": coverage, "fpl_teams": fpl_teams}

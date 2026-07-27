@@ -12,6 +12,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 
+# FPL availability status codes that mean "won't feature": injured, suspended,
+# unavailable, not-in-squad. ('a' = available, 'd' = doubtful -> use chance_of_playing.)
+_OUT_STATUSES = {"i", "s", "u", "n", "o"}
+
+
 @dataclass
 class MinutesPrediction:
     p_play: float   # P(minutes > 0)
@@ -55,3 +60,41 @@ class MinutesModel:
         p_60 = min(starts / games, 1.0)
         p_play = min(p_60 + 0.15, 1.0) if minutes > 0 else 0.0
         return MinutesPrediction(p_play=p_play, p_60=p_60, x_minutes=minutes / games)
+
+    def from_recent(
+        self, recent_minutes, chance_of_playing: float | None = None, half_life: float = 3.0
+    ) -> MinutesPrediction:
+        """Recency-weighted minutes from a list of recent GWs' minutes (oldest -> newest).
+
+        Recent gameweeks are weighted more (exponential, `half_life` in GWs), so a player who
+        was just dropped/injured or has just nailed a starting spot is scored on current
+        reality, not a diluted season average. `chance_of_playing` (FPL 0-100), when known,
+        scales the result.
+        """
+        recent = list(recent_minutes)
+        if not recent:
+            return MinutesPrediction(0.0, 0.0, 0.0)
+        n = len(recent)
+        w = [0.5 ** ((n - 1 - i) / half_life) for i in range(n)]  # newest weight 1
+        total = sum(w)
+        x_minutes = min(sum(wi * m for wi, m in zip(w, recent, strict=True)) / total, 90.0)
+        p_60 = sum(wi for wi, m in zip(w, recent, strict=True) if m >= 60) / total
+        p_play = sum(wi for wi, m in zip(w, recent, strict=True) if m > 0) / total
+        avail = 1.0 if chance_of_playing is None else max(0.0, min(chance_of_playing, 100.0)) / 100.0
+        return MinutesPrediction(p_play=p_play * avail, p_60=p_60 * avail, x_minutes=x_minutes * avail)
+
+    def apply_availability(
+        self, pred: MinutesPrediction, chance_of_playing: float | None = None, status: str | None = None
+    ) -> MinutesPrediction:
+        """Scale a minutes prediction by live FPL availability (production path).
+
+        status in {i,s,u,n,o} -> won't feature (factor 0); 'd'/None with a chance_of_playing
+        -> that fraction; otherwise unchanged.
+        """
+        if status in _OUT_STATUSES:
+            factor = 0.0
+        elif chance_of_playing is not None:
+            factor = max(0.0, min(chance_of_playing, 100.0)) / 100.0
+        else:
+            factor = 1.0
+        return MinutesPrediction(pred.p_play * factor, pred.p_60 * factor, pred.x_minutes * factor)

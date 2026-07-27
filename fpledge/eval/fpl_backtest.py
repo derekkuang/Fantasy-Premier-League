@@ -42,6 +42,7 @@ def validate_xp(
     burn_in: int = 8,
     half_life_days: float = 180.0,
     min_rate_minutes: int = 270,
+    minutes_mode: str = "recent",
     return_records: bool = False,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
@@ -65,8 +66,14 @@ def validate_xp(
         by_gw[r["gw"]][r["element"]].append(r)
 
     minutes_model = MinutesModel()
+
+    def _mp(a):  # noqa: ANN001 — minutes prediction under the chosen mode
+        if minutes_mode == "recent":
+            return minutes_model.from_recent(a["recent"][-6:])
+        return minutes_model.from_season(a["minutes"], a["starts"], max(a["games"], 1))
+
     acc: dict = {}  # element -> rolling totals (from GWs strictly before the current one)
-    records = []    # (gw, my_xp, fpl_xp, actual, position)
+    records = []    # (gw, element, my_xp, fpl_xp, actual, position, minutes)
 
     for n in sorted(by_gw):
         if n > burn_in and acc:
@@ -75,17 +82,14 @@ def validate_xp(
                 {"code": el, "team_id": a["team_id"], "xg": a["xg"], "xa": a["xa"]}
                 for el, a in acc.items()
             ]
-            xmins = {
-                el: minutes_model.from_season(a["minutes"], a["starts"], max(a["games"], 1)).x_minutes
-                for el, a in acc.items()
-            }
+            xmins = {el: _mp(a).x_minutes for el, a in acc.items()}
             shares = match_shares(players, xmins)
 
             for el, rows in by_gw[n].items():
                 a = acc.get(el)
                 if not a or a["games"] == 0:
                     continue
-                mp = minutes_model.from_season(a["minutes"], a["starts"], max(a["games"], 1))
+                mp = _mp(a)
                 sh = shares.get(el, {"goal_share": 0.0, "assist_share": 0.0})
                 dc90 = _per90(a["dc"], a["minutes"], min_rate_minutes)
                 bon90 = _per90(a["bonus"], a["minutes"], min_rate_minutes)
@@ -124,10 +128,11 @@ def validate_xp(
             a = acc.setdefault(
                 el,
                 {"minutes": 0, "starts": 0, "xg": 0.0, "xa": 0.0, "dc": 0, "bonus": 0, "games": 0,
-                 "team_id": rows[0]["team_id"]},
+                 "recent": [], "team_id": rows[0]["team_id"]},
             )
             a["team_id"] = rows[0]["team_id"]
             a["games"] += len(rows)
+            a["recent"].append(sum(r["minutes"] for r in rows))  # per-GW minutes for recency model
             for r in rows:
                 a["minutes"] += r["minutes"]
                 a["starts"] += r["starts"]
