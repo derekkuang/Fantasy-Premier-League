@@ -36,18 +36,21 @@ def main() -> None:
         print("no scored records.")
         return
 
-    print(f"\n=== xP VALIDATION — {SEASON} (GWs 9-38, {res['n']} player-GWs scored) ===")
-    print("                       MODEL     FPL xP   (baseline to beat)")
-    print(f"  MAE vs actual pts :  {res['mae_model']:.3f}    {res['mae_fpl']:.3f}")
-    print(f"  Spearman (overall):  {res['spearman_model']:.3f}    {res['spearman_fpl']:.3f}")
-    print(f"  Spearman (per-GW) :  {_fmt(res['gw_spearman_model'])}    {_fmt(res['gw_spearman_fpl'])}")
-    print(f"  GWs model MAE <= FPL MAE: {res['gws_model_mae_beats_fpl']}")
-    print("\n  model MAE by position:")
-    for pos, m in res["mae_by_position"].items():
+    def block(title: str, d: dict) -> None:
+        print(f"\n  {title}  ({d['n']} player-GWs)        MODEL    FPL xP")
+        print(f"    MAE vs actual points :  {d['mae_model']:.3f}    {d['mae_fpl']:.3f}")
+        print(f"    per-GW Spearman      :  {_fmt(d['gw_spearman_model'])}    {_fmt(d['gw_spearman_fpl'])}")
+        print(f"    GWs model MAE <= FPL :  {d['gws_model_mae_beats_fpl']}")
+
+    print(f"\n=== xP VALIDATION — {SEASON} ({res['n']} player-GWs across {res['gws_scored']} GWs) ===")
+    print("  (lower MAE / higher Spearman is better; FPL's own xP is the baseline to beat)")
+    block("ALL players (incl. non-starters)", res["all_players"])
+    block("PLAYED only (minutes>0) — the honest 'who to pick' test", res["played_only"])
+    print("\n  model MAE by position (played only):")
+    for pos, m in res["mae_by_position_played"].items():
         print(f"    {pos}: {m:.3f}")
-    lower = "MODEL" if res["mae_model"] < res["mae_fpl"] else "FPL"
-    print(f"\n  read: lower MAE / higher Spearman is better. {lower} has lower MAE here.")
-    print("  Spearman ~ how well xP RANKS players by actual points (what matters for picks).")
+    print("\n  per-GW Spearman = how well xP RANKS players by actual points within a gameweek,")
+    print("  which is what matters for captaincy/transfer picks.")
 
 
 if __name__ == "__main__":

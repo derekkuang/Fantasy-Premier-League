@@ -49,7 +49,7 @@ def test_validate_runs_and_scores():
     rows, fixtures, teams = _synthetic()
     res = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90)
     assert res["n"] > 0
-    assert res["mae_model"] >= 0.0
+    assert res["all_players"]["mae_model"] >= 0.0
 
 
 def test_point_in_time_no_leakage():

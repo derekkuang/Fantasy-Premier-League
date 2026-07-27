@@ -115,7 +115,8 @@ def validate_xp(
                 if scored:
                     records.append(
                         (n, el, my_xp, sum(r["fpl_xp"] for r in rows),
-                         sum(r["total_points"] for r in rows), pos)
+                         sum(r["total_points"] for r in rows), pos,
+                         sum(r["minutes"] for r in rows))
                     )
 
         # accumulate GW N AFTER scoring it (point-in-time)
@@ -139,50 +140,56 @@ def validate_xp(
     return (metrics, records) if return_records else metrics
 
 
-def _score(records, st) -> dict:  # noqa: ANN001
-    # record = (gw, element, my_xp, fpl_xp, actual, pos)
-    if not records:
-        return {"n": 0}
-    my = [r[2] for r in records]
-    fpl = [r[3] for r in records]
-    act = [r[4] for r in records]
+def _subset_metrics(recs, st) -> dict | None:  # noqa: ANN001
+    """MAE + per-GW Spearman for model and FPL over a record subset. record indices:
+    (gw=0, element=1, my_xp=2, fpl_xp=3, actual=4, pos=5, minutes=6)."""
+    if not recs:
+        return None
+    my = [r[2] for r in recs]
+    fpl = [r[3] for r in recs]
+    act = [r[4] for r in recs]
 
-    def mae(pred):
-        return statistics.mean(abs(p - a) for p, a in zip(pred, act, strict=True))
-
-    # per-gameweek Spearman rank-correlation, averaged
     per_gw: dict = defaultdict(list)
-    for rec in records:
-        per_gw[rec[0]].append(rec)
-    gw_sp_mine, gw_sp_fpl, beat = [], [], 0
-    for recs in per_gw.values():
-        if len(recs) < 10:
+    for r in recs:
+        per_gw[r[0]].append(r)
+    sp_m, sp_f, beat, compared = [], [], 0, 0
+    for g in per_gw.values():
+        if len(g) < 10:  # too few players to rank-correlate meaningfully
             continue
-        m, f, a = [r[2] for r in recs], [r[3] for r in recs], [r[4] for r in recs]
+        compared += 1
+        m, f, a = [r[2] for r in g], [r[3] for r in g], [r[4] for r in g]
         sm, sf = st.spearmanr(m, a).correlation, st.spearmanr(f, a).correlation
         if sm == sm:
-            gw_sp_mine.append(sm)
+            sp_m.append(sm)
         if sf == sf:
-            gw_sp_fpl.append(sf)
-        beat += statistics.mean(abs(x - y) for x, y in zip(m, a, strict=True)) <= statistics.mean(
-            abs(x - y) for x, y in zip(f, a, strict=True)
-        )
-
-    pos_mae = {}
-    for p in ("GK", "DEF", "MID", "FWD"):
-        sub = [(r[2], r[4]) for r in records if r[5] == p]
-        if sub:
-            pos_mae[p] = statistics.mean(abs(x - y) for x, y in sub)
+            sp_f.append(sf)
+        mm = statistics.mean(abs(x - y) for x, y in zip(m, a, strict=True))
+        mf = statistics.mean(abs(x - y) for x, y in zip(f, a, strict=True))
+        beat += mm <= mf
 
     return {
+        "n": len(recs),
+        "mae_model": statistics.mean(abs(x - y) for x, y in zip(my, act, strict=True)),
+        "mae_fpl": statistics.mean(abs(x - y) for x, y in zip(fpl, act, strict=True)),
+        "gw_spearman_model": statistics.mean(sp_m) if sp_m else None,
+        "gw_spearman_fpl": statistics.mean(sp_f) if sp_f else None,
+        "gws_model_mae_beats_fpl": f"{beat}/{compared}",  # denominator matches numerator
+    }
+
+
+def _score(records, st) -> dict:  # noqa: ANN001
+    if not records:
+        return {"n": 0}
+    played = [r for r in records if r[6] > 0]  # players who actually featured
+    pos_mae = {}
+    for p in ("GK", "DEF", "MID", "FWD"):
+        sub = [(r[2], r[4]) for r in played if r[5] == p]
+        if sub:
+            pos_mae[p] = statistics.mean(abs(x - y) for x, y in sub)
+    return {
         "n": len(records),
-        "gws_scored": len(per_gw),
-        "mae_model": mae(my),
-        "mae_fpl": mae(fpl),
-        "spearman_model": st.spearmanr(my, act).correlation,
-        "spearman_fpl": st.spearmanr(fpl, act).correlation,
-        "gw_spearman_model": statistics.mean(gw_sp_mine) if gw_sp_mine else None,
-        "gw_spearman_fpl": statistics.mean(gw_sp_fpl) if gw_sp_fpl else None,
-        "gws_model_mae_beats_fpl": f"{beat}/{len(per_gw)}",
-        "mae_by_position": pos_mae,
+        "gws_scored": len({r[0] for r in records}),
+        "all_players": _subset_metrics(records, st),
+        "played_only": _subset_metrics(played, st),  # the honest "who to pick" test
+        "mae_by_position_played": pos_mae,
     }
