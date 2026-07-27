@@ -18,7 +18,7 @@ from datetime import datetime
 
 from ..models.dixon_coles import DixonColesModel
 from ..models.minutes import MinutesModel
-from ..models.shares import match_shares
+from ..models.shares import rate_shares
 from ..models.xpoints import (
     PlayerContext,
     dc_point_probability,
@@ -43,6 +43,7 @@ def validate_xp(
     half_life_days: float = 180.0,
     min_rate_minutes: int = 270,
     minutes_mode: str = "recent",
+    xg_mode: str = "season",
     return_records: bool = False,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
@@ -72,18 +73,29 @@ def validate_xp(
             return minutes_model.from_recent(a["recent"][-6:])
         return minutes_model.from_season(a["minutes"], a["starts"], max(a["games"], 1))
 
+    def _rate(a, key, half_life=4.0):  # noqa: ANN001 — per-90 xg/xa rate under the chosen mode
+        if xg_mode == "recent":
+            vals, mins = a[f"recent_{key}"], a["recent"]
+            m = len(vals)
+            w = [0.5 ** ((m - 1 - i) / half_life) for i in range(m)]
+            den = sum(wi * mm for wi, mm in zip(w, mins, strict=True))
+            if den < 90.0:  # not enough weighted minutes to trust a rate
+                return 0.0
+            return sum(wi * v for wi, v in zip(w, vals, strict=True)) / (den / 90.0)
+        return a[key] / (a["minutes"] / 90.0) if a["minutes"] >= min_rate_minutes else 0.0
+
     acc: dict = {}  # element -> rolling totals (from GWs strictly before the current one)
     records = []    # (gw, element, my_xp, fpl_xp, actual, position, minutes)
 
     for n in sorted(by_gw):
         if n > burn_in and acc:
             engine = DixonColesModel(half_life_days).fit([f for f in fixtures if f["gw"] < n])
+            xmins = {el: _mp(a).x_minutes for el, a in acc.items()}
             players = [
-                {"code": el, "team_id": a["team_id"], "xg": a["xg"], "xa": a["xa"]}
+                {"code": el, "team_id": a["team_id"], "xg90": _rate(a, "xg"), "xa90": _rate(a, "xa")}
                 for el, a in acc.items()
             ]
-            xmins = {el: _mp(a).x_minutes for el, a in acc.items()}
-            shares = match_shares(players, xmins)
+            shares = rate_shares(players, xmins)
 
             for el, rows in by_gw[n].items():
                 a = acc.get(el)
@@ -128,11 +140,13 @@ def validate_xp(
             a = acc.setdefault(
                 el,
                 {"minutes": 0, "starts": 0, "xg": 0.0, "xa": 0.0, "dc": 0, "bonus": 0, "games": 0,
-                 "recent": [], "team_id": rows[0]["team_id"]},
+                 "recent": [], "recent_xg": [], "recent_xa": [], "team_id": rows[0]["team_id"]},
             )
             a["team_id"] = rows[0]["team_id"]
             a["games"] += len(rows)
-            a["recent"].append(sum(r["minutes"] for r in rows))  # per-GW minutes for recency model
+            a["recent"].append(sum(r["minutes"] for r in rows))       # per-GW minutes (recency)
+            a["recent_xg"].append(sum(r["xg"] for r in rows))         # per-GW xG (recency)
+            a["recent_xa"].append(sum(r["xa"] for r in rows))         # per-GW xA (recency)
             for r in rows:
                 a["minutes"] += r["minutes"]
                 a["starts"] += r["starts"]

@@ -1,6 +1,6 @@
 """Goal/assist shares: attribution must sum to 1 within a team and be xG-proportional."""
 
-from fpledge.models.shares import match_shares, team_minutes, team_shares
+from fpledge.models.shares import match_shares, rate_shares, team_minutes, team_shares
 
 
 def test_shares_sum_to_one_and_proportional():
@@ -50,6 +50,18 @@ def test_match_shares_excludes_tiny_samples():
     s = match_shares(players, {1: 90.0, 2: 90.0})
     assert s[1]["goal_share"] == 1.0
     assert s[2]["goal_share"] == 0.0
+
+
+def test_rate_shares_uses_rates_and_minutes():
+    players = [
+        {"code": 1, "team_id": 10, "xg90": 0.5, "xa90": 0.2},
+        {"code": 2, "team_id": 10, "xg90": 0.5, "xa90": 0.0},
+    ]
+    s = rate_shares(players, {1: 90.0, 2: 45.0})
+    # equal xg90, but player 1 plays twice the minutes -> 2:1 goal share
+    assert abs(s[1]["goal_share"] - 2 / 3) < 1e-9
+    assert abs(s[1]["goal_share"] + s[2]["goal_share"] - 1.0) < 1e-9
+    assert s[2]["assist_share"] == 0.0  # only player 1 has xA
 
 
 def test_team_minutes_coverage():

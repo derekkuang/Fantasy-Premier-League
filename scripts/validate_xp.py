@@ -31,27 +31,27 @@ def main() -> None:
     teams = vaastav.fetch_teams(SEASON)
     print(f"  {len(rows)} player-GWs, {len(fixtures)} fixtures. Walking forward...")
 
-    print("  A/B: season-average vs recency-weighted minutes (two walk-forwards)...")
-    season = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="season")
-    recent = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent")
-    if not season.get("n"):
+    print("  A/B: season-avg vs recency-weighted xG/xA form (minutes: recency; two walk-forwards)...")
+    base = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent", xg_mode="season")
+    form = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent", xg_mode="recent")
+    if not base.get("n"):
         print("no scored records.")
         return
 
-    def ab(label: str, s_val, r_val, fpl_val) -> None:
-        print(f"    {label:20}  season {_fmt(s_val)}   recent {_fmt(r_val)}   |  FPL {_fmt(fpl_val)}")
+    def ab(label: str, a_val, b_val, fpl_val) -> None:
+        print(f"    {label:20}  season-xG {_fmt(a_val)}   recency-xG {_fmt(b_val)}   |  FPL {_fmt(fpl_val)}")
 
-    print(f"\n=== xP VALIDATION A/B — {SEASON} ({season['n']} player-GWs, {season['gws_scored']} GWs) ===")
+    print(f"\n=== xP VALIDATION A/B (xG form) — {SEASON} ({base['n']} player-GWs, {base['gws_scored']} GWs) ===")
     print("  (higher Spearman / lower MAE is better; FPL's own xP is the baseline to beat)")
     for subset, title in (("played_only", "PLAYED only (who to pick)"), ("all_players", "ALL players")):
-        s, r = season[subset], recent[subset]
-        print(f"\n  {title}  ({s['n']} player-GWs):")
-        ab("per-GW Spearman", s["gw_spearman_model"], r["gw_spearman_model"], s["gw_spearman_fpl"])
-        ab("MAE vs actual", s["mae_model"], r["mae_model"], s["mae_fpl"])
+        a, b = base[subset], form[subset]
+        print(f"\n  {title}  ({a['n']} player-GWs):")
+        ab("per-GW Spearman", a["gw_spearman_model"], b["gw_spearman_model"], a["gw_spearman_fpl"])
+        ab("MAE vs actual", a["mae_model"], b["mae_model"], a["mae_fpl"])
 
-    d = recent["played_only"]["gw_spearman_model"] - season["played_only"]["gw_spearman_model"]
-    print(f"\n  Δ played-only per-GW Spearman (recency − season): {d:+.3f}")
-    print(f"  target = close the gap to FPL's {_fmt(season['played_only']['gw_spearman_fpl'])} "
+    d = form["played_only"]["gw_spearman_model"] - base["played_only"]["gw_spearman_model"]
+    print(f"\n  Δ played-only per-GW Spearman (recency-xG − season-xG): {d:+.3f}")
+    print(f"  target = close the gap to FPL's {_fmt(base['played_only']['gw_spearman_fpl'])} "
           "(better ranking of players who feature).")
 
 

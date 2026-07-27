@@ -64,7 +64,7 @@ def match_shares(
     team_g: dict = defaultdict(float)
     team_a: dict = defaultdict(float)
     for p in players:
-        mins = max(p.get("minutes", 0), 0)
+        mins = max(p["minutes"], 0)  # required: a missing key silently zeroed all shares before
         if mins >= min_season_minutes:
             per90 = mins / 90.0
             xg90 = max(p.get("xg", 0.0), 0.0) / per90
@@ -74,6 +74,33 @@ def match_shares(
         play = x_minutes_by_code.get(p["code"], 0.0) / 90.0
         raw_g[p["code"]] = xg90 * play
         raw_a[p["code"]] = xa90 * play
+        team_g[p["team_id"]] += raw_g[p["code"]]
+        team_a[p["team_id"]] += raw_a[p["code"]]
+
+    out: dict = {}
+    for p in players:
+        g, a = team_g[p["team_id"]], team_a[p["team_id"]]
+        out[p["code"]] = {
+            "goal_share": raw_g[p["code"]] / g if g > 0 else 0.0,
+            "assist_share": raw_a[p["code"]] / a if a > 0 else 0.0,
+        }
+    return out
+
+
+def rate_shares(players: Sequence[dict], x_minutes_by_code: dict) -> dict:
+    """Like `match_shares` but from pre-computed per-90 rates (`xg90`, `xa90`).
+
+    Lets callers supply a recency-weighted (form) rate instead of a season average, while
+    keeping the same minutes-aware, per-team-normalized attribution.
+    """
+    raw_g: dict = {}
+    raw_a: dict = {}
+    team_g: dict = defaultdict(float)
+    team_a: dict = defaultdict(float)
+    for p in players:
+        play = x_minutes_by_code.get(p["code"], 0.0) / 90.0
+        raw_g[p["code"]] = max(p.get("xg90", 0.0), 0.0) * play
+        raw_a[p["code"]] = max(p.get("xa90", 0.0), 0.0) * play
         team_g[p["team_id"]] += raw_g[p["code"]]
         team_a[p["team_id"]] += raw_a[p["code"]]
 
