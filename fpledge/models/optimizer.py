@@ -1,8 +1,11 @@
-"""Squad optimiser — pick the best legal 15 under FPL constraints (PuLP ILP).
+"""Squad optimiser — the best legal FPL squad AND starting XI + captain (one ILP).
 
-Constraints: £100.0m budget, exactly 2 GK / 5 DEF / 5 MID / 3 FWD, max 3 per club.
-Objective (v1): maximise total xP. NOTE: for overall-RANK climbing you will later
-swap the objective to expected rank vs the field, not raw xP (see xpoints docstring).
+Two coupled decisions, one integer program:
+  * pick a 15-man SQUAD (2 GK / 5 DEF / 5 MID / 3 FWD, <= £budget, <= 3 per club);
+  * pick the 11 that START (valid formation) and the CAPTAIN (doubled).
+Only the XI scores in FPL, so the objective maximises XI xP + captain xP (the extra
+captain point); the four benched players are whatever cheap/low-xP fillers legally
+complete the 15 without helping the objective.
 
 `pulp` is a declared dependency, imported lazily.
 """
@@ -12,33 +15,83 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 SQUAD_QUOTA = {"GK": 2, "DEF": 5, "MID": 5, "FWD": 3}
+FORMATION = {"GK": (1, 1), "DEF": (3, 5), "MID": (2, 5), "FWD": (1, 3)}  # (min, max) in the XI
 MAX_PER_CLUB = 3
 BUDGET = 100.0
+SQUAD_SIZE = 15
+XI_SIZE = 11
 
 
-def optimize_squad(players: Sequence[dict], budget: float = BUDGET) -> list[int]:
-    """Return the element_ids of the optimal 15-man squad.
+def optimize_squad(players: Sequence[dict], budget: float = BUDGET) -> dict:
+    """Return the optimal squad/XI/captain.
 
-    Each player dict needs: element_id, position, price (in £m), team_id, xp.
+    Each player dict needs: id (unique), position, price, team_id, xp.
+    Returns {squad, starting_xi, bench, captain, cost, xi_xp, total_xp}.
+    Raises ValueError if no feasible optimal squad exists (pool too small / budget too tight).
     """
     import pulp  # noqa: PLC0415
 
+    by_id = {p["id"]: p for p in players}
+    ids = list(by_id)
+
     prob = pulp.LpProblem("fpl_squad", pulp.LpMaximize)
-    pick = {p["element_id"]: pulp.LpVariable(f"pick_{p['element_id']}", cat="Binary") for p in players}
+    in_squad = pulp.LpVariable.dicts("squad", ids, cat="Binary")
+    in_xi = pulp.LpVariable.dicts("xi", ids, cat="Binary")
+    is_cap = pulp.LpVariable.dicts("cap", ids, cat="Binary")
 
-    # Objective: maximise expected points.
-    prob += pulp.lpSum(pick[p["element_id"]] * p["xp"] for p in players)
+    # Objective: starting-XI xP, plus the captain's xP again (doubling).
+    prob += (
+        pulp.lpSum(in_xi[i] * by_id[i]["xp"] for i in ids)
+        + pulp.lpSum(is_cap[i] * by_id[i]["xp"] for i in ids)
+    )
 
-    # Budget.
-    prob += pulp.lpSum(pick[p["element_id"]] * p["price"] for p in players) <= budget
+    # Linking: you can only start a squad member; only captain a starter.
+    for i in ids:
+        prob += in_xi[i] <= in_squad[i]
+        prob += is_cap[i] <= in_xi[i]
 
-    # Positional quotas.
+    prob += pulp.lpSum(in_squad[i] for i in ids) == SQUAD_SIZE
+    prob += pulp.lpSum(in_xi[i] for i in ids) == XI_SIZE
+    prob += pulp.lpSum(is_cap[i] for i in ids) == 1
+
+    # Squad quotas (all 15).
     for pos, n in SQUAD_QUOTA.items():
-        prob += pulp.lpSum(pick[p["element_id"]] for p in players if p["position"] == pos) == n
+        prob += pulp.lpSum(in_squad[i] for i in ids if by_id[i]["position"] == pos) == n
 
-    # Max 3 per club.
-    for team_id in {p["team_id"] for p in players}:
-        prob += pulp.lpSum(pick[p["element_id"]] for p in players if p["team_id"] == team_id) <= MAX_PER_CLUB
+    # Formation bounds (the XI).
+    for pos, (lo, hi) in FORMATION.items():
+        count = pulp.lpSum(in_xi[i] for i in ids if by_id[i]["position"] == pos)
+        prob += count >= lo
+        prob += count <= hi
 
-    prob.solve(pulp.PULP_CBC_CMD(msg=False))
-    return [eid for eid, var in pick.items() if var.value() == 1]
+    # Budget (all 15 count) and max 3 per club.
+    prob += pulp.lpSum(in_squad[i] * by_id[i]["price"] for i in ids) <= budget
+    for team in {by_id[i]["team_id"] for i in ids}:
+        prob += pulp.lpSum(in_squad[i] for i in ids if by_id[i]["team_id"] == team) <= MAX_PER_CLUB
+
+    status = prob.solve(pulp.PULP_CBC_CMD(msg=False))
+    if pulp.LpStatus[status] != "Optimal":
+        raise ValueError(
+            f"no optimal squad (status={pulp.LpStatus[status]}); "
+            "pool too small, budget too tight, or too few clubs."
+        )
+
+    def chosen(var) -> list:  # noqa: ANN001
+        return [i for i in ids if (var[i].value() or 0) > 0.5]
+
+    squad = chosen(in_squad)
+    xi = set(chosen(in_xi))
+    captain = chosen(is_cap)[0]
+    starting_xi = [i for i in squad if i in xi]
+    bench = [i for i in squad if i not in xi]
+    cost = sum(by_id[i]["price"] for i in squad)
+    xi_xp = sum(by_id[i]["xp"] for i in xi)
+    return {
+        "squad": squad,
+        "starting_xi": starting_xi,
+        "bench": bench,
+        "captain": captain,
+        "cost": cost,
+        "xi_xp": xi_xp,
+        "total_xp": xi_xp + by_id[captain]["xp"],  # captain counted twice
+    }
