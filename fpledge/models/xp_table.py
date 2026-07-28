@@ -54,12 +54,15 @@ def compute_xp_records(
     for p in players:
         by_team[p["team_id"]].append(p)
 
-    records, skipped = [], []
+    records, fallback = [], []
     for home_id, away_id in fixtures:
-        home_fd, away_fd = tmap.get(fpl_teams.get(home_id)), tmap.get(fpl_teams.get(away_id))
-        if not (home_fd and away_fd and engine.knows(home_fd) and engine.knows(away_fd)):
-            skipped.append((fpl_teams.get(home_id), fpl_teams.get(away_id)))
-            continue
+        home_name, away_name = fpl_teams.get(home_id), fpl_teams.get(away_id)
+        # map to the engine's team names; an unmapped/unknown team gets a sentinel label so
+        # the engine falls back to its promoted-side prior (coverage fix #4/#6) rather than skip.
+        home_fd = tmap.get(home_name) or f"__unknown__:{home_id}"
+        away_fd = tmap.get(away_name) or f"__unknown__:{away_id}"
+        if not (engine.knows(home_fd) and engine.knows(away_fd)):
+            fallback.append((home_name, away_name))
         pred = engine.predict(home_fd, away_fd)
         sides = [
             (home_id, pred.lam_home, pred.clean_sheet_home, pred.lam_away),
@@ -106,4 +109,4 @@ def compute_xp_records(
                         "low_cov": low_cov,
                     }
                 )
-    return records, skipped, coverage
+    return records, fallback, coverage

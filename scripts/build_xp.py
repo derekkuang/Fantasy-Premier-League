@@ -27,8 +27,8 @@ def main() -> None:
     if out is None:
         print("no player_season data — run scripts/pull_player_history.py first.")
         return
-    records, coverage, fpl_teams, skipped = (
-        out["records"], out["coverage"], out["fpl_teams"], out["skipped"]
+    records, coverage, fpl_teams, fallback = (
+        out["records"], out["coverage"], out["fpl_teams"], out["fallback"]
     )
     reliable = sorted((r for r in records if not r["low_cov"]), key=lambda r: r["xp"], reverse=True)
 
@@ -55,8 +55,8 @@ def main() -> None:
     low_teams = sorted(t for t, mins in coverage.items() if mins < 9000)
     if low_teams:
         print(f"  excluded low-data teams: {[fpl_teams.get(t, '?') for t in low_teams]}")
-    if skipped:
-        print(f"  skipped {len(skipped)} fixtures (promoted/unknown to engine): {skipped}")
+    if fallback:
+        print(f"  {len(fallback)} fixtures used a promoted-team prior (opponent unknown to engine): {fallback}")
     print("\n  cols: xP = expected points | diff = rank-upside if owned = xP*(1-EO) | £ = price")
     print("  caveats: EO uses overall ownership; near-deadline team news not yet ingested;")
     print("  new signings use prior-club output. First cut, not gospel.")

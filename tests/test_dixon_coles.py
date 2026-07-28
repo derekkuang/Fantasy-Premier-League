@@ -46,3 +46,15 @@ def test_probabilities_are_normalised():
     model = DixonColesModel().fit(_synthetic_matches())
     p = model.predict("A", "B")
     assert abs(p.home_win + p.draw + p.away_win - 1.0) < 1e-9
+
+
+def test_unknown_team_uses_promoted_prior():
+    model = DixonColesModel(half_life_days=1e6).fit(_synthetic_matches())
+    assert model.knows("A") and not model.knows("ZZ_promoted")
+    # a known strong team out-scores the promoted-prior team against the same opponent
+    lam_strong, _ = model.expected_goals("A", "B")
+    lam_promoted, _ = model.expected_goals("ZZ_promoted", "B")
+    assert lam_promoted < lam_strong
+    # predict() no longer raises on an unknown team, and stays a valid distribution
+    p = model.predict("ZZ_promoted", "B")
+    assert abs(p.home_win + p.draw + p.away_win - 1.0) < 1e-9

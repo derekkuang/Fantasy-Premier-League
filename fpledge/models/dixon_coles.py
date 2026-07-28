@@ -21,6 +21,12 @@ from .match_engine import MatchProbabilities, derive
 
 
 class DixonColesModel:
+    # Prior attack/defence for a team the model has never seen (a promoted side): scores a
+    # bit below and concedes a bit above league average, ~ a bottom-three team. Lets fixtures
+    # against promoted/unknown opponents be predicted instead of skipped (coverage fix #4/#6).
+    PROMOTED_ATTACK = -0.25
+    PROMOTED_DEFENCE = 0.25
+
     def __init__(self, half_life_days: float = 180.0):
         self.half_life_days = half_life_days
         self.teams: list[str] = []
@@ -106,13 +112,21 @@ class DixonColesModel:
     def rho(self) -> float:
         return float(self.params[2 * self._n + 1])
 
+    def _strength(self, team: str, a, d):  # noqa: ANN001
+        """(attack, defence) for a team — real if known, else the promoted-side prior."""
+        if team in self.idx:
+            i = self.idx[team]
+            return float(a[i]), float(d[i])
+        return self.PROMOTED_ATTACK, self.PROMOTED_DEFENCE
+
     def expected_goals(self, home: str, away: str) -> tuple[float, float]:
         import numpy as np  # noqa: PLC0415
 
         a, d, home_adv, mu = self._centred()
-        hi, ai = self.idx[home], self.idx[away]
-        lam_h = float(np.exp(mu + home_adv + a[hi] + d[ai]))
-        lam_a = float(np.exp(mu + a[ai] + d[hi]))
+        att_h, def_h = self._strength(home, a, d)
+        att_a, def_a = self._strength(away, a, d)
+        lam_h = float(np.exp(mu + home_adv + att_h + def_a))
+        lam_a = float(np.exp(mu + att_a + def_h))
         return lam_h, lam_a
 
     def predict(self, home: str, away: str) -> MatchProbabilities:
