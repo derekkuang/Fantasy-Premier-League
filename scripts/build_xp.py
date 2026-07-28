@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from fpledge import config  # noqa: E402
+from fpledge.differentials import find_differentials  # noqa: E402
 from fpledge.gw import records_for_gw  # noqa: E402
 from fpledge.models import rank  # noqa: E402
 
@@ -51,6 +52,13 @@ def main() -> None:
                   f"({diffcap['team_name']}) — {diffcap['xp']:.2f} xP, {diffcap['ownership']:.1f}% owned")
         else:
             print("  captain — differential       : none clears the xP floor; safe pick is the value pick too")
+
+    diffs = find_differentials(records, max_ownership=15.0, min_xp=3.5, top=8)
+    if diffs:
+        print("\n  top differentials (high xP, <15% owned):")
+        for r in diffs:
+            print(f"    {r['xp']:5.2f} xP  {r['ownership']:4.1f}% owned  {r['web_name']:<15}"
+                  f"{r['position']:<4}{r['team_name']}")
 
     low_teams = sorted(t for t, mins in coverage.items() if mins < 9000)
     if low_teams:

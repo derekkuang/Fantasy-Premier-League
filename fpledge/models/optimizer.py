@@ -22,6 +22,43 @@ SQUAD_SIZE = 15
 XI_SIZE = 11
 
 
+def best_xi(players: Sequence[dict]) -> dict | None:
+    """Best legal starting XI + captain from a FIXED 15-man squad (no ILP needed).
+
+    Enumerates valid formations (1 GK; DEF 3-5, MID 2-5, FWD 1-3) and takes the top xP per
+    position. Each player dict needs id, position, xp. Returns {xi, captain, xi_xp, total_xp}
+    (captain counted twice), or None if the squad can't field a legal XI.
+    """
+    by_pos = {
+        pos: sorted((p for p in players if p["position"] == pos), key=lambda p: p["xp"], reverse=True)
+        for pos in ("GK", "DEF", "MID", "FWD")
+    }
+    if not by_pos["GK"]:
+        return None
+    best = None
+    for d in range(3, 6):
+        for m in range(2, 6):
+            f = 10 - d - m
+            if not (1 <= f <= 3):
+                continue
+            if len(by_pos["DEF"]) < d or len(by_pos["MID"]) < m or len(by_pos["FWD"]) < f:
+                continue
+            xi = by_pos["GK"][:1] + by_pos["DEF"][:d] + by_pos["MID"][:m] + by_pos["FWD"][:f]
+            xp = sum(p["xp"] for p in xi)
+            if best is None or xp > best[0]:
+                best = (xp, xi)
+    if best is None:
+        return None
+    xi_xp, xi = best
+    captain = max(xi, key=lambda p: p["xp"])
+    return {
+        "xi": [p["id"] for p in xi],
+        "captain": captain["id"],
+        "xi_xp": xi_xp,
+        "total_xp": xi_xp + captain["xp"],
+    }
+
+
 def optimize_squad(players: Sequence[dict], budget: float = BUDGET) -> dict:
     """Return the optimal squad/XI/captain.
 
