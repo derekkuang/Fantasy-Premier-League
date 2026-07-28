@@ -183,8 +183,65 @@ FDR), and **radical honesty** (show calibration; don't claim to beat FPL) as a t
 - **DE-RISK FIRST:** ship the free connect-your-team dashboard and see if people use/share it
   **before** building accounts/payments/infra. Validate demand first.
 
-## 8. Immediate next step
+## 8. Phase 0 — ready-to-build spec (START HERE in the new chat)
 
-**Phase 0: FastAPI wrapper around `fpledge`** — the smallest step that turns the local engine
-into something a frontend can call. Endpoints `/predictions/{gw}` (precomputed) and `/team/{id}`
-(personalized). Everything else (frontend, accounts, hosting) builds on that.
+**Goal:** wrap the existing `fpledge` engine behind a FastAPI service with two endpoints, using
+a **precompute** approach. No frontend, no accounts, no rewrite of the model code.
+
+### 8.1 Integration points (functions to call — all already built)
+- `fpledge.gw.records_for_gw(gw)` → `{records, fallback, coverage, fpl_teams}`. Each record has:
+  `element_id, web_name, position, team_id, team_name, price, xp, x_minutes, ownership,
+  eo, diff_value, captain_score, low_cov`. **This is the precompute source.**
+- `fpledge.models.optimizer.optimize_squad(pool)` / `best_xi(players)` — squad + XI + captain.
+- `fpledge.transfers.suggest_transfers(current_ids, pool_by_id, bank, free_transfers)`.
+- `fpledge.fdr.fixture_ticker(engine, fixtures, fpl_teams, tmap, start_gw, horizon)`.
+- `fpledge.differentials.find_differentials(records, …)`.
+- `fpledge.balance.check_balance(squad_players)`.
+- `fpledge.ingest.fpl_api.FPLClient` — has `entry(id)`; **ADD** `entry_picks(id, gw)` →
+  GET `entry/{id}/event/{gw}/picks/` (returns `picks[].element` = their 15 element ids + bank).
+
+### 8.2 Precompute job (`scripts/precompute.py` or `fpledge/api/precompute.py`)
+Once per refresh: `records_for_gw(gw)` → write the records to a serving store. **v1 store:** a
+JSON file or a SQLite/DuckDB table (`player_predictions`) — cheap, no infra. **v2:** managed
+Postgres. Tag every row with `gw, model_ver, run_ts`. The API only ever READS this store.
+
+### 8.3 Endpoints (FastAPI, `fpledge/api/main.py`)
+```
+GET /predictions/{gw}
+  → [{element_id, web_name, position, team, price, xp, ownership, diff_value}, …]   (precomputed read)
+
+GET /team/{entry_id}?gw={gw}
+  → FPLClient.entry_picks(entry_id, gw) → their 15 element ids + bank
+  → join to precomputed predictions
+  → return {
+       squad: [their 15 with xp],
+       projected_points: best_xi(squad).total_xp,
+       captain: best_xi(squad).captain,
+       best_transfer: suggest_transfers(their_ids, pool_by_id, bank, free_transfers=1)[0],
+       balance: check_balance(their 15 marked starter/captain),
+     }
+
+GET /fixtures?start_gw={gw}&horizon=5   → fixture_ticker() as JSON grid
+GET /differentials/{gw}?max_ownership=15 → find_differentials() as JSON
+```
+
+### 8.4 Serve + deploy
+- Local: `uvicorn fpledge.api.main:app --reload`. Add `fastapi` + `uvicorn` to deps.
+- Cache `/predictions/{gw}` (changes ~weekly) in-process or with an HTTP cache header; cache a
+  user's picks briefly.
+- Deploy target: **Railway / Fly.io / Render** (container). The precompute job runs as a
+  scheduled task there (or the already-planned AWS EventBridge→Fargate slice).
+
+### 8.5 First commits for the new chat
+1. `FPLClient.entry_picks(id, gw)` + a test.
+2. `precompute.py` writing `player_predictions` to SQLite/DuckDB.
+3. `fpledge/api/main.py` with the four endpoints; hit `/team/{your_id}` end-to-end.
+4. Then → Phase 1 (Next.js or HTMX frontend on top of these endpoints).
+
+**De-risk reminder:** ship the free `/team/{id}` dashboard and see if people use/share it
+BEFORE building accounts, payments, or heavy infra.
+
+---
+
+*This document is the single source of truth for picking up the project. The `fpledge` package,
+72 tests, and 18 commits are the working foundation; Phase 0 above is the exact starting point.*
