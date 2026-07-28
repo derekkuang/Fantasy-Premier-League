@@ -4,10 +4,19 @@ from fpledge import config
 from fpledge.models.xpoints import (
     PlayerContext,
     _poisson_sf,
+    bonus_from_returns,
     dc_point_probability,
     expected_bonus,
     expected_points,
 )
+
+
+def test_bonus_from_returns_tracks_returns_and_caps():
+    assert bonus_from_returns(0.0, 0.0, 0.0, 0.0) == 0.0
+    # more expected returns -> more expected bonus
+    assert bonus_from_returns(0.8, 0.3, 0.4, 0.5) > bonus_from_returns(0.1, 0.0, 0.1, 0.0)
+    # capped at the 3-point maximum
+    assert bonus_from_returns(5.0, 5.0, 1.0, 1.0) == 3.0
 
 
 def test_poisson_sf_basic():

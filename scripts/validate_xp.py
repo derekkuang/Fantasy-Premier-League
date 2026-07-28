@@ -31,17 +31,17 @@ def main() -> None:
     teams = vaastav.fetch_teams(SEASON)
     print(f"  {len(rows)} player-GWs, {len(fixtures)} fixtures. Walking forward...")
 
-    print("  A/B: season-avg vs recency-weighted xG/xA form (minutes: recency; two walk-forwards)...")
-    base = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent", xg_mode="season")
-    form = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent", xg_mode="recent")
+    print("  A/B: rate-based vs returns-based bonus (minutes: recency; two walk-forwards)...")
+    base = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent", bonus_mode="rate")
+    form = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent", bonus_mode="returns")
     if not base.get("n"):
         print("no scored records.")
         return
 
     def ab(label: str, a_val, b_val, fpl_val) -> None:
-        print(f"    {label:20}  season-xG {_fmt(a_val)}   recency-xG {_fmt(b_val)}   |  FPL {_fmt(fpl_val)}")
+        print(f"    {label:20}  rate-bonus {_fmt(a_val)}   returns-bonus {_fmt(b_val)}   |  FPL {_fmt(fpl_val)}")
 
-    print(f"\n=== xP VALIDATION A/B (xG form) — {SEASON} ({base['n']} player-GWs, {base['gws_scored']} GWs) ===")
+    print(f"\n=== xP VALIDATION A/B (bonus) — {SEASON} ({base['n']} player-GWs, {base['gws_scored']} GWs) ===")
     print("  (higher Spearman / lower MAE is better; FPL's own xP is the baseline to beat)")
     for subset, title in (("played_only", "PLAYED only (who to pick)"), ("all_players", "ALL players")):
         a, b = base[subset], form[subset]
@@ -50,7 +50,7 @@ def main() -> None:
         ab("MAE vs actual", a["mae_model"], b["mae_model"], a["mae_fpl"])
 
     d = form["played_only"]["gw_spearman_model"] - base["played_only"]["gw_spearman_model"]
-    print(f"\n  Δ played-only per-GW Spearman (recency-xG − season-xG): {d:+.3f}")
+    print(f"\n  Δ played-only per-GW Spearman (returns-bonus − rate-bonus): {d:+.3f}")
     print(f"  target = close the gap to FPL's {_fmt(base['played_only']['gw_spearman_fpl'])} "
           "(better ranking of players who feature).")
 

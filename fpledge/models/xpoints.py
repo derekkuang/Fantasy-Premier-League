@@ -100,3 +100,14 @@ def dc_point_probability(dc_per90: float, x_minutes: float, position: str) -> fl
 def expected_bonus(bonus_per90: float, x_minutes: float) -> float:
     """Expected bonus from a last-season per-90 bonus rate scaled by expected minutes."""
     return max(bonus_per90, 0.0) * (x_minutes / 90.0)
+
+
+def bonus_from_returns(x_goals: float, x_assists: float, cs_prob: float, p_dc: float) -> float:
+    """Expected bonus tied to THIS fixture's expected returns, not a stale season rate.
+
+    Bonus (BPS top-3) is driven by performance: scorers and returners collect it. These are
+    rough BPS-derived priors (a goal is worth ~1.5 expected bonus on average, an assist ~0.8,
+    a clean sheet ~0.5, a defensive-contribution point ~0.3), capped at the 3-point maximum.
+    """
+    b = 1.5 * x_goals + 0.8 * x_assists + 0.5 * cs_prob + 0.3 * p_dc
+    return min(b, 3.0)

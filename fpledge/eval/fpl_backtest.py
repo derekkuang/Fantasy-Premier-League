@@ -21,6 +21,7 @@ from ..models.minutes import MinutesModel
 from ..models.shares import rate_shares
 from ..models.xpoints import (
     PlayerContext,
+    bonus_from_returns,
     dc_point_probability,
     expected_bonus,
     expected_points,
@@ -44,6 +45,7 @@ def validate_xp(
     min_rate_minutes: int = 270,
     minutes_mode: str = "recent",
     xg_mode: str = "season",
+    bonus_mode: str = "rate",
     return_records: bool = False,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
@@ -118,13 +120,19 @@ def validate_xp(
                     else:
                         pr = engine.predict(str(opp), str(tid))
                         lam, p_cs, opp_lam = pr.lam_away, pr.clean_sheet_away, pr.lam_home
+                    p_dc = dc_point_probability(dc90, mp.x_minutes, pos)
+                    if bonus_mode == "returns":
+                        x_bonus = bonus_from_returns(
+                            sh["goal_share"] * lam, sh["assist_share"] * lam, p_cs * mp.p_60, p_dc
+                        )
+                    else:
+                        x_bonus = expected_bonus(bon90, mp.x_minutes)
                     ctx = PlayerContext(
                         position=pos, p_play=mp.p_play, p_60=mp.p_60, team_lambda=lam,
                         goal_share=sh["goal_share"], assist_share=sh["assist_share"],
                         p_clean_sheet=p_cs,
                         x_saves=(opp_lam * 3.0 * (mp.x_minutes / 90.0) if pos == "GK" else 0.0),
-                        p_dc_point=dc_point_probability(dc90, mp.x_minutes, pos),
-                        x_bonus=expected_bonus(bon90, mp.x_minutes),
+                        p_dc_point=p_dc, x_bonus=x_bonus,
                     )
                     my_xp += expected_points(ctx)
                     scored = True
