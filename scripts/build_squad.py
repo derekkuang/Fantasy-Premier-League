@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from fpledge import config  # noqa: E402
+from fpledge.balance import check_balance, format_report  # noqa: E402
 from fpledge.gw import records_for_gw  # noqa: E402
 from fpledge.models.optimizer import BUDGET, optimize_squad  # noqa: E402
 
@@ -32,6 +33,7 @@ def main() -> None:
         {
             "id": r["element_id"], "name": r["web_name"], "position": r["position"],
             "price": r["price"], "team_id": r["team_id"], "team_name": r["team_name"], "xp": r["xp"],
+            "ownership": r["ownership"], "x_minutes": r["x_minutes"],
         }
         for r in out["records"]
         if not r["low_cov"] and r["price"]
@@ -55,6 +57,19 @@ def main() -> None:
     show(res["bench"], "BENCH (does not score unless auto-subbed)")
     cap = by_id[res["captain"]]
     print(f"\ncaptain: {cap['name']} ({cap['team_name']}) — {cap['xp']:.2f} xP, doubled")
+
+    xi_set = set(res["starting_xi"])
+    squad_players = [
+        {
+            "name": by_id[pid]["name"], "position": by_id[pid]["position"],
+            "price": by_id[pid]["price"], "team": by_id[pid]["team_name"], "xp": by_id[pid]["xp"],
+            "ownership": by_id[pid]["ownership"], "x_minutes": by_id[pid]["x_minutes"],
+            "starter": pid in xi_set, "captain": pid == res["captain"],
+        }
+        for pid in res["squad"]
+    ]
+    print(format_report(check_balance(squad_players, budget=BUDGET)))
+
     print("\n  note: single-gameweek optimisation over reliable-data teams; promoted teams and")
     print("  fixtures vs unknown opponents are excluded. Not yet multi-GW / wildcard-horizon.")
 
