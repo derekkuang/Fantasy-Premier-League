@@ -1,10 +1,20 @@
-.PHONY: setup test lint pull backtest clean
+.PHONY: setup test lint pull backtest precompute serve clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
 	python3 -m venv .venv
 	.venv/bin/python -m pip install --upgrade pip
-	.venv/bin/python -m pip install -e ".[dev]"
+	.venv/bin/python -m pip install -e ".[dev,api]"
+
+# Phase 0 (API): precompute the serving artifact, then serve it.
+# GW/HORIZON override the defaults, e.g. `make precompute GW=2 HORIZON=6`.
+GW ?= 1
+HORIZON ?= 5
+precompute:
+	.venv/bin/python scripts/precompute.py $(GW) $(HORIZON)
+
+serve:
+	.venv/bin/python -m uvicorn fpledge.api.main:app --reload
 
 # Run the test suite (the stdlib-only core needs only pytest).
 test:

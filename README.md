@@ -50,13 +50,28 @@ ingest ─► immutable raw (timestamped) ─► point-in-time features (DuckDB 
 
 ```bash
 make setup          # venv + editable install (heavy deps: duckdb, penaltyblog, ...)
-make test           # 21 tests; the core needs only pytest
+make test           # 82 tests; the core needs only pytest
 make backtest       # walk-forward demo (synthetic until data is pulled)
 make pull           # land bootstrap-static + fixtures into data/raw/
 ```
 
 The **core numeric modules are stdlib-only**, so `make test` passes with nothing but
 `pytest` — no need to install the full stack to see the discipline work.
+
+### Serve the API (web-app pivot — see [docs/PROJECT.md](docs/PROJECT.md))
+
+A FastAPI layer wraps the engine unchanged. A **precompute** job runs the expensive fit
+once and writes a per-gameweek JSON artifact; the API only reads it, so requests are
+instant and cost stays flat as users grow.
+
+```bash
+make precompute            # data/serving/gw1.json (xP records + fixture ticker); GW=/HORIZON= to override
+make serve                 # uvicorn on http://127.0.0.1:8000  (interactive docs at /docs)
+```
+
+Endpoints: `GET /predictions/{gw}`, `GET /fixtures/{gw}`, `GET /differentials/{gw}`,
+and `GET /team/{entry_id}?gw={gw}` — a manager's 15 joined to the predictions, with
+projected points, best captain, best transfer (net of the −4 hit), and a squad-balance check.
 
 ## Repo layout
 

@@ -7,6 +7,7 @@ scripts stay thin and can't drift apart.
 from __future__ import annotations
 
 from . import config
+from .fdr import fixture_ticker
 from .ingest import footballdata
 from .models.dixon_coles import DixonColesModel
 from .models.teammap import build_team_map
@@ -21,8 +22,13 @@ PLAYER_COLS = [
 ]
 
 
-def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
-    """Return {records, skipped, coverage, fpl_teams} for a gameweek, or None if no player data."""
+def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | None:
+    """Shared load + engine fit for a gameweek window [gw, gw+horizon).
+
+    Returns everything the xP records and the fixture ticker both need (players, teams,
+    fixtures, prices, availability, fitted engine, team map), or None if there is no
+    player data for the season. Single expensive step (the Dixon-Coles fit) done once.
+    """
     con = duck.connect()
     duck.init_schema(con)
     players = [
@@ -39,8 +45,8 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
         ).fetchall()
     }
     fixtures = con.execute(
-        "SELECT home_id, away_id FROM fixtures WHERE season = ? AND gw = ?",
-        [config.SEASON, gw],
+        "SELECT gw, home_id, away_id FROM fixtures WHERE season = ? AND gw >= ? AND gw < ?",
+        [config.SEASON, gw, gw + horizon],
     ).fetchall()
     con.close()
     if not players:
@@ -60,7 +66,51 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
     fd_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
     tmap = build_team_map(list(fpl_teams.values()), fd_names)
 
+    return {
+        "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
+        "prices": prices, "availability": availability, "engine": engine, "tmap": tmap,
+    }
+
+
+def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
+    """Return {records, fallback, coverage, fpl_teams} for a gameweek, or None if no player data."""
+    inp = _load_inputs(gw, horizon=1, seasons=seasons)
+    if inp is None:
+        return None
+    gw_fixtures = [(h, a) for (g, h, a) in inp["fixtures"] if g == gw]
     records, fallback, coverage = compute_xp_records(
-        players, fpl_teams, fixtures, engine, tmap, prices, availability=availability
+        inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
+        inp["prices"], availability=inp["availability"],
     )
-    return {"records": records, "fallback": fallback, "coverage": coverage, "fpl_teams": fpl_teams}
+    return {
+        "records": records, "fallback": fallback, "coverage": coverage,
+        "fpl_teams": inp["fpl_teams"],
+    }
+
+
+def assemble_for_serving(
+    gw: int, horizon: int = 5, seasons: list[str] | None = None
+) -> dict | None:
+    """Everything the API precompute needs from one engine fit: the GW xP records AND the
+    true-FDR fixture ticker for [gw, gw+horizon). Returns None if there is no player data.
+
+    The fixture ticker cannot be derived from records alone (it needs the fitted engine +
+    team map + multi-GW fixtures), so it is produced here where those live, then serialised.
+    """
+    inp = _load_inputs(gw, horizon=horizon, seasons=seasons)
+    if inp is None:
+        return None
+    gw_fixtures = [(h, a) for (g, h, a) in inp["fixtures"] if g == gw]
+    records, fallback, coverage = compute_xp_records(
+        inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
+        inp["prices"], availability=inp["availability"],
+    )
+    ticker_fixtures = [{"gw": g, "home_id": h, "away_id": a} for (g, h, a) in inp["fixtures"]]
+    ticker = fixture_ticker(
+        inp["engine"], ticker_fixtures, inp["fpl_teams"], inp["tmap"],
+        start_gw=gw, horizon=horizon,
+    )
+    return {
+        "records": records, "fallback": fallback, "coverage": coverage,
+        "fpl_teams": inp["fpl_teams"], "fixture_ticker": ticker, "horizon": horizon,
+    }

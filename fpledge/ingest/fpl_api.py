@@ -6,6 +6,7 @@ Endpoints used:
     element-summary/{id}/  per-player match-by-match history
     event/{gw}/live/       live/provisional points + bonus during a gameweek
     entry/{id}/            a manager's team (for your own squad)
+    entry/{id}/event/{gw}/picks/  a manager's 15 picks + bank for a gameweek
 
 `requests` is a declared dependency; imported lazily so the stdlib-only core and
 its tests don't require it.
@@ -59,3 +60,28 @@ class FPLClient:
 
     def entry(self, entry_id: int) -> dict:
         return self._get(f"entry/{entry_id}/")
+
+    def entry_picks(self, entry_id: int, gw: int) -> dict:
+        """A manager's team for a gameweek: `picks` (15 elements + captaincy/multiplier)
+        and `entry_history` (bank, squad value, transfers). Raises for HTTP errors
+        (404 for a private/nonexistent entry or a gameweek the manager hasn't entered).
+        """
+        return self._get(f"entry/{entry_id}/event/{gw}/picks/")
+
+    def picks_summary(self, entry_id: int, gw: int) -> dict:
+        """Normalised view of `entry_picks`: the 15 element ids, the captain/vice element
+        ids, and the bank in £m (the API reports bank in tenths). A thin convenience so
+        callers don't re-parse the raw payload shape.
+        """
+        raw = self.entry_picks(entry_id, gw)
+        picks = raw.get("picks", [])
+        hist = raw.get("entry_history") or {}
+        cap = next((p["element"] for p in picks if p.get("is_captain")), None)
+        vice = next((p["element"] for p in picks if p.get("is_vice_captain")), None)
+        return {
+            "element_ids": [p["element"] for p in picks],
+            "captain": cap,
+            "vice_captain": vice,
+            "bank": (hist.get("bank") or 0) / 10.0,   # tenths of £m -> £m
+            "squad_value": (hist.get("value") or 0) / 10.0,
+        }
