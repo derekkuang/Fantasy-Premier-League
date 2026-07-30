@@ -17,7 +17,6 @@ import { Card, Flag, SectionTitle, Stat } from "@/components/ui";
 import { SquadBoard } from "@/components/pitch";
 import { CaptainCompare } from "@/components/captain-compare";
 import { PlayerSheet, type SwapOption } from "@/components/player-sheet";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures: Record<string, TickerFixture[]> }) {
   const originalIds = useMemo(
@@ -87,12 +86,9 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
             Team {data.entry_id} · GW{data.gw}
           </h1>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="rounded-full bg-black/5 px-2 py-1 font-mono text-[11px] text-black/50 dark:bg-white/10 dark:text-white/50">
-            {data.meta.model_ver}
-          </span>
-          <ThemeToggle />
-        </div>
+        <span className="rounded-full bg-black/5 px-2 py-1 font-mono text-[11px] text-black/50 dark:bg-white/10 dark:text-white/50">
+          {data.meta.model_ver}
+        </span>
       </header>
 
       <Card className="p-5">

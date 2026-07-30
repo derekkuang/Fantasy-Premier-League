@@ -91,6 +91,29 @@ export type TeamResponse = {
   unscored_elements: number[];
 };
 
+// --- predictions (per-player xP, precomputed read) -------------------------------- #
+export type Prediction = {
+  element_id: number;
+  web_name: string;
+  position: "GK" | "DEF" | "MID" | "FWD";
+  team: string | null;
+  price: number;
+  xp: number;
+  ownership: number;
+  diff_value: number;
+  x_minutes: number;
+  low_coverage: boolean;
+};
+
+export type PredictionsResponse = { meta: Meta; predictions: Prediction[] };
+
+/** Fetch the ranked per-player xP table for a gameweek (precomputed, cacheable). */
+export async function getPredictions(gw = 1): Promise<PredictionsResponse> {
+  const res = await fetch(`${API_URL}/predictions/${gw}`, { next: { revalidate: 3600 } });
+  if (!res.ok) throw new Error(`predictions request failed (${res.status})`);
+  return res.json();
+}
+
 // --- fixtures (true-FDR ticker) --------------------------------------------------- #
 export type TickerFixture = {
   gw: number;
