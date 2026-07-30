@@ -14,7 +14,13 @@ from collections.abc import Sequence
 from . import rank
 from .minutes import MinutesModel
 from .shares import match_shares, team_minutes
-from .xpoints import PlayerContext, dc_point_probability, expected_bonus, expected_points
+from .xpoints import (
+    PlayerContext,
+    dc_point_probability,
+    expected_bonus,
+    expected_conceded_penalty,
+    expected_points_breakdown,
+)
 
 LOW_COVERAGE = 9000       # current-squad last-season minutes below this -> shares unreliable
 MIN_RATE_MINUTES = 270    # need this many last-season minutes to trust a per-90 rate
@@ -88,8 +94,14 @@ def compute_xp_records(
                     x_saves=(opp_lambda * 3.0 * (mp.x_minutes / 90.0) if p["position"] == "GK" else 0.0),
                     p_dc_point=dc_point_probability(dc_per90, mp.x_minutes, p["position"]),
                     x_bonus=expected_bonus(bonus_per90, mp.x_minutes),
+                    opp_lambda=opp_lambda,
+                    x_conceded_penalty=(
+                        expected_conceded_penalty(opp_lambda, mp.x_minutes)
+                        if p["position"] in ("GK", "DEF") else 0.0
+                    ),
                 )
-                xp = expected_points(ctx)
+                bd = expected_points_breakdown(ctx)
+                xp = bd["total"]
                 eo = rank.effective_ownership(p["ownership"])
                 records.append(
                     {
@@ -107,6 +119,7 @@ def compute_xp_records(
                         "diff_value": rank.differential_value(xp, eo),
                         "captain_score": rank.captain_rank_score(xp, eo),
                         "low_cov": low_cov,
+                        "breakdown": bd,
                     }
                 )
     return records, fallback, coverage

@@ -24,6 +24,7 @@ from ..models.xpoints import (
     bonus_from_returns,
     dc_point_probability,
     expected_bonus,
+    expected_conceded_penalty,
     expected_points,
 )
 
@@ -133,6 +134,11 @@ def validate_xp(
                         p_clean_sheet=p_cs,
                         x_saves=(opp_lam * 3.0 * (mp.x_minutes / 90.0) if pos == "GK" else 0.0),
                         p_dc_point=p_dc, x_bonus=x_bonus,
+                        opp_lambda=opp_lam,
+                        x_conceded_penalty=(
+                            expected_conceded_penalty(opp_lam, mp.x_minutes)
+                            if pos in ("GK", "DEF") else 0.0
+                        ),
                     )
                     my_xp += expected_points(ctx)
                     scored = True

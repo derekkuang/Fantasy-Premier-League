@@ -31,37 +31,61 @@ class PlayerContext:
     x_saves: float = 0.0   # expected saves (GK), = f(opponent lambda)
     p_dc_point: float = 0.0  # P(hitting the 2025/26 defensive-contribution threshold)
     x_bonus: float = 0.0   # expected bonus points
+    opp_lambda: float = 0.0  # opponent expected goals (for the goals-conceded penalty)
+    x_conceded_penalty: float = 0.0  # expected goals-conceded points (<= 0), GK/DEF only
 
 
-def expected_points(ctx: PlayerContext) -> float:
-    """Mean expected FPL points for one player in one fixture."""
+def expected_points_breakdown(ctx: PlayerContext) -> dict:
+    """The xP equation decomposed into its per-term point contributions.
+
+    Each `*_points` term is the mean points from that scoring category; they sum to
+    `total`, which equals `expected_points(ctx)`. Also returns the underlying expected
+    quantities (x_goals, x_assists, probabilities) so the model can be shown transparently.
+    """
     pos = ctx.position
-    xp = 0.0
 
     # Appearance (2 for 60+, 1 for 1–59)
-    xp += ctx.p_60 * config.APPEARANCE_60_POINTS
-    xp += max(ctx.p_play - ctx.p_60, 0.0) * config.APPEARANCE_SUB_POINTS
-
+    appearance = (
+        ctx.p_60 * config.APPEARANCE_60_POINTS
+        + max(ctx.p_play - ctx.p_60, 0.0) * config.APPEARANCE_SUB_POINTS
+    )
     # Attacking returns
     x_goals = ctx.goal_share * ctx.team_lambda
     x_assists = ctx.assist_share * ctx.team_lambda
-    xp += x_goals * config.GOAL_POINTS[pos]
-    xp += x_assists * config.ASSIST_POINTS
-
+    goal_points = x_goals * config.GOAL_POINTS[pos]
+    assist_points = x_assists * config.ASSIST_POINTS
     # Clean sheet (only counts with 60+ minutes)
-    xp += ctx.p_clean_sheet * ctx.p_60 * config.CLEAN_SHEET_POINTS[pos]
-
+    cs_points = ctx.p_clean_sheet * ctx.p_60 * config.CLEAN_SHEET_POINTS[pos]
+    # Goals conceded: GK/DEF lose 1 point per 2 conceded while on the pitch (not 60-gated).
+    conceded_points = ctx.x_conceded_penalty if pos in ("GK", "DEF") else 0.0
     # Goalkeeping saves (1 point per 3)
-    if pos == "GK":
-        xp += ctx.x_saves / config.SAVES_PER_POINT
-
+    save_points = ctx.x_saves / config.SAVES_PER_POINT if pos == "GK" else 0.0
     # 2025/26 Defensive Contribution (+2 if threshold hit)
-    xp += ctx.p_dc_point * config.DC_POINTS
-
+    dc_points = ctx.p_dc_point * config.DC_POINTS
     # Expected bonus points
-    xp += ctx.x_bonus
+    bonus_points = ctx.x_bonus
 
-    return xp
+    total = (
+        appearance + goal_points + assist_points + cs_points + conceded_points
+        + save_points + dc_points + bonus_points
+    )
+    return {
+        # expected quantities (for display)
+        "p_play": ctx.p_play, "p_60": ctx.p_60,
+        "x_goals": x_goals, "x_assists": x_assists,
+        "p_clean_sheet": ctx.p_clean_sheet, "x_saves": ctx.x_saves,
+        "p_dc_point": ctx.p_dc_point, "opp_lambda": ctx.opp_lambda,
+        # point contributions (sum to total)
+        "appearance": appearance, "goal_points": goal_points, "assist_points": assist_points,
+        "cs_points": cs_points, "conceded_points": conceded_points,
+        "save_points": save_points, "dc_points": dc_points, "bonus_points": bonus_points,
+        "total": total,
+    }
+
+
+def expected_points(ctx: PlayerContext) -> float:
+    """Mean expected FPL points for one player in one fixture (sum of the term breakdown)."""
+    return expected_points_breakdown(ctx)["total"]
 
 
 def _poisson_sf(k: int, lam: float) -> float:
@@ -95,6 +119,20 @@ def dc_point_probability(dc_per90: float, x_minutes: float, position: str) -> fl
         return 0.0
     expected_actions = max(dc_per90, 0.0) * (x_minutes / 90.0)
     return _poisson_sf(threshold, expected_actions)
+
+
+def expected_conceded_penalty(opp_lambda: float, x_minutes: float, max_terms: int = 6) -> float:
+    """Expected goals-conceded points for a GK/DEF (<= 0), from the opponent's goal distribution.
+
+    FPL docks GK/DEF 1 point per 2 goals their team concedes WHILE THEY ARE ON THE PITCH.
+    With conceded C ~ Poisson(opp_lambda), the penalty count is floor(C / per), whose mean is
+    sum_{k>=1} P(C >= per*k). Scaled by expected on-pitch time (x_minutes/90) since only goals
+    conceded while playing count. Not 60-gated (unlike the clean-sheet bonus).
+    """
+    per = config.GOALS_CONCEDED_PER_PENALTY  # 2 conceded -> -1 point
+    frac = max(0.0, min(x_minutes / 90.0, 1.0))
+    e_units = sum(_poisson_sf(per * k, max(opp_lambda, 0.0)) for k in range(1, max_terms + 1))
+    return -e_units * frac
 
 
 def expected_bonus(bonus_per90: float, x_minutes: float) -> float:
