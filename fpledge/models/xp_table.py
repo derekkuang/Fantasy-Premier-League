@@ -79,6 +79,13 @@ def compute_xp_records(
             for p in by_team.get(team_id, []):
                 mp = minutes_pred[p["code"]]
                 sh = shares.get(p["code"], {"goal_share": 0.0, "assist_share": 0.0})
+                if low_cov:
+                    # Promoted / low-data team: teammates have no history, so normalising
+                    # shares to sum to 1 hands the one player WITH data ~100% of the team's
+                    # goals, inflating a tiny per-90 rate up to the full team lambda (the
+                    # "Diop" artifact). We can't trust attacking attribution here — drop it.
+                    # Appearance / clean-sheet / defensive-contribution stay (fixture-based).
+                    sh = {"goal_share": 0.0, "assist_share": 0.0}
                 per90 = p["minutes"] / 90.0
                 trust = p["minutes"] >= min_rate_minutes
                 dc_per90 = (p["dc"] / per90) if trust else 0.0
