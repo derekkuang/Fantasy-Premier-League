@@ -38,7 +38,7 @@ export function computeHealth(squad: SquadPlayer[], starterIds: Set<number>): { 
   if (deadBench >= 2)
     flags.push(["warn", `${deadBench} bench players unlikely to play — weak auto-sub cover`]);
   if (topTwoClubs >= 6)
-    flags.push(["warn", `${topTwoClubs}/15 players from just two clubs — concentration risk`]);
+    flags.push(["warn", `${topTwoClubs}/${squad.length} players from just two clubs — concentration risk`]);
   if (nDifferential >= 5)
     flags.push(["warn", `${nDifferential} differentials in the XI — high variance`]);
   if (nRotation >= 3)

@@ -28,6 +28,11 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
   const [openId, setOpenId] = useState<number | null>(null);
   const [lastSwap, setLastSwap] = useState<string | null>(null);
 
+  // The backend sends the authoritative baseline (data.projected_points / captain / balance)
+  // for the RECOMMENDED XI — that's the API contract for non-UI consumers. Here we recompute
+  // client-side because the XI is user-editable (swaps) and must update instantly without a
+  // server round-trip. At the initial (unmodified) XI these match the backend by construction
+  // (default basis "xp" -> best_xi captain; computeHealth mirrors check_balance, parity-tested).
   const nameOf = (id: number) => data.squad.find((p) => p.element_id === id)?.web_name ?? "?";
   const starters = data.squad.filter((p) => starterIds.has(p.element_id));
   const captainId = chooseCaptainId(starters, basis);

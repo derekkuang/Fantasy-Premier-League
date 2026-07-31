@@ -42,7 +42,7 @@ export function FixtureTicker({ data }: { data: FixturesResponse }) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-black/[.03] dark:bg-white/[.04]">
-              <th className="sticky left-0 z-10 bg-inherit px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-black/40 dark:text-white/40">
+              <th className="sticky left-0 z-10 bg-[var(--background)] px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-black/40 dark:text-white/40">
                 Team
               </th>
               {gws.map((g) => (

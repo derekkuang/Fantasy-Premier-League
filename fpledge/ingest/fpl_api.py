@@ -66,6 +66,7 @@ class FPLClient:
         and `entry_history` (bank, squad value, transfers). Raises for HTTP errors
         (404 for a private/nonexistent entry or a gameweek the manager hasn't entered).
         """
+        self._throttle()  # rate-limit outbound calls so a busy server can't get IP-blocked
         return self._get(f"entry/{entry_id}/event/{gw}/picks/")
 
     def picks_summary(self, entry_id: int, gw: int) -> dict:

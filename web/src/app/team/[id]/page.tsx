@@ -3,7 +3,14 @@
 // dashboard. Errors render a friendly server-side fallback.
 
 import Link from "next/link";
-import { fixturesByTeam, getFixtures, getTeam, type TeamResponse, type TickerFixture } from "@/lib/api";
+import {
+  fixturesByTeam,
+  getFixtures,
+  getLatestGw,
+  getTeam,
+  type TeamResponse,
+  type TickerFixture,
+} from "@/lib/api";
 import { TeamDashboard } from "@/components/team-dashboard";
 
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
@@ -11,7 +18,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
 
   let data: TeamResponse;
   try {
-    data = await getTeam(id);
+    data = await getTeam(id, await getLatestGw());
   } catch (err) {
     return <ErrorState id={id} message={(err as Error).message} />;
   }

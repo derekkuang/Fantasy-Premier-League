@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from fpledge.api import main as api_main
 from fpledge.api import store
 from fpledge.api.main import app, get_fpl_client
 
@@ -101,6 +102,7 @@ def client(tmp_path, monkeypatch):
     tc = TestClient(app)
     yield tc
     app.dependency_overrides.clear()
+    api_main._picks_cache.clear()  # isolate the short-TTL picks cache between tests
 
 
 def test_health_lists_precomputed_gw(client):
@@ -167,6 +169,22 @@ def test_team_personalisation_end_to_end(client):
     assert bt is not None and bt["out"]["element_id"] == 12 and bt["in"]["element_id"] == 20
     assert bt["net_gain"] > 0
     assert body["balance"]["n_players"] == 14
+
+
+def test_team_picks_cached_across_requests(client):
+    owned = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    summary = {"element_ids": owned, "captain": 8, "vice_captain": 13, "bank": 5.0, "squad_value": 100.0}
+    calls = {"n": 0}
+
+    class _Counting:
+        def picks_summary(self, entry_id, gw):  # noqa: ANN001
+            calls["n"] += 1
+            return summary
+
+    app.dependency_overrides[get_fpl_client] = lambda: _Counting()
+    assert client.get(f"/team/1234567?gw={GW}").status_code == 200
+    assert client.get(f"/team/1234567?gw={GW}").status_code == 200
+    assert calls["n"] == 1  # second request is served from the picks cache, not the FPL API
 
 
 def test_team_demo_needs_no_client(client):

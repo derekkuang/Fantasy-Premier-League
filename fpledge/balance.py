@@ -55,7 +55,10 @@ def check_balance(players: Sequence[dict], budget: float = 100.0) -> dict:
     if dead_bench >= 2:
         flags.append(("warn", f"{dead_bench} bench players unlikely to play — weak auto-sub cover"))
     if top_two_clubs >= 6:
-        flags.append(("warn", f"{top_two_clubs}/15 players from just two clubs — concentration risk"))
+        flags.append((
+            "warn",
+            f"{top_two_clubs}/{len(players)} players from just two clubs — concentration risk",
+        ))
     if n_differential >= 5:
         flags.append(("warn", f"{n_differential} differentials in the XI — high variance"))
     if n_rotation >= 3:

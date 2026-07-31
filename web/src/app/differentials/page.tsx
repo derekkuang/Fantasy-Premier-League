@@ -1,11 +1,11 @@
-import { getPredictions } from "@/lib/api";
+import { getLatestGw, getPredictions } from "@/lib/api";
 import { DifferentialsView } from "@/components/differentials-view";
 import { PageError, PageShell } from "@/components/page-shell";
 
 export default async function DifferentialsPage() {
   let data;
   try {
-    data = await getPredictions(1);
+    data = await getPredictions(await getLatestGw());
   } catch (err) {
     return <PageError message={(err as Error).message} />;
   }

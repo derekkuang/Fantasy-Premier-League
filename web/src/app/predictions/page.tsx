@@ -1,11 +1,11 @@
-import { getPredictions } from "@/lib/api";
+import { getLatestGw, getPredictions } from "@/lib/api";
 import { PredictionsTable } from "@/components/predictions-table";
 import { PageError, PageShell } from "@/components/page-shell";
 
 export default async function PredictionsPage() {
   let data;
   try {
-    data = await getPredictions(1);
+    data = await getPredictions(await getLatestGw());
   } catch (err) {
     return <PageError message={(err as Error).message} />;
   }

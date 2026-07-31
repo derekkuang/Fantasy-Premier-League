@@ -1,11 +1,11 @@
-import { getFixtures } from "@/lib/api";
+import { getFixtures, getLatestGw } from "@/lib/api";
 import { FixtureTicker } from "@/components/fixture-ticker";
 import { PageError, PageShell } from "@/components/page-shell";
 
 export default async function FixturesPage() {
   let data;
   try {
-    data = await getFixtures(1);
+    data = await getFixtures(await getLatestGw());
   } catch (err) {
     return <PageError message={(err as Error).message} />;
   }

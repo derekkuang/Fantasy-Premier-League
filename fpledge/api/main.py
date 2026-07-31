@@ -14,6 +14,10 @@ functions expect id/name/team dicts, so `_pool_dict`/`_balance_dict` translate.
 
 from __future__ import annotations
 
+import os
+import threading
+import time
+
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,11 +33,14 @@ app = FastAPI(
     description="Honest FPL expected-points + tooling. Not affiliated with the Premier League.",
 )
 
-# Phase 1 frontend (Next.js / HTMX) calls this from the browser. Wide-open for v1 (no
-# secrets, read-only public data); tighten to the real frontend origin before prod.
+# Read-only public data + GET only, and the frontend fetches server-side (so CORS is
+# usually unused) — but keep it configurable: set FPLEDGE_CORS_ORIGINS to the real frontend
+# origin(s) in prod (comma-separated). Defaults to "*" for local dev.
+_cors_env = os.environ.get("FPLEDGE_CORS_ORIGINS", "*").strip()
+_cors_origins = ["*"] if _cors_env in ("", "*") else [o.strip() for o in _cors_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["GET"],
     allow_headers=["*"],
 )
@@ -42,10 +49,43 @@ _WEEKLY_CACHE = "public, max-age=3600"   # precomputed data changes ~weekly
 _TEAM_CACHE = "public, max-age=120"       # a manager's picks change occasionally
 
 
-# --- dependency: the FPL client (overridden in tests to avoid network) ------------- #
+# --- FPL client: ONE shared, throttled client (overridden in tests to avoid network) --- #
+# A per-request client would open a new Session and, worse, reset the throttle state, so a
+# public deploy could fire unbounded concurrent requests at fantasy.premierleague.com and
+# get the host IP blocked. A single shared client serialises + rate-limits those calls.
+_client_lock = threading.Lock()
+_shared_client = None
+
+
 def get_fpl_client():  # noqa: ANN201
-    from ..ingest.fpl_api import FPLClient  # noqa: PLC0415
-    return FPLClient()
+    global _shared_client
+    if _shared_client is None:
+        with _client_lock:
+            if _shared_client is None:
+                from ..ingest.fpl_api import FPLClient  # noqa: PLC0415
+                _shared_client = FPLClient()
+    return _shared_client
+
+
+# Short-TTL cache of a manager's picks, guarded by a lock so concurrent /team requests
+# don't stampede the FPL API (and repeat/abusive entry-id sweeps mostly hit the cache).
+_PICKS_TTL_S = 120.0
+_picks_lock = threading.Lock()
+_picks_cache: dict[tuple[int, int], tuple[float, dict]] = {}
+
+
+def _cached_picks(client, entry_id: int, gw: int) -> dict:  # noqa: ANN001
+    key = (entry_id, gw)
+    hit = _picks_cache.get(key)
+    if hit and time.monotonic() - hit[0] < _PICKS_TTL_S:
+        return hit[1]
+    with _picks_lock:  # serialise outbound FPL calls; re-check the cache inside the lock
+        hit = _picks_cache.get(key)
+        if hit and time.monotonic() - hit[0] < _PICKS_TTL_S:
+            return hit[1]
+        summary = client.picks_summary(entry_id, gw)  # throttled inside the client
+        _picks_cache[key] = (time.monotonic(), summary)
+        return summary
 
 
 # --- adapters: serving record -> the shape each engine function expects ------------- #
@@ -179,7 +219,7 @@ def team(
         picks = _demo_picks(records)
     else:
         try:
-            picks = client.picks_summary(entry_id, gw)
+            picks = _cached_picks(client, entry_id, gw)
         except Exception as exc:  # noqa: BLE001 — translate client/HTTP failures to friendly errors
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status == 404:

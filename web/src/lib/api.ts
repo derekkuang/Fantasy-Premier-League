@@ -91,6 +91,20 @@ export type TeamResponse = {
   unscored_elements: number[];
 };
 
+// The gameweek to show: the latest one the backend has precomputed. Never hardcode a gw —
+// the weekly precompute advances (gw1 -> gw2 -> ...) and the site must follow it, not 404.
+export async function getLatestGw(): Promise<number> {
+  try {
+    const res = await fetch(`${API_URL}/health`, { next: { revalidate: 300 } });
+    if (!res.ok) return 1;
+    const body = (await res.json()) as { available_gws?: number[] };
+    const gws = body.available_gws ?? [];
+    return gws.length ? Math.max(...gws) : 1;
+  } catch {
+    return 1;
+  }
+}
+
 // --- predictions (per-player xP, precomputed read) -------------------------------- #
 export type Prediction = {
   element_id: number;
