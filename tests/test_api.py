@@ -119,7 +119,8 @@ def test_predictions_sorted_and_projected(client):
     assert xps == sorted(xps, reverse=True)          # ranked by xP
     top = body["predictions"][0]
     assert set(top) == {"element_id", "web_name", "position", "team", "price",
-                        "xp", "ownership", "diff_value", "x_minutes", "low_coverage"}
+                        "xp", "ownership", "diff_value", "x_minutes", "low_coverage",
+                        "xp_next3", "fixtures"}
     assert top["element_id"] == 8 and top["xp"] == 8.0
 
 

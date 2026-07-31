@@ -173,6 +173,50 @@ def validate_xp(
     return (metrics, records) if return_records else metrics
 
 
+def validate_multi_gw(records, window: int = 3, min_players: int = 10) -> dict:  # noqa: ANN001
+    """Score a multi-GW outlook: sum each player's model xP and FPL xP over rolling `window`
+    gameweeks and rank against their realized summed points (played players only).
+
+    FPL publishes no multi-GW number, so the honest baseline is FPL's OWN xP summed over the
+    same window. Returns per-start-GW-averaged Spearman + MAE for model and FPL — i.e. "if you
+    pick on a `window`-week outlook, whose sum ranks the real `window`-week output better?".
+    records: the (gw, element, my_xp, fpl_xp, actual, pos, minutes) tuples from validate_xp.
+    """
+    import scipy.stats as st  # noqa: PLC0415
+
+    by = {(r[0], r[1]): r for r in records}
+    gws = sorted({r[0] for r in records})
+    sp_m, sp_f, mae_m, mae_f, n = [], [], [], [], 0
+    for start in gws:
+        window_gws = [start + i for i in range(window)]
+        if window_gws[-1] > gws[-1]:
+            continue
+        rows = []
+        for el in {r[1] for r in records if r[0] == start}:
+            recs = [by.get((wg, el)) for wg in window_gws]
+            if any(x is None for x in recs) or sum(x[6] for x in recs) <= 0:
+                continue  # need a record each GW of the window, and some minutes played
+            rows.append((sum(x[2] for x in recs), sum(x[3] for x in recs), sum(x[4] for x in recs)))
+        if len(rows) < min_players:
+            continue
+        m, f, a = [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
+        sm, sf = st.spearmanr(m, a).correlation, st.spearmanr(f, a).correlation
+        if sm == sm:
+            sp_m.append(sm)
+        if sf == sf:
+            sp_f.append(sf)
+        mae_m.append(statistics.mean(abs(x - y) for x, y in zip(m, a, strict=True)))
+        mae_f.append(statistics.mean(abs(x - y) for x, y in zip(f, a, strict=True)))
+        n += len(rows)
+
+    mean = lambda xs: statistics.mean(xs) if xs else None  # noqa: E731
+    return {
+        "window": window, "windows_scored": len(sp_m), "n": n,
+        "gw_spearman_model": mean(sp_m), "gw_spearman_fpl": mean(sp_f),
+        "mae_model": mean(mae_m), "mae_fpl": mean(mae_f),
+    }
+
+
 def _subset_metrics(recs, st) -> dict | None:  # noqa: ANN001
     """MAE + per-GW Spearman for model and FPL over a record subset. record indices:
     (gw=0, element=1, my_xp=2, fpl_xp=3, actual=4, pos=5, minutes=6)."""

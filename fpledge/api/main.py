@@ -114,6 +114,9 @@ def _project_prediction(r: dict) -> dict:
         "team": r["team_name"], "price": r["price"], "xp": round(r["xp"], 2),
         "ownership": r["ownership"], "diff_value": round(r["diff_value"], 2),
         "x_minutes": round(r["x_minutes"], 1), "low_coverage": r["low_cov"],
+        # multi-gameweek outlook (default to this GW if a record predates the field)
+        "xp_next3": round(r.get("xp_next3", r["xp"]), 2),
+        "fixtures": r.get("fixtures", []),  # [{gw, opp, home, xp, fdr}, ...]
     }
 
 

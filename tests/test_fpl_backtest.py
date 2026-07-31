@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("numpy")
 pytest.importorskip("scipy")
 
-from fpledge.eval.fpl_backtest import validate_xp  # noqa: E402
+from fpledge.eval.fpl_backtest import validate_multi_gw, validate_xp  # noqa: E402
 
 
 def _synthetic():
@@ -50,6 +50,19 @@ def test_validate_runs_and_scores():
     res = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90)
     assert res["n"] > 0
     assert res["all_players"]["mae_model"] >= 0.0
+
+
+def test_validate_multi_gw_ranks_over_window():
+    # 3 GWs, 12 players. Realized 3-GW sum is monotone in the player index; the model's
+    # summed xP tracks it, FPL's summed xP inverts it. records: (gw, el, my, fpl, actual, pos, mins)
+    recs = []
+    for el in range(1, 13):
+        for g in (1, 2, 3):
+            recs.append((g, el, el * 0.9, float(13 - el), float(el), "MID", 90))
+    r = validate_multi_gw(recs, window=3, min_players=5)
+    assert r["window"] == 3 and r["windows_scored"] == 1 and r["n"] == 12
+    assert r["gw_spearman_model"] > 0.9        # model ranks the 3-GW output well
+    assert r["gw_spearman_fpl"] < -0.9         # FPL's inverted sum ranks it badly
 
 
 def test_point_in_time_no_leakage():

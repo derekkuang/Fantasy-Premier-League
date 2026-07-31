@@ -123,3 +123,45 @@ def compute_xp_records(
                     }
                 )
     return records, fallback, coverage
+
+
+def compute_multi_gw_xp(
+    players: Sequence[dict],
+    fpl_teams: dict,
+    fixtures_by_gw: dict,
+    engine,  # noqa: ANN001 — fitted DixonColesModel
+    tmap: dict,
+    prices: dict,
+    ticker: dict,
+    gws: Sequence[int],
+    availability: dict | None = None,
+):
+    """Per-player xP for each upcoming gameweek, joined to the fixture + true FDR.
+
+    Reuses `compute_xp_records` per GW (same engine / minutes / shares, only the opponent
+    changes) and joins each player to their team's fixture-difficulty from `ticker`.
+    Returns {element_id: [{gw, opp, home, xp, fdr}, ...]} ordered by gw. Double gameweeks
+    sum a team's xP; blank gameweeks are simply absent from a player's list.
+    """
+    tick = {(tid, f["gw"]): f for tid, fxs in ticker.items() for f in fxs}
+    per_player: dict = defaultdict(list)
+    for g in gws:
+        recs, _, _ = compute_xp_records(
+            players, fpl_teams, fixtures_by_gw.get(g, []), engine, tmap, prices,
+            availability=availability,
+        )
+        xp_by_el: dict = defaultdict(float)
+        meta: dict = {}
+        for r in recs:
+            xp_by_el[r["element_id"]] += r["xp"]  # sum over a double gameweek
+            meta[r["element_id"]] = (r["team_id"], r["position"])
+        for el, xp in xp_by_el.items():
+            team_id, pos = meta[el]
+            fx = tick.get((team_id, g))
+            if fx is None:
+                continue
+            fdr = fx["defence_fdr"] if pos in ("GK", "DEF") else fx["attack_fdr"]
+            per_player[el].append(
+                {"gw": g, "opp": fx["opp"], "home": fx["home"], "xp": round(xp, 2), "fdr": fdr}
+            )
+    return dict(per_player)

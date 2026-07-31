@@ -6,12 +6,14 @@ scripts stay thin and can't drift apart.
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 from . import config
 from .fdr import fixture_ticker
 from .ingest import footballdata
 from .models.dixon_coles import DixonColesModel
 from .models.teammap import build_team_map
-from .models.xp_table import compute_xp_records
+from .models.xp_table import compute_multi_gw_xp, compute_xp_records
 from .storage import duck
 from .storage import load as storeload
 
@@ -110,6 +112,21 @@ def assemble_for_serving(
         inp["engine"], ticker_fixtures, inp["fpl_teams"], inp["tmap"],
         start_gw=gw, horizon=horizon,
     )
+
+    # Per-player xP for each upcoming GW (same engine/shares, different opponent), so the
+    # predictions can rank on a multi-week outlook, not just the current gameweek.
+    fixtures_by_gw: dict = defaultdict(list)
+    for g, h, a in inp["fixtures"]:
+        fixtures_by_gw[g].append((h, a))
+    multi = compute_multi_gw_xp(
+        inp["players"], inp["fpl_teams"], fixtures_by_gw, inp["engine"], inp["tmap"],
+        inp["prices"], ticker, sorted(fixtures_by_gw), availability=inp["availability"],
+    )
+    for r in records:
+        fx = multi.get(r["element_id"], [])
+        r["fixtures"] = fx                                     # next GWs: {gw, opp, home, xp, fdr}
+        r["xp_next3"] = round(sum(c["xp"] for c in fx[:3]), 2)  # 3-week outlook (incl. this GW)
+
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
         "fpl_teams": inp["fpl_teams"], "fixture_ticker": ticker, "horizon": horizon,
