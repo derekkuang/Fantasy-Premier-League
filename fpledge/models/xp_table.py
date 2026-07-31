@@ -8,6 +8,7 @@ predictable, with xP and the rank-relative fields.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Sequence
 
@@ -36,6 +37,7 @@ def compute_xp_records(
     availability: dict | None = None,
     low_coverage: int = LOW_COVERAGE,
     min_rate_minutes: int = MIN_RATE_MINUTES,
+    market_lambdas: dict | None = None,
 ):
     """Return (records, skipped_fixtures, coverage).
 
@@ -69,11 +71,20 @@ def compute_xp_records(
         away_fd = tmap.get(away_name) or f"__unknown__:{away_id}"
         if not (engine.knows(home_fd) and engine.knows(away_fd)):
             fallback.append((home_name, away_name))
-        pred = engine.predict(home_fd, away_fd)
-        sides = [
-            (home_id, pred.lam_home, pred.clean_sheet_home, pred.lam_away),
-            (away_id, pred.lam_away, pred.clean_sheet_away, pred.lam_home),
-        ]
+        mkt = market_lambdas.get((home_id, away_id)) if market_lambdas else None
+        if mkt is not None:
+            # market-implied lambdas; clean sheet ~ P(opponent scores 0) under Poisson.
+            lh, la = mkt
+            sides = [
+                (home_id, lh, math.exp(-la), la),
+                (away_id, la, math.exp(-lh), lh),
+            ]
+        else:
+            pred = engine.predict(home_fd, away_fd)
+            sides = [
+                (home_id, pred.lam_home, pred.clean_sheet_home, pred.lam_away),
+                (away_id, pred.lam_away, pred.clean_sheet_away, pred.lam_home),
+            ]
         for team_id, team_lambda, p_cs, opp_lambda in sides:
             low_cov = coverage.get(team_id, 0) < low_coverage
             for p in by_team.get(team_id, []):
@@ -142,6 +153,7 @@ def compute_multi_gw_xp(
     ticker: dict,
     gws: Sequence[int],
     availability: dict | None = None,
+    market_lambdas: dict | None = None,
 ):
     """Per-player xP for each upcoming gameweek, joined to the fixture + true FDR.
 
@@ -155,7 +167,7 @@ def compute_multi_gw_xp(
     for g in gws:
         recs, _, _ = compute_xp_records(
             players, fpl_teams, fixtures_by_gw.get(g, []), engine, tmap, prices,
-            availability=availability,
+            availability=availability, market_lambdas=market_lambdas,
         )
         xp_by_el: dict = defaultdict(float)
         meta: dict = {}

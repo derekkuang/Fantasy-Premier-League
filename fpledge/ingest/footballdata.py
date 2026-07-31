@@ -18,16 +18,37 @@ from .. import config
 from . import landing
 
 FD_BASE = "https://www.football-data.co.uk/mmz4281"
+FD_FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"  # upcoming, with pre-match odds
 
-# Preference order for closing 1X2 odds: Pinnacle-closing, market-avg-closing,
-# Bet365-closing, then non-closing fallbacks for older seasons.
+# Preference order for 1X2 odds: Pinnacle-closing, market-avg-closing, Bet365-closing, then
+# pre-match (market-avg / Pinnacle / Bet365) — the last three cover the upcoming fixtures file.
 _ODDS_TRIPLES = [
     ("PSCH", "PSCD", "PSCA"),
     ("AvgCH", "AvgCD", "AvgCA"),
     ("B365CH", "B365CD", "B365CA"),
+    ("AvgH", "AvgD", "AvgA"),
     ("PSH", "PSD", "PSA"),
     ("B365H", "B365D", "B365A"),
 ]
+
+# Over/Under 2.5 goals, same closing-first-then-pre-match preference.
+_OU_PAIRS = [
+    ("PC>2.5", "PC<2.5"),
+    ("AvgC>2.5", "AvgC<2.5"),
+    ("B365C>2.5", "B365C<2.5"),
+    ("Avg>2.5", "Avg<2.5"),
+    ("P>2.5", "P<2.5"),
+    ("B365>2.5", "B365<2.5"),
+]
+
+
+def _ou_odds(row: dict):
+    for over, under in _OU_PAIRS:
+        try:
+            return float(row[over]), float(row[under])
+        except (KeyError, ValueError, TypeError):
+            continue
+    return None, None
 
 
 def _parse_date(s: str):
@@ -93,6 +114,33 @@ def parse_csv(text: str, label: str) -> list[dict]:
             }
         )
     return matches
+
+
+def fetch_upcoming(division: str = "E0") -> list[dict]:
+    """Upcoming fixtures with pre-match 1X2 + O/U 2.5 odds (football-data's fixtures.csv).
+
+    Returns [] out of season / before books post lines (the file only holds the next ~week).
+    Each match: {home, away, o_h, o_d, o_a, o_over, o_under}. Used to derive market-implied
+    lambdas for the near gameweek(s); the engine is the fallback for fixtures without odds.
+    """
+    import requests  # noqa: PLC0415
+
+    resp = requests.get(FD_FIXTURES_URL, timeout=config.HTTP_TIMEOUT)
+    resp.raise_for_status()
+    landing.land(resp.text, source="football_data", endpoint="fixtures", season=config.SEASON)
+    out: list[dict] = []
+    for row in csv.DictReader(io.StringIO(resp.text)):
+        if row.get("Div") != division or not row.get("HomeTeam"):
+            continue
+        oh, od, oa = _closing_odds(row)   # falls through to pre-match Avg/PS/B365 for upcoming
+        oo, uu = _ou_odds(row)
+        if None in (oh, od, oa, oo, uu):
+            continue
+        out.append({
+            "home": row["HomeTeam"].strip(), "away": row["AwayTeam"].strip(),
+            "o_h": oh, "o_d": od, "o_a": oa, "o_over": oo, "o_under": uu,
+        })
+    return out
 
 
 def load_seasons(codes: list[str], division: str = "E0") -> list[dict]:

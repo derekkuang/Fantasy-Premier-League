@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from . import config
+from .betting.market_lambda import market_lambdas as _market_lambdas
 from .fdr import fixture_ticker
 from .ingest import footballdata
 from .models.dixon_coles import DixonColesModel
@@ -16,6 +17,33 @@ from .models.teammap import build_team_map
 from .models.xp_table import compute_multi_gw_xp, compute_xp_records
 from .storage import duck
 from .storage import load as storeload
+
+
+def _market_lambda_map(fpl_teams: dict, tmap: dict) -> dict:
+    """{(home_id, away_id): (lam_home, lam_away)} from upcoming betting odds, or {} if none
+    are available (preseason / before books post lines / fetch failure).
+
+    Our validation showed the market out-predicts the engine on outcomes, so where a fixture
+    has a de-vigged line we use market-implied lambdas for its FDR + xP; the engine is the
+    fallback for every fixture not in this map. Never fails the precompute over odds.
+    """
+    try:
+        upcoming = footballdata.fetch_upcoming()
+    except Exception:  # noqa: BLE001 — odds are strictly optional
+        return {}
+    fd_to_fpl = {fd: name for name, fd in tmap.items() if fd}
+    name_to_id = {name: tid for tid, name in fpl_teams.items()}
+    out: dict = {}
+    for m in upcoming:
+        hid = name_to_id.get(fd_to_fpl.get(m["home"]))
+        aid = name_to_id.get(fd_to_fpl.get(m["away"]))
+        if hid is None or aid is None:
+            continue
+        try:
+            out[(hid, aid)] = _market_lambdas(m["o_h"], m["o_d"], m["o_a"], m["o_over"], m["o_under"])
+        except Exception:  # noqa: BLE001 — skip a malformed odds row
+            continue
+    return out
 
 SEASONS = ["2324", "2425", "2526"]
 PLAYER_COLS = [
@@ -102,15 +130,17 @@ def assemble_for_serving(
     inp = _load_inputs(gw, horizon=horizon, seasons=seasons)
     if inp is None:
         return None
+    # Market-implied lambdas for fixtures with a betting line (near GWs); engine is fallback.
+    market = _market_lambda_map(inp["fpl_teams"], inp["tmap"])
     gw_fixtures = [(h, a) for (g, h, a) in inp["fixtures"] if g == gw]
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
-        inp["prices"], availability=inp["availability"],
+        inp["prices"], availability=inp["availability"], market_lambdas=market,
     )
     ticker_fixtures = [{"gw": g, "home_id": h, "away_id": a} for (g, h, a) in inp["fixtures"]]
     ticker = fixture_ticker(
         inp["engine"], ticker_fixtures, inp["fpl_teams"], inp["tmap"],
-        start_gw=gw, horizon=horizon,
+        start_gw=gw, horizon=horizon, market_lambdas=market,
     )
 
     # Per-player xP for each upcoming GW (same engine/shares, different opponent), so the
@@ -121,6 +151,7 @@ def assemble_for_serving(
     multi = compute_multi_gw_xp(
         inp["players"], inp["fpl_teams"], fixtures_by_gw, inp["engine"], inp["tmap"],
         inp["prices"], ticker, sorted(fixtures_by_gw), availability=inp["availability"],
+        market_lambdas=market,
     )
     for r in records:
         fx = multi.get(r["element_id"], [])

@@ -44,26 +44,37 @@ def fixture_ticker(
     tmap: dict,
     start_gw: int,
     horizon: int = 5,
+    market_lambdas: dict | None = None,
 ) -> dict:
     """Per team, the upcoming `horizon` fixtures with expected goals + FDR ratings.
 
     fixtures: dicts with gw, home_id, away_id. Returns {team_id: [fixture-dicts sorted by gw]}.
+    Each row is tagged `source`: "market" when a de-vigged betting line supplied the lambdas
+    (near gameweeks), else "model" (the engine). The UI reads lam_for + lam_against for the
+    high/low-scoring and favourite cues.
     """
     ticker: dict = defaultdict(list)
     for fx in fixtures:
         if not (start_gw <= fx["gw"] < start_gw + horizon):
             continue
         h, a = fx["home_id"], fx["away_id"]
-        pred = engine.predict(_label(h, fpl_teams, tmap), _label(a, fpl_teams, tmap))
+        mkt = market_lambdas.get((h, a)) if market_lambdas else None
+        if mkt is not None:
+            lam_home, lam_away, source = mkt[0], mkt[1], "market"
+        else:
+            pred = engine.predict(_label(h, fpl_teams, tmap), _label(a, fpl_teams, tmap))
+            lam_home, lam_away, source = pred.lam_home, pred.lam_away, "model"
         ticker[h].append({
             "gw": fx["gw"], "opp_id": a, "opp": fpl_teams.get(a), "home": True,
-            "lam_for": pred.lam_home, "lam_against": pred.lam_away,
-            "attack_fdr": attack_fdr(pred.lam_home), "defence_fdr": defence_fdr(pred.lam_away),
+            "lam_for": lam_home, "lam_against": lam_away,
+            "attack_fdr": attack_fdr(lam_home), "defence_fdr": defence_fdr(lam_away),
+            "source": source,
         })
         ticker[a].append({
             "gw": fx["gw"], "opp_id": h, "opp": fpl_teams.get(h), "home": False,
-            "lam_for": pred.lam_away, "lam_against": pred.lam_home,
-            "attack_fdr": attack_fdr(pred.lam_away), "defence_fdr": defence_fdr(pred.lam_home),
+            "lam_for": lam_away, "lam_against": lam_home,
+            "attack_fdr": attack_fdr(lam_away), "defence_fdr": defence_fdr(lam_home),
+            "source": source,
         })
     for t in ticker:
         ticker[t].sort(key=lambda x: x["gw"])

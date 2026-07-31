@@ -11,6 +11,7 @@ rolling accumulator, and the engine trains only on fixtures with gw < N.
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
@@ -48,6 +49,7 @@ def validate_xp(
     xg_mode: str = "season",
     bonus_mode: str = "rate",
     return_records: bool = False,
+    fixture_lambdas: dict | None = None,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
 
@@ -113,9 +115,18 @@ def validate_xp(
                 my_xp, scored = 0.0, False
                 for r in rows:  # sum over the team's fixtures this GW (usually one)
                     opp = r["opponent_team"]
-                    if not (engine.knows(str(tid)) and engine.knows(str(opp))):
+                    home_id, away_id = (tid, opp) if r["was_home"] else (opp, tid)
+                    mkt = fixture_lambdas.get((home_id, away_id)) if fixture_lambdas else None
+                    if mkt is not None:
+                        # market-implied lambdas for this fixture; clean sheet ~ P(opp scores 0)
+                        lam_h, lam_a = mkt
+                        if r["was_home"]:
+                            lam, opp_lam, p_cs = lam_h, lam_a, math.exp(-lam_a)
+                        else:
+                            lam, opp_lam, p_cs = lam_a, lam_h, math.exp(-lam_h)
+                    elif not (engine.knows(str(tid)) and engine.knows(str(opp))):
                         continue
-                    if r["was_home"]:
+                    elif r["was_home"]:
                         pr = engine.predict(str(tid), str(opp))
                         lam, p_cs, opp_lam = pr.lam_home, pr.clean_sheet_home, pr.lam_away
                     else:
