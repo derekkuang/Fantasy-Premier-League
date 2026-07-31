@@ -91,7 +91,7 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
 
 
 def assemble_for_serving(
-    gw: int, horizon: int = 5, seasons: list[str] | None = None
+    gw: int, horizon: int = 8, seasons: list[str] | None = None
 ) -> dict | None:
     """Everything the API precompute needs from one engine fit: the GW xP records AND the
     true-FDR fixture ticker for [gw, gw+horizon). Returns None if there is no player data.

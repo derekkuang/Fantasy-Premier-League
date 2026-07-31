@@ -19,7 +19,7 @@ from fpledge.api.precompute import run  # noqa: E402
 
 def main() -> None:
     gw = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    horizon = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    horizon = int(sys.argv[2]) if len(sys.argv) > 2 else 8
     res = run(gw, horizon=horizon)
     m = res["meta"]
     print(f"wrote {res['path']}")

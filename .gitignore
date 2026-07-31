@@ -22,3 +22,6 @@ mlartifacts/
 .DS_Store
 .idea/
 .vscode/
+
+# Design handoff bundles (prototypes / references, not source)
+design_handoff_*/

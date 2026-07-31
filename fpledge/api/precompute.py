@@ -15,7 +15,7 @@ from ..gw import assemble_for_serving
 from . import MODEL_VER, store
 
 
-def build_payload(gw: int, horizon: int = 5, run_ts: str | None = None) -> dict:
+def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None) -> dict:
     """Assemble the serving payload for a gameweek (no I/O side effects besides the fit).
 
     Raises RuntimeError if there is no player data for the configured season.
@@ -43,7 +43,7 @@ def build_payload(gw: int, horizon: int = 5, run_ts: str | None = None) -> dict:
     }
 
 
-def run(gw: int, horizon: int = 5, run_ts: str | None = None) -> dict:
+def run(gw: int, horizon: int = 8, run_ts: str | None = None) -> dict:
     """Precompute + persist the serving artifact for a gameweek. Returns {path, meta}."""
     payload = build_payload(gw, horizon=horizon, run_ts=run_ts)
     path = store.write_gw(gw, payload)

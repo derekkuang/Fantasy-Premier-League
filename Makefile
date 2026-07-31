@@ -9,7 +9,7 @@ setup:
 # Phase 0 (API): precompute the serving artifact, then serve it.
 # GW/HORIZON override the defaults, e.g. `make precompute GW=2 HORIZON=6`.
 GW ?= 1
-HORIZON ?= 5
+HORIZON ?= 8
 precompute:
 	.venv/bin/python scripts/precompute.py $(GW) $(HORIZON)
 
