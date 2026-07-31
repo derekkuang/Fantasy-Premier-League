@@ -120,7 +120,7 @@ def test_predictions_sorted_and_projected(client):
     top = body["predictions"][0]
     assert set(top) == {"element_id", "web_name", "position", "team", "price",
                         "xp", "ownership", "diff_value", "x_minutes", "low_coverage",
-                        "xp_next3", "fixtures"}
+                        "captain_score", "xp_next3", "fixtures", "breakdown"}
     assert top["element_id"] == 8 and top["xp"] == 8.0
 
 

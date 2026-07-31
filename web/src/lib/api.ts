@@ -106,6 +106,14 @@ export async function getLatestGw(): Promise<number> {
 }
 
 // --- predictions (per-player xP, precomputed read) -------------------------------- #
+export type PredictionFixture = {
+  gw: number;
+  opp: string;   // opponent club name
+  home: boolean;
+  xp: number;    // that gameweek's xP
+  fdr: number;   // position-appropriate true FDR, 1..5
+};
+
 export type Prediction = {
   element_id: number;
   web_name: string;
@@ -117,6 +125,10 @@ export type Prediction = {
   diff_value: number;
   x_minutes: number;
   low_coverage: boolean;
+  captain_score: number;
+  xp_next3: number;                  // 3-week outlook (sum of the next 3 GWs)
+  fixtures: PredictionFixture[];     // next 5, ordered
+  breakdown: Breakdown | null;       // per-term xP split (Breakdown === the README's XpBreakdown)
 };
 
 export type PredictionsResponse = { meta: Meta; predictions: Prediction[] };
