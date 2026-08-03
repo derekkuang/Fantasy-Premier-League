@@ -23,6 +23,11 @@ dev = ["pytest>=8", "ruff>=0.4"]
 # stdlib-only core or model fitting. httpx backs FastAPI's TestClient.
 api = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "httpx>=0.27"]
 
+# Match briefings (fpledge.brief). Optional on purpose: with neither this package nor an
+# ANTHROPIC_API_KEY, every briefing is rendered from the deterministic template instead, and
+# the precompute runs exactly as before. Narration is never allowed to be load-bearing.
+llm = ["anthropic>=0.69"]
+
 # NOTE: the core numeric modules (scoring, betting.odds, eval.metrics,
 # models.match_engine, features.pointintime) are deliberately STDLIB-ONLY so their
 # tests run with nothing but pytest installed. Heavy deps above are only needed
