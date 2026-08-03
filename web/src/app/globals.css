@@ -4,14 +4,41 @@
    no-FOUC script + the toggle), instead of the OS media query. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Themed tokens. `--fg`/`--chip`/`--b10` are the names the risk-band ramp is written in
+   (see lib/risk.ts) — they must resolve in both themes, so they live here rather than as
+   Tailwind utilities. Contrast notes are in the design handoff; the short version is that
+   emerald-600 is 3.77:1 and therefore only legal as LARGE text, which is why small emerald
+   text uses --emerald-text and emerald badges use --emerald-deep under white. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --fg: #171717;
+  --chip: rgba(0, 0, 0, .05);
+  --b10: rgba(0, 0, 0, .10);
+  --emerald-text: #047857;              /* 5.09:1 — small emerald text */
+  --emerald-deep: #065f46;              /* 7.0:1 under white — emerald badges */
+  --band2-bg: rgba(5, 150, 105, .18);
+  --band2-fg: #065f46;
+  --amber-fg: #92400e;
+  --amber-bg: rgba(245, 158, 11, .10);
+  --amber-br: rgba(245, 158, 11, .35);
+  --rose: #be123c;
 }
 
 :root[data-theme="dark"] {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --fg: #ededed;
+  --chip: rgba(255, 255, 255, .10);
+  --b10: rgba(255, 255, 255, .10);
+  --emerald-text: #34d399;
+  --emerald-deep: #065f46;
+  --band2-bg: rgba(5, 150, 105, .24);
+  --band2-fg: #6ee7b7;
+  --amber-fg: #fcd34d;
+  --amber-bg: rgba(245, 158, 11, .12);
+  --amber-br: rgba(245, 158, 11, .30);
+  --rose: #fb7185;
 }
 
 /* No-JS fallback: honour the OS preference only when no explicit theme is set. */
@@ -19,6 +46,16 @@
   :root:not([data-theme]) {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --fg: #ededed;
+    --chip: rgba(255, 255, 255, .10);
+    --b10: rgba(255, 255, 255, .10);
+    --emerald-text: #34d399;
+    --band2-bg: rgba(5, 150, 105, .24);
+    --band2-fg: #6ee7b7;
+    --amber-fg: #fcd34d;
+    --amber-bg: rgba(245, 158, 11, .12);
+    --amber-br: rgba(245, 158, 11, .30);
+    --rose: #fb7185;
   }
 }
 
