@@ -104,7 +104,7 @@ function Controls({
   setQ: (s: string) => void;
 }) {
   const pill = (active: boolean) =>
-    `flex-none rounded-full border font-semibold ${
+    `press flex-none rounded-full border font-semibold ${
       active ? "border-emerald-600 bg-emerald-600 text-white" : "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55"
     }`;
   return (
@@ -151,7 +151,7 @@ function PlayerRow({ p, rank, metric, onOpen }: { p: Prediction; rank: number; m
           onOpen(p.element_id);
         }
       }}
-      className="flex min-h-11 cursor-pointer items-center gap-2 border-b border-black/[.06] px-2.5 py-[7px] hover:bg-black/[.02] focus:outline-none focus-visible:bg-black/[.03] dark:border-white/[.06] dark:hover:bg-white/[.03]"
+      className="press flex min-h-11 cursor-pointer items-center gap-2 border-b border-black/[.06] px-2.5 py-[7px] hover:bg-black/[.02] focus:outline-none focus-visible:bg-black/[.03] dark:border-white/[.06] dark:hover:bg-white/[.03]"
     >
       <span className="w-4 flex-none text-right font-mono text-[10px] tabular-nums text-black/35 dark:text-white/35">{rank}</span>
       <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={22} height={21} className="block flex-none" />

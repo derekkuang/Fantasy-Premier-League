@@ -27,7 +27,7 @@ const CELL_W: Record<Win, string> = {
 };
 const TEAM_W = "w-[132px] min-w-[132px] lg:w-[150px] lg:min-w-[150px]";
 
-const PILL = "cursor-pointer rounded-full border px-[11px] py-[5px] text-xs font-semibold";
+const PILL = "press cursor-pointer rounded-full border px-[11px] py-[5px] text-xs font-semibold";
 const PILL_ON = "border-emerald-600 bg-emerald-600 text-white";
 const PILL_OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55";
 const GROUP_LABEL = "text-[10px] font-semibold uppercase tracking-[.07em] text-black/40 dark:text-white/40";

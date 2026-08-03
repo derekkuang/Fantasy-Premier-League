@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { fdrFor, type SquadPlayer, type TickerFixture } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
+import { useDismissable } from "@/lib/use-dismissable";
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
@@ -37,11 +38,12 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
   swapOptions: SwapOption[];
   onClose: () => void;
 }) {
+  const { closing, dismiss } = useDismissable(onClose);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && dismiss();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [dismiss]);
 
   const club = getClub(player.team);
   const b = player.breakdown;
@@ -50,8 +52,12 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative flex max-h-[88vh] w-full max-w-[430px] flex-col gap-3.5 overflow-y-auto rounded-t-[20px] border border-b-0 border-black/10 bg-white px-4 pb-6 pt-3.5 shadow-[0_-8px_30px_rgba(0,0,0,.25)] dark:border-white/10 dark:bg-[#0a0a0a]">
+      <div className="sheet-backdrop absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+        data-closing={closing}
+        onClick={dismiss} />
+      <div
+        data-closing={closing}
+        className="sheet-panel relative flex max-h-[88vh] w-full max-w-[430px] flex-col gap-3.5 overflow-y-auto rounded-t-[20px] border border-b-0 border-black/10 bg-white px-4 pb-6 pt-3.5 shadow-[0_-8px_30px_rgba(0,0,0,.25)] dark:border-white/10 dark:bg-[#0a0a0a]">
         {/* header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -64,7 +70,7 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={dismiss}
             aria-label="Close"
             className="grid h-7 w-7 flex-none place-items-center rounded-full border border-black/10 text-black/50 hover:text-black dark:border-white/10 dark:text-white/50 dark:hover:text-white"
           >

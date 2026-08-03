@@ -72,3 +72,116 @@ body {
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ============================================================================
+   MOTION
+
+   This app is dense, data-heavy and read rather than watched, so it earns very
+   little motion. Deliberately NOT animated: pagination page changes, the
+   fixture ticker's lens switch, and filter-driven list re-renders — all of them
+   move content a user is in the middle of reading, which hinders rather than
+   helps. What IS animated is limited to four things: surfaces that would
+   otherwise teleport, press feedback, and the skeleton-to-content handoff.
+
+   Everything below animates transform/opacity only, stays under 400ms, and has
+   a reduced-motion branch that softens to a fade rather than removing the state
+   change entirely.
+   ========================================================================= */
+
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-press: 140ms;
+  --dur-fast: 200ms;
+  --dur-sheet: 400ms;
+}
+
+/* --- press feedback -------------------------------------------------------
+   Rows, pills, preset cards and pager buttons had no :active state at all. On
+   a mobile-first app where tapping a row opens a sheet ~40ms later, that reads
+   as an unresponsive tap. Kept near-imperceptible (0.98, 140ms) because these
+   are pressed tens of times a session — anything more becomes tiring. */
+.press {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.press:active {
+  transform: scale(0.98);
+}
+
+/* --- sheet: backdrop + panel ---------------------------------------------
+   `@starting-style` gives the entry with no JS. The exit needs the element to
+   stay mounted for its duration, which a `{open && <Sheet/>}` conditional
+   render cannot do — so the sheets set data-closing and defer unmount (see
+   lib/use-dismissable.ts). Entry and exit take the SAME path in reverse. */
+.sheet-backdrop {
+  opacity: 1;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+@starting-style {
+  .sheet-backdrop { opacity: 0; }
+}
+.sheet-backdrop[data-closing="true"] { opacity: 0; }
+
+/* Mobile: a bottom sheet, so it comes from and returns to the bottom edge.
+   Percentages, not pixels, so it works at any sheet height. */
+.sheet-panel {
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform var(--dur-sheet) var(--ease-drawer),
+    opacity var(--dur-fast) var(--ease-out);
+}
+@starting-style {
+  .sheet-panel { transform: translateY(100%); }
+}
+.sheet-panel[data-closing="true"] { transform: translateY(100%); }
+
+/* Desktop: it is a centred dialog, not a drawer — it has no edge to come from,
+   so it scales up in place instead. Never from scale(0). */
+@media (min-width: 64rem) {
+  .sheet-panel {
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out);
+  }
+  @starting-style {
+    .sheet-panel { transform: scale(0.96); opacity: 0; }
+  }
+  .sheet-panel[data-closing="true"] { transform: scale(0.96); opacity: 0; }
+}
+
+/* --- skeleton -> content --------------------------------------------------
+   The team dashboard swaps a pulsing skeleton for real content in one frame.
+   A short fade bridges it so the page settles instead of snapping. */
+.enter {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+@starting-style {
+  .enter { opacity: 0; transform: translateY(4px); }
+}
+
+/* --- reduced motion -------------------------------------------------------
+   Softened to a plain fade rather than switched off: the state change still
+   needs to be legible, it just stops travelling across the screen. */
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press:active {
+    transition: none;
+    transform: none;
+  }
+
+  .sheet-panel,
+  .sheet-panel[data-closing="true"],
+  .enter {
+    transform: none;
+    transition: opacity 120ms linear;
+  }
+  @starting-style {
+    .sheet-panel { transform: none; opacity: 0; }
+    .enter { transform: none; opacity: 0; }
+  }
+}

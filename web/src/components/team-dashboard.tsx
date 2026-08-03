@@ -81,7 +81,11 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
   }, [open, starterIds, basis]);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6">
+    <main
+      // `enter` bridges the swap from the pulsing skeleton in loading.tsx — without it
+      // the page snaps from placeholder to content in a single frame
+      className="enter mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6"
+    >
       <header className="flex items-end justify-between gap-3">
         <div className="flex flex-col gap-0.5">
           <Link href="/" className="text-[13px] text-emerald-600 hover:underline">

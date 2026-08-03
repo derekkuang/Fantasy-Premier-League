@@ -38,7 +38,7 @@ const DEFAULTS: Filters = {
 const TIERS = [1, 2, 3, 4, 5];
 const POSITIONS: Pos[] = ["ALL", "GK", "DEF", "MID", "FWD"];
 
-const PILL = "min-h-[30px] cursor-pointer rounded-full border px-2.5 py-[5px] text-xs font-semibold";
+const PILL = "press min-h-[30px] cursor-pointer rounded-full border px-2.5 py-[5px] text-xs font-semibold";
 const PILL_ON = "border-emerald-600 bg-emerald-600 text-white";
 const PILL_OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/60";
 const LABEL = "text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60";
@@ -104,7 +104,7 @@ function PresetRow({ active, apply }: { active: string | null; apply: (n: string
           <button
             key={d.name}
             onClick={() => apply(d.name, d.patch)}
-            className={`flex cursor-pointer flex-col gap-0.5 rounded-[12px] border px-3 py-2.5 text-left ${
+            className={`press flex cursor-pointer flex-col gap-0.5 rounded-[12px] border px-3 py-2.5 text-left ${
               on ? "border-emerald-600 bg-emerald-600" : "border-black/10 dark:border-white/10"
             }`}
           >
@@ -181,7 +181,7 @@ function FilterPanel({
               onClick={() => patch({ bands: on ? f.bands.filter((x) => x !== t) : [...f.bands, t].sort() })}
               // inactive falls back to the standard inactive pill — as utility classes, not an
               // inline colour, so it still flips with the theme
-              className={`flex min-h-[30px] cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-[11px] font-semibold ${
+              className={`press flex min-h-[30px] cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-[11px] font-semibold ${
                 on ? "" : PILL_OFF
               }`}
               style={on ? { background: bs.bg, color: bs.fg, borderColor: bs.border } : undefined}
@@ -274,7 +274,7 @@ function PlayerRow({
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen(p)}
       role="button"
       tabIndex={0}
-      className="flex min-h-[60px] cursor-pointer items-center gap-2 border-b border-black/[.06] px-2.5 py-2.5 hover:bg-black/[.02] dark:border-white/[.06] dark:hover:bg-white/[.03]"
+      className="press flex min-h-[60px] cursor-pointer items-center gap-2 border-b border-black/[.06] px-2.5 py-2.5 hover:bg-black/[.02] dark:border-white/[.06] dark:hover:bg-white/[.03]"
     >
       <span className="w-[15px] flex-none text-right font-mono text-[10px] tabular-nums text-black/55 dark:text-white/60">
         {rank}

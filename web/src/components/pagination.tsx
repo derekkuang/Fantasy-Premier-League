@@ -13,7 +13,7 @@ export type PageSize = (typeof SIZES)[number];
 export const DEFAULT_PAGE_SIZE: PageSize = 50;
 
 const BTN =
-  "min-h-[30px] min-w-[30px] cursor-pointer rounded-full border px-2.5 py-[5px] text-xs font-semibold disabled:cursor-default disabled:opacity-40";
+  "press min-h-[30px] min-w-[30px] cursor-pointer rounded-full border px-2.5 py-[5px] text-xs font-semibold disabled:cursor-default disabled:opacity-40";
 const ON = "border-emerald-600 bg-emerald-600 text-white";
 const OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/60";
 
