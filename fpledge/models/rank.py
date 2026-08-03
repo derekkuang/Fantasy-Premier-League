@@ -47,6 +47,45 @@ def captain_rank_score(xp: float, eo: float) -> float:
     return 2.0 * xp * (1.0 - eo)
 
 
+# --- the standardised risk band ---------------------------------------------------- #
+# `diff_value` and `template_risk` are in expected-points-vs-the-field, which is the right
+# unit for RANKING but a terrible one for reading: "4.48" carries no scale, no direction and
+# no sense of whether it is large. This bands the same decision onto 1-5, matching the FDR
+# scale the app already teaches (low = safe/conventional, high = volatile/contrarian) so it
+# can reuse the existing colour ramp, digit glyph and legend pattern.
+#
+# It is derived from OWNERSHIP ALONE and is deliberately not a quality score: it says how
+# contrarian a pick is, never how good. Quality stays with xP and the xP floor. Thresholds
+# are FPL community convention, not fitted — they are fixed rather than pool percentiles so a
+# player's band means the same thing from one gameweek to the next.
+# KEEP IN SYNC with BAND_RANGE in web/src/lib/risk.ts, which prints these cut points in the
+# legend and in every row's tooltip — a mismatch makes the UI state a threshold that isn't
+# real. `test_risk_tier_cut_points_match_the_published_ranges` guards the pair.
+RISK_TIERS = (
+    (30.0, 1, "Template"),      # nearly everyone owns them; not owning is the risk
+    (15.0, 2, "Popular"),
+    (7.0, 3, "Emerging"),
+    (2.0, 4, "Differential"),
+    (0.0, 5, "Deep punt"),      # under 2% owned — a genuine swing either way
+)
+
+
+def risk_tier(ownership_pct: float) -> int:
+    """Ownership banded 1 (template) .. 5 (deep punt)."""
+    for threshold, tier, _ in RISK_TIERS:
+        if ownership_pct >= threshold:
+            return tier
+    return 5
+
+
+def risk_label(tier: int) -> str:
+    """The human name for a risk tier ("Differential")."""
+    for _, t, label in RISK_TIERS:
+        if t == tier:
+            return label
+    return ""
+
+
 def differential_captain_index(xps, eos, alpha: float = 0.8):  # noqa: ANN001
     """Index of the best DIFFERENTIAL captain among parallel xps/eos, subject to an xP floor.
 

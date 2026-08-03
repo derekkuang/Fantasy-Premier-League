@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from . import config
+from . import config, playermeta
 from .betting.market_lambda import market_lambdas as _market_lambdas
 from .fdr import fixture_ticker
 from .ingest import footballdata
+from .lineup import projected_xi
+from .matches import match_previews
 from .models.dixon_coles import DixonColesModel
 from .models.teammap import build_team_map
 from .models.xp_table import compute_multi_gw_xp, compute_xp_records
@@ -90,6 +92,9 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         e["code"]: (e.get("chance_of_playing_next_round"), e.get("status"))
         for e in boot["elements"]
     }
+    # Descriptive per-player context (availability reason, form, price momentum, set-piece
+    # duties) attached to each record. Changes no projection — it explains them.
+    meta = playermeta.player_meta(boot)
 
     matches = footballdata.load_seasons(seasons or SEASONS)
     engine = DixonColesModel(half_life_days=180).fit(matches)
@@ -98,7 +103,8 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
 
     return {
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
-        "prices": prices, "availability": availability, "engine": engine, "tmap": tmap,
+        "prices": prices, "availability": availability, "meta": meta,
+        "engine": engine, "tmap": tmap,
     }
 
 
@@ -110,7 +116,7 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
     gw_fixtures = [(h, a) for (g, h, a) in inp["fixtures"] if g == gw]
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
-        inp["prices"], availability=inp["availability"],
+        inp["prices"], availability=inp["availability"], meta=inp["meta"],
     )
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
@@ -136,9 +142,16 @@ def assemble_for_serving(
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], market_lambdas=market,
+        meta=inp["meta"],
     )
     ticker_fixtures = [{"gw": g, "home_id": h, "away_id": a} for (g, h, a) in inp["fixtures"]]
     ticker = fixture_ticker(
+        inp["engine"], ticker_fixtures, inp["fpl_teams"], inp["tmap"],
+        start_gw=gw, horizon=horizon, market_lambdas=market,
+    )
+    # Per-match scoreline distributions — the engine already builds these for the xP path and
+    # throws them away; this keeps them.
+    previews = match_previews(
         inp["engine"], ticker_fixtures, inp["fpl_teams"], inp["tmap"],
         start_gw=gw, horizon=horizon, market_lambdas=market,
     )
@@ -158,7 +171,18 @@ def assemble_for_serving(
         r["fixtures"] = fx                                     # next GWs: {gw, opp, home, xp, fdr}
         r["xp_next3"] = round(sum(c["xp"] for c in fx[:3]), 2)  # 3-week outlook (incl. this GW)
 
+    # Projected XIs only for the CURRENT gameweek: a minutes-model lineup eight weeks out is
+    # noise, and attaching 22 players to every future fixture would bloat the payload.
+    for m in previews:
+        if m["gw"] != gw:
+            continue
+        home_xi = projected_xi(records, m["home_id"])
+        away_xi = projected_xi(records, m["away_id"])
+        if home_xi or away_xi:
+            m["lineups"] = {"home": home_xi, "away": away_xi}
+
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
         "fpl_teams": inp["fpl_teams"], "fixture_ticker": ticker, "horizon": horizon,
+        "matches": previews,
     }

@@ -12,6 +12,7 @@ import math
 from collections import defaultdict
 from collections.abc import Sequence
 
+from ..playermeta import EMPTY_META
 from . import rank
 from .minutes import MinutesModel
 from .shares import match_shares, team_minutes
@@ -38,12 +39,17 @@ def compute_xp_records(
     low_coverage: int = LOW_COVERAGE,
     min_rate_minutes: int = MIN_RATE_MINUTES,
     market_lambdas: dict | None = None,
+    meta: dict | None = None,
 ):
     """Return (records, skipped_fixtures, coverage).
 
     records: list of dicts with code, element_id, web_name, position, team_id, team_name,
-    price, x_minutes, xp, ownership, eo, diff_value, captain_score, low_cov.
+    price, x_minutes, xp, ownership, eo, diff_value, template_risk, captain_score, low_cov.
     A fixture is skipped when either team is unknown to the engine (e.g. promoted).
+
+    `meta` ({code: context} from `playermeta.player_meta`) is attached verbatim to each record
+    and never affects any number here — availability already reached the projection through
+    the `availability` argument and the minutes model. This is the explanatory layer.
     """
     minutes_model = MinutesModel()
 
@@ -135,9 +141,16 @@ def compute_xp_records(
                         "ownership": p["ownership"],
                         "eo": eo,
                         "diff_value": rank.differential_value(xp, eo),
+                        # the mirror of diff_value: what NOT owning this player costs you
+                        # against the field. Together they are the template/differential axis.
+                        "template_risk": rank.template_risk(xp, eo),
+                        # the same decision on a readable 1-5 scale (ownership only)
+                        "risk_tier": rank.risk_tier(p["ownership"]),
+                        "risk_label": rank.risk_label(rank.risk_tier(p["ownership"])),
                         "captain_score": rank.captain_rank_score(xp, eo),
                         "low_cov": low_cov,
                         "breakdown": bd,
+                        **(meta.get(p["code"], EMPTY_META) if meta else EMPTY_META),
                     }
                 )
     return records, fallback, coverage

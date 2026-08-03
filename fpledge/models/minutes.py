@@ -86,15 +86,23 @@ class MinutesModel:
     def apply_availability(
         self, pred: MinutesPrediction, chance_of_playing: float | None = None, status: str | None = None
     ) -> MinutesPrediction:
-        """Scale a minutes prediction by live FPL availability (production path).
-
-        status in {i,s,u,n,o} -> won't feature (factor 0); 'd'/None with a chance_of_playing
-        -> that fraction; otherwise unchanged.
-        """
-        if status in _OUT_STATUSES:
-            factor = 0.0
-        elif chance_of_playing is not None:
-            factor = max(0.0, min(chance_of_playing, 100.0)) / 100.0
-        else:
-            factor = 1.0
+        """Scale a minutes prediction by live FPL availability (production path)."""
+        factor = availability_factor(chance_of_playing, status)
         return MinutesPrediction(pred.p_play * factor, pred.p_60 * factor, pred.x_minutes * factor)
+
+
+def availability_factor(
+    chance_of_playing: float | None = None, status: str | None = None
+) -> float:
+    """The multiplier live FPL availability applies to a minutes prediction.
+
+    status in {i,s,u,n,o} -> won't feature (0.0); 'd'/None with a chance_of_playing -> that
+    fraction; otherwise 1.0. Exposed separately from `apply_availability` because the serving
+    layer surfaces it: a player showing 0.00 xP needs to say WHY, and "75% chance to play"
+    is the whole explanation for a quietly discounted projection.
+    """
+    if status in _OUT_STATUSES:
+        return 0.0
+    if chance_of_playing is not None:
+        return max(0.0, min(chance_of_playing, 100.0)) / 100.0
+    return 1.0
