@@ -42,9 +42,9 @@ export default function Home() {
         ))}
       </ul>
 
-      <p className="text-center text-[11px] text-black/40 dark:text-white/40">
+      <p className="text-center text-[11px] text-black/55 dark:text-white/60">
         Honest by design: our xP is about on par with FPL&apos;s own — the edge is the
-        tooling, not a magic forecast. Not affiliated with the Premier League.
+        tooling, not a magic forecast.
       </p>
     </main>
   );

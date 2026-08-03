@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/nav";
+import { Footer } from "@/components/footer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,10 +14,34 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Set NEXT_PUBLIC_SITE_URL to the real origin at deploy time — it is what makes canonical
+// URLs, Open Graph tags, robots.txt and the sitemap emit absolute links instead of localhost.
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+const TITLE = "FPL Edge — your gameweek plan";
+const DESCRIPTION =
+  "Paste your FPL team ID and get a projected score, best captain, best transfer, and a squad-health check. Honest xP, better tooling.";
+
 export const metadata: Metadata = {
-  title: "FPL Edge — your gameweek plan",
-  description:
-    "Paste your FPL team ID and get a projected score, best captain, best transfer, and a squad-health check. Honest xP, better tooling.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: TITLE, template: "%s" },
+  description: DESCRIPTION,
+  applicationName: "FPL Edge",
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: "website",
+    siteName: "FPL Edge",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: "/",
+    locale: "en_GB",
+  },
+  twitter: { card: "summary", title: TITLE, description: DESCRIPTION },
+  // Independent tool — stated in metadata as well as in the footer, so it travels with a share.
+  other: {
+    "disclaimer": "Not affiliated with, endorsed by, or associated with the Premier League or Fantasy Premier League.",
+  },
 };
 
 // Runs before paint: applies the saved theme (or the OS preference on first visit) to
@@ -38,6 +63,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <Nav />
         {children}
+        <Footer />
       </body>
     </html>
   );
