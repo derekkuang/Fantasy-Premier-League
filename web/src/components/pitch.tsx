@@ -5,7 +5,7 @@
 // and call onOpen when a token is tapped.
 
 import { fdrFor, type SquadPlayer, type TickerFixture } from "@/lib/api";
-import { fdrColour, getClub } from "@/lib/clubs";
+import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { formationLabel, POS_ORDER } from "@/lib/formation";
 import { Jersey, JerseyDefs } from "@/components/jersey";
 
@@ -161,8 +161,8 @@ function FixturePip({ pip }: { pip: Pip }) {
         {pip.oppCode} ({pip.venue})
       </span>
       <span
-        className="grid h-[11px] min-w-[11px] place-items-center rounded-[3px] text-[8px] font-bold tabular-nums text-white"
-        style={{ background: fdrColour(pip.fdr) }}
+        className="grid h-[11px] min-w-[11px] place-items-center rounded-[3px] text-[8px] font-bold tabular-nums"
+        style={{ background: fdrColour(pip.fdr), color: fdrGlyph(pip.fdr) }}
       >
         {pip.fdr}
       </span>
@@ -211,8 +211,8 @@ function BenchStrip({ bench, fixtures, onOpen }: { bench: SquadPlayer[]; fixture
                     {pip.oppCode} ({pip.venue})
                   </span>
                   <span
-                    className="grid h-[11px] min-w-[11px] place-items-center rounded-[3px] text-[8px] font-bold tabular-nums text-white"
-                    style={{ background: fdrColour(pip.fdr) }}
+                    className="grid h-[11px] min-w-[11px] place-items-center rounded-[3px] text-[8px] font-bold tabular-nums"
+                    style={{ background: fdrColour(pip.fdr), color: fdrGlyph(pip.fdr) }}
                   >
                     {pip.fdr}
                   </span>

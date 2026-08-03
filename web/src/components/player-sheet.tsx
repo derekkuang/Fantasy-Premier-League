@@ -5,7 +5,7 @@
 
 import { useEffect } from "react";
 import { fdrFor, type SquadPlayer, type TickerFixture } from "@/lib/api";
-import { fdrColour, getClub } from "@/lib/clubs";
+import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
 
 function Tile({ label, value }: { label: string; value: string }) {
@@ -94,7 +94,7 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
                     <span className="text-[9px] tabular-nums text-black/40 dark:text-white/40">GW{fx.gw}</span>
                     <span className="font-mono text-[11px] font-semibold">{getClub(fx.opp).shortCode}</span>
                     <span className="text-[9px] text-black/40 dark:text-white/40">({fx.home ? "H" : "A"})</span>
-                    <span className="w-full rounded-[4px] py-px text-center text-[9px] font-bold tabular-nums text-white" style={{ background: fdrColour(fdr) }}>
+                    <span className="w-full rounded-[4px] py-px text-center text-[9px] font-bold tabular-nums" style={{ background: fdrColour(fdr), color: fdrGlyph(fdr) }}>
                       {fdr}
                     </span>
                     <span className="text-[8px] tabular-nums text-black/40 dark:text-white/40">

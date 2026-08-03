@@ -3,7 +3,7 @@
 // makes a good run readable at a glance. `chip` = mobile (34px cells), `row` = desktop table.
 
 import type { PredictionFixture } from "@/lib/api";
-import { fdrColour, getClub } from "@/lib/clubs";
+import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 
 export function Next3Strip({
   fixtures,
@@ -29,7 +29,7 @@ export function Next3Strip({
             >
               <span className="flex items-center gap-0.5 leading-none">
                 <span className="font-mono text-[8px] text-black/45 dark:text-white/45">{getClub(f.opp).shortCode}</span>
-                <span className="min-w-[7px] rounded-sm text-center text-[7px] font-bold tabular-nums text-white" style={{ background: c }}>
+                <span className="min-w-[7px] rounded-sm text-center text-[7px] font-bold tabular-nums" style={{ background: c, color: fdrGlyph(f.fdr) }}>
                   {f.fdr}
                 </span>
               </span>
@@ -52,7 +52,7 @@ export function Next3Strip({
             className="flex flex-1 items-center justify-center gap-1 rounded-[7px] border border-black/[.06] px-1 py-[3px] dark:border-white/[.06]"
             style={{ background: `color-mix(in oklab, ${c} 12%, transparent)` }}
           >
-            <span className="min-w-[11px] rounded-[3px] text-center text-[9px] font-bold tabular-nums text-white" style={{ background: c }}>
+            <span className="min-w-[11px] rounded-[3px] text-center text-[9px] font-bold tabular-nums" style={{ background: c, color: fdrGlyph(f.fdr) }}>
               {f.fdr}
             </span>
             <span className="font-mono text-[10px] font-semibold">{getClub(f.opp).shortCode}</span>

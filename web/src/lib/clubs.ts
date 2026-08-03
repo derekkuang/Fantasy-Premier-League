@@ -39,8 +39,10 @@ export function getClub(team: string | null | undefined): Club {
   return { ...NEUTRAL, shortCode: team.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "???" };
 }
 
-// True-FDR colour scale, 1 (easiest) → 5 (hardest). White digit sits on top, so each
-// colour is dark enough for legible contrast.
+// True-FDR colour scale, 1 (easiest) → 5 (hardest). A 1–5 digit sits on top of these, and
+// NOT every band can carry a white one: white on #16a34a is 3.30:1 and on #ea580c is 3.56:1,
+// both under the 4.5:1 a small digit needs. Use `fdrGlyph` for the digit colour, never a
+// blanket white.
 const FDR_COLOURS: Record<number, string> = {
   1: "#16a34a", // green
   2: "#4d7c0f", // olive-green
@@ -51,4 +53,16 @@ const FDR_COLOURS: Record<number, string> = {
 
 export function fdrColour(rating: number): string {
   return FDR_COLOURS[rating] ?? FDR_COLOURS[3];
+}
+
+/**
+ * Glyph colour for a 1–5 digit sitting ON fdrColour(fdr).
+ *
+ * Contrast is symmetric, so flipping which side is white changes nothing — the glyph itself
+ * has to change on the two light bands:
+ *   band 1 #16a34a + #0a0a0a = 6.01:1   band 4 #ea580c + #0a0a0a = 5.56:1
+ *   bands 2/3/5 must stay white (near-black there falls to 3.06–4.10:1)
+ */
+export function fdrGlyph(rating: number): string {
+  return rating === 1 || rating === 4 ? "#0a0a0a" : "#ffffff";
 }

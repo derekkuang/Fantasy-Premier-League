@@ -5,7 +5,8 @@
 
 import { useEffect } from "react";
 import type { Prediction } from "@/lib/api";
-import { fdrColour, getClub } from "@/lib/clubs";
+import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
+import { BAND_BLURB, BAND_RANGE, bandStyle } from "@/lib/risk";
 import { Jersey } from "@/components/jersey";
 
 function Tile({ label, value, emerald = false }: { label: string; value: string; emerald?: boolean }) {
@@ -48,6 +49,36 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
   const b = player.breakdown;
   const f2 = (n: number) => n.toFixed(2);
   const isDef = player.position === "GK" || player.position === "DEF";
+  const a = player.availability;
+  const flagged = a.status !== "a";
+  const bs = bandStyle(player.risk_tier);
+
+  // First choice = solid emerald-800 + white (7.0:1). Emerald-600 on a tint measured 3.34:1 —
+  // illegible for the badge this page most needs to land.
+  const duty = (n: number | null, label: string) =>
+    n == null ? null : {
+      label: `${label} · ${n === 1 ? "first" : n === 2 ? "2nd" : `${n}rd`} choice`,
+      border: n === 1 ? "var(--emerald-deep)" : "var(--b10)",
+      bg: n === 1 ? "var(--emerald-deep)" : "transparent",
+      fg: n === 1 ? "#ffffff" : "var(--fg)",
+    };
+  const duties = [
+    duty(player.set_pieces.penalties, "Penalties"),
+    duty(player.set_pieces.corners, "Corners"),
+    duty(player.set_pieces.freekicks, "Free kicks"),
+  ].filter((d): d is NonNullable<typeof d> => d !== null);
+  if (!duties.length) {
+    duties.push({ label: "No listed set-piece duty", border: "var(--b10)", bg: "transparent", fg: "var(--fg)" });
+  }
+
+  // Preseason: both of these are structurally zero for every player until the first deadline.
+  // Say "not yet" rather than implying the player has no form / no price movement.
+  const formNote = player.recent.form === 0
+    ? "Not yet measured — form is 0.0 for every player until the season starts, and lights up on its own after the first deadline."
+    : `Form ${player.recent.form.toFixed(1)} points per match over the last 30 days.`;
+  const priceNote = player.price_moves.change_start === 0 && player.price_moves.net_transfers === 0
+    ? "Nothing yet — prices don't move before the first deadline. When they do, this shows what HAS happened; there is no price-change forecast here."
+    : `£${player.price_moves.change_start.toFixed(1)}m since the season began · net transfers ${player.price_moves.net_transfers.toLocaleString()}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-center lg:p-6">
@@ -73,13 +104,87 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
           </button>
         </div>
 
-        {/* tiles */}
-        <div className="grid grid-cols-5 gap-1.5">
+        {/* availability — the explanation for a number that would otherwise look broken.
+            `factor` has ALREADY been applied to xp and x_minutes by the minutes model; this
+            block says so, and nothing here re-applies it. */}
+        {flagged ? (
+          <div className="flex flex-col gap-1 rounded-[12px] border border-[var(--amber-br)] bg-[var(--amber-bg)] px-3 py-2.5">
+            <span className="text-[13px] font-semibold text-[var(--amber-fg)]">
+              {a.factor === 0
+                ? `${a.label ?? "unavailable"} — projection already zeroed`
+                : `${a.label ?? "doubtful"} — ${a.chance != null ? `${a.chance}% chance to play` : "reduced minutes"}`}
+            </span>
+            <span className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">
+              {a.factor === 0
+                ? `This is why the number reads ${player.xp.toFixed(2)} xP: availability multiplied his expected minutes by 0, so the model has already removed him. Nothing is missing.`
+                : `His expected minutes were multiplied by ${a.factor.toFixed(2)} before xP was computed, so this projection is already discounted — it is not an un-flagged risk.`}
+            </span>
+            {a.news && (
+              <span className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">{a.news}</span>
+            )}
+          </div>
+        ) : (
+          // the absence of a flag is also worth explaining
+          <span className="text-[11px] text-black/55 dark:text-white/60">
+            Available — no discount applied (factor {a.factor.toFixed(2)}).
+          </span>
+        )}
+
+        {/* risk band */}
+        <div
+          className="flex items-center gap-3 rounded-[12px] border px-3 py-2.5"
+          style={{ background: bs.bg, color: bs.fg, borderColor: bs.border }}
+        >
+          <span className="text-[26px] font-bold leading-none tabular-nums">{player.risk_tier}</span>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[13px] font-semibold">
+              {player.risk_label} · {BAND_RANGE[player.risk_tier]} owned
+            </span>
+            <span className="text-[11px] leading-snug">{BAND_BLURB[player.risk_tier]}</span>
+          </span>
+        </div>
+
+        {/* against the average manager — the raw points-vs-field numbers, in words */}
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+            Against the average manager
+          </span>
+          <span className="text-[13px] font-semibold">
+            Owning him gains +{player.diff_value.toFixed(1)} pts on the average manager.
+          </span>
+          <span className="text-[13px] font-semibold">
+            Not owning him costs you {player.template_risk.toFixed(1)} pts.
+          </span>
+          <span className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">
+            The two always add up to his {player.xp.toFixed(2)} xP — that is the whole trade-off:
+            the less the field owns him, the more of his points are yours alone.
+          </span>
+        </div>
+
+        {/* tiles — `diff value` moved into the sentences above, so no bare float remains */}
+        <div className="grid grid-cols-4 gap-1.5">
           <Tile label={`xP GW${gw ?? ""}`} value={player.xp.toFixed(1)} emerald />
           <Tile label="next 3" value={player.xp_next3.toFixed(1)} />
-          <Tile label="x_minutes" value={Math.round(player.x_minutes).toString()} />
-          <Tile label="diff value" value={f2(player.diff_value)} />
-          <Tile label="capt. score" value={f2(player.captain_score)} />
+          <Tile label="expected minutes" value={`${Math.round(player.x_minutes)}′`} />
+          <Tile label="captain upside" value={f2(player.captain_score)} />
+        </div>
+
+        {/* set-piece duty */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+            Set-piece duty
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {duties.map((d) => (
+              <span
+                key={d.label}
+                className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                style={{ background: d.bg, color: d.fg, borderColor: d.border }}
+              >
+                {d.label}
+              </span>
+            ))}
+          </div>
         </div>
 
         {/* next 5 fixtures */}
@@ -100,7 +205,7 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
                     <span className="text-[9px] tabular-nums text-black/40 dark:text-white/40">GW{f.gw}</span>
                     <span className="font-mono text-[11px] font-semibold">{getClub(f.opp).shortCode}</span>
                     <span className="text-[9px] text-black/40 dark:text-white/40">({f.home ? "H" : "A"})</span>
-                    <span className="w-full rounded-[4px] py-px text-center text-[9px] font-bold text-white" style={{ background: c }}>
+                    <span className="w-full rounded-[4px] py-px text-center text-[9px] font-bold" style={{ background: c, color: fdrGlyph(f.fdr) }}>
                       {f.fdr}
                     </span>
                     <span className="text-xs font-bold tabular-nums">{f.xp.toFixed(1)}</span>
@@ -110,6 +215,18 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
             </div>
           </div>
         )}
+
+        {/* recent form + price momentum — both structurally empty in preseason */}
+        <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
+          {[["Recent form", formNote], ["Price momentum", priceNote]].map(([title, note]) => (
+            <div key={title} className="flex flex-col gap-0.5 rounded-[12px] border border-black/[.06] px-2.5 py-2 dark:border-white/[.06]">
+              <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+                {title}
+              </span>
+              <span className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">{note}</span>
+            </div>
+          ))}
+        </div>
 
         {/* why this xP */}
         {b && (
