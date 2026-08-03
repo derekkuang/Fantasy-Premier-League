@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import type { Prediction } from "@/lib/api";
 import { getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
+import { DEFAULT_PAGE_SIZE, Pagination, pageOf, type PageSize } from "@/components/pagination";
 import { Next3Strip } from "@/components/next3-strip";
 import { PredictionSheet } from "@/components/prediction-sheet";
 
@@ -23,10 +24,18 @@ const METRICS: [Metric, string][] = [
 const POSITIONS: Pos[] = ["ALL", "GK", "DEF", "MID", "FWD"];
 
 export function PredictionsExplorer({ predictions }: { predictions: Prediction[] }) {
-  const [metric, setMetric] = useState<Metric>("xp");
-  const [pos, setPos] = useState<Pos>("ALL");
-  const [q, setQ] = useState("");
+  const [metric, setMetricState] = useState<Metric>("xp");
+  const [pos, setPosState] = useState<Pos>("ALL");
+  const [q, setQState] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
+
+  // Any change to what is being ranked or filtered returns to page 1 — re-sorting while on
+  // page 6 leaves you looking at ranks 251-300 of a list you have never seen the top of.
+  const setMetric = (m: Metric) => { setMetricState(m); setPage(1); };
+  const setPos = (p: Pos) => { setPosState(p); setPage(1); };
+  const setQ = (s: string) => { setQState(s); setPage(1); };
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -43,6 +52,7 @@ export function PredictionsExplorer({ predictions }: { predictions: Prediction[]
 
   const open = openId != null ? predictions.find((p) => p.element_id === openId) ?? null : null;
   const gw = predictions[0]?.fixtures?.[0]?.gw;
+  const pg = pageOf(rows, page, pageSize);
 
   return (
     <div className="flex flex-col gap-2">
@@ -54,21 +64,24 @@ export function PredictionsExplorer({ predictions }: { predictions: Prediction[]
         <>
           {/* mobile: hairline-separated rows in one container */}
           <ul className="overflow-hidden rounded-2xl border border-black/10 shadow-sm lg:hidden dark:border-white/10">
-            {rows.map((p, i) => (
-              <PlayerRow key={p.element_id} p={p} rank={i + 1} metric={metric} onOpen={setOpenId} />
+            {pg.slice.map((p, i) => (
+              <PlayerRow key={p.element_id} p={p} rank={pg.from + i + 1} metric={metric} onOpen={setOpenId} />
             ))}
           </ul>
 
           {/* desktop: dense sortable table */}
           <div className="hidden lg:block">
-            <PredictionsTable rows={rows} metric={metric} setMetric={setMetric} gw={gw} onOpen={setOpenId} />
+            <PredictionsTable
+              rows={pg.slice} rankFrom={pg.from} metric={metric} setMetric={setMetric} gw={gw} onOpen={setOpenId}
+            />
           </div>
+
+          <Pagination
+            current={pg.current} pageCount={pg.pageCount} from={pg.from} to={pg.to}
+            total={rows.length} size={pageSize} setPage={setPage} setSize={setPageSize}
+          />
         </>
       )}
-
-      <p className="text-xs tabular-nums text-black/40 dark:text-white/40">
-        {rows.length} of {predictions.length} players
-      </p>
 
       {open && <PredictionSheet player={open} onClose={() => setOpenId(null)} />}
     </div>
@@ -171,12 +184,14 @@ function PlayerRow({ p, rank, metric, onOpen }: { p: Prediction; rank: number; m
 
 function PredictionsTable({
   rows,
+  rankFrom,
   metric,
   setMetric,
   gw,
   onOpen,
 }: {
   rows: Prediction[];
+  rankFrom: number;   // rank of the first row on this page, so numbering continues across pages
   metric: Metric;
   setMetric: (m: Metric) => void;
   gw: number | undefined;
@@ -217,7 +232,7 @@ function PredictionsTable({
                 onClick={() => onOpen(p.element_id)}
                 className="cursor-pointer border-t border-black/[.06] hover:bg-black/[.02] dark:border-white/[.06] dark:hover:bg-white/[.03]"
               >
-                <td className="px-2 py-[7px] font-mono text-[11px] tabular-nums text-black/35 dark:text-white/35">{i + 1}</td>
+                <td className="px-2 py-[7px] font-mono text-[11px] tabular-nums text-black/35 dark:text-white/35">{rankFrom + i + 1}</td>
                 <td className="px-2 py-[7px]">
                   <span className="flex items-center gap-2">
                     <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={24} height={23} className="block flex-none" />

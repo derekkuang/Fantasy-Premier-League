@@ -19,9 +19,10 @@ export default async function PredictionsPage() {
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
       <JerseyDefs />
       <PredictionsExplorer predictions={data.predictions} />
-      <p className="text-center text-[11px] leading-relaxed text-black/40 dark:text-white/40">
-        Generic shirt shapes in factual club colours — no official kits or crests. Not affiliated
-        with the Premier League. xP is model-estimated.
+      {/* affiliation + kit notices live in the global footer */}
+      <p className="text-center text-[11px] leading-relaxed text-black/55 dark:text-white/60">
+        xP is model-estimated: the mean points a player would score across many simulated
+        gameweeks, not a forecast of what they will score in this one.
       </p>
     </PageShell>
   );
