@@ -56,12 +56,37 @@ def _synthetic_payload():
                {"gw": 2, "opp_id": 12, "opp": "Club D3", "home": False,
                 "lam_for": 1.2, "lam_against": 1.5, "attack_fdr": 4, "defence_fdr": 4}],
     }
+    matches = [
+        {"match_id": "1-10-11", "gw": GW,
+         "home_id": 10, "home": "Club A", "away_id": 11, "away": "Club B",
+         "source": "model", "lam_home": 1.8, "lam_away": 0.9,
+         "result": {"home_win": 0.58, "draw": 0.25, "away_win": 0.17},
+         "btts": 0.44, "over_2_5": 0.51, "under_2_5": 0.49,
+         "clean_sheet": {"home": 0.41, "away": 0.17},
+         "most_likely_score": [1, 0],
+         "scorelines": [{"home": 1, "away": 0, "p": 0.14}],
+         "scorelines_p": 0.7,
+         "fdr": {"home": {"attack": 2, "defence": 1}, "away": {"attack": 4, "defence": 4}},
+         "brief": {"headline": "h", "angles": [], "generated_by": "template", "fact_pack": {}}},
+        # a later gameweek: no lineups, no briefing, and no assets on the detail route
+        {"match_id": "2-11-10", "gw": GW + 1,
+         "home_id": 11, "home": "Club B", "away_id": 10, "away": "Club A",
+         "source": "model", "lam_home": 1.1, "lam_away": 1.4,
+         "result": {"home_win": 0.31, "draw": 0.26, "away_win": 0.43},
+         "btts": 0.5, "over_2_5": 0.52, "under_2_5": 0.48,
+         "clean_sheet": {"home": 0.25, "away": 0.33},
+         "most_likely_score": [1, 1],
+         "scorelines": [{"home": 1, "away": 1, "p": 0.12}],
+         "scorelines_p": 0.68,
+         "fdr": {"home": {"attack": 4, "defence": 4}, "away": {"attack": 3, "defence": 3}}},
+    ]
     return {
         "meta": {"gw": GW, "horizon": 5, "model_ver": "test-0.0", "run_ts": "2026-07-28T00:00:00Z",
                  "n_records": len(recs), "fallback_fixtures": 0},
         "fpl_teams": fpl_teams,
         "records": recs,
         "fixture_ticker": ticker,
+        "matches": matches,
     }
 
 
@@ -119,9 +144,31 @@ def test_predictions_sorted_and_projected(client):
     assert xps == sorted(xps, reverse=True)          # ranked by xP
     top = body["predictions"][0]
     assert set(top) == {"element_id", "web_name", "position", "team", "price",
-                        "xp", "ownership", "diff_value", "x_minutes", "low_coverage",
-                        "captain_score", "xp_next3", "fixtures", "breakdown"}
+                        "xp", "ownership", "diff_value", "template_risk", "risk_tier",
+                        "risk_label", "x_minutes", "low_coverage", "captain_score",
+                        "xp_next3", "fixtures", "breakdown", "availability", "recent",
+                        "price_moves", "set_pieces"}
     assert top["element_id"] == 8 and top["xp"] == 8.0
+
+
+def test_context_defaults_when_a_record_predates_the_fields(client):
+    """These test records carry no availability/form/price context. The response must still
+    be shape-total — a served payload precomputed before these fields existed cannot make the
+    frontend null-check an entire branch."""
+    top = client.get(f"/predictions/{GW}").json()["predictions"][0]
+    assert top["availability"]["factor"] == 1.0      # no news == assume fit
+    assert top["availability"]["status"] is None
+    assert top["recent"]["ep_next"] is None
+    assert top["price_moves"]["net_transfers"] == 0
+    assert top["set_pieces"]["penalties"] is None
+    assert top["template_risk"] == 0.0
+
+
+def test_context_flows_through_to_a_squad_row(client):
+    """A flagged player in your own squad is where 'why is he on 0.00?' actually gets asked."""
+    squad = client.get(f"/team/0?gw={GW}").json()["squad"]
+    assert squad, "expected the sample squad to be non-empty"
+    assert all("availability" in row and "set_pieces" in row for row in squad)
 
 
 def test_predictions_missing_gw_is_404(client):
@@ -197,7 +244,9 @@ def test_team_demo_needs_no_client(client):
     body = r.json()
     assert body["projected_points"] is not None
     assert len(body["squad"]) == 15          # 2 GK + 5 DEF + 5 MID + 3 FWD
-    assert body["bank"] == 0.0
+    # bank is what's left of the £100m after building the sample squad — it used to be a
+    # hardcoded 0.0, which made the demo look like a maxed-out team it wasn't
+    assert body["bank"] == round(100.0 - sum(p["price"] for p in body["squad"]), 1)
 
 
 def test_team_unfetchable_entry_is_404_with_helpful_message(client):
@@ -213,3 +262,65 @@ def test_team_api_outage_is_502(client):
     app.dependency_overrides[get_fpl_client] = lambda: _OutageClient()
     r = client.get(f"/team/999999?gw={GW}")
     assert r.status_code == 502              # a network failure is not blamed on the id
+
+
+# --- matches ------------------------------------------------------------------------- #
+def test_matches_lists_every_fixture_in_the_window(client):
+    body = client.get(f"/matches/{GW}").json()
+    assert [m["match_id"] for m in body["matches"]] == ["1-10-11", "2-11-10"]
+    assert body["meta"]["gw"] == GW
+
+
+def test_matches_missing_gw_is_404(client):
+    assert client.get("/matches/99").status_code == 404
+
+
+def test_match_detail_carries_both_clubs_assets_ranked(client):
+    """The "who do I own from this game" view: every player from either side, best xP first."""
+    body = client.get(f"/matches/{GW}/1-10-11").json()
+    assert body["match"]["home"] == "Club A"
+    teams = {a["team"] for a in body["assets"]}
+    assert teams == {"Club A", "Club B"}
+    xps = [a["xp"] for a in body["assets"]]
+    assert xps == sorted(xps, reverse=True)
+
+
+def test_match_detail_omits_assets_for_a_future_gameweek(client):
+    """Ranking this gameweek's xP against a fixture eight weeks out would be meaningless, so
+    the detail route attaches assets only when the match is in the requested gameweek."""
+    body = client.get(f"/matches/{GW}/2-11-10").json()
+    assert body["match"]["gw"] == GW + 1
+    assert body["assets"] == []
+
+
+def test_unknown_match_id_is_404(client):
+    assert client.get(f"/matches/{GW}/9-9-9").status_code == 404
+
+
+def test_payload_without_matches_still_serves(client):
+    """A serving file precomputed before match previews existed must not 500 the route."""
+    store.write_gw(GW + 5, {"meta": {"gw": GW + 5, "model_ver": "old", "run_ts": "x",
+                                     "n_records": 0},
+                            "fpl_teams": {}, "records": [], "fixture_ticker": {}})
+    body = client.get(f"/matches/{GW + 5}").json()
+    assert body["matches"] == []
+
+
+def test_sample_squad_is_a_legal_fpl_team(client):
+    """The sample squad is the primary demo — in preseason the FPL API exposes no real squad,
+    so every visitor without a team id sees this one. An earlier version took the top 2/5/5/3
+    by xP with no constraints and produced a £116.5m side with four players from one club:
+    impossible under the game's rules, and obvious to anyone who plays it."""
+    from collections import Counter
+
+    body = client.get(f"/team/0?gw={GW}").json()
+    squad = body["squad"]
+    assert len(squad) == 15
+
+    counts = Counter(p["position"] for p in squad)
+    assert (counts["GK"], counts["DEF"], counts["MID"], counts["FWD"]) == (2, 5, 5, 3)
+
+    per_club = Counter(p["team"] for p in squad)
+    assert max(per_club.values()) <= 3, f"more than 3 from one club: {per_club}"
+
+    assert round(sum(p["price"] for p in squad), 1) <= 100.0

@@ -4,7 +4,7 @@
 Runs the engine fit once and writes data/serving/gw{gw}.json (xP records + fixture ticker).
 Schedule this weekly in production; the API only ever reads its output.
 
-Usage: python scripts/precompute.py [gw] [horizon]     # defaults: gw=1 horizon=5
+Usage: python scripts/precompute.py [gw] [horizon]     # defaults: gw=1 horizon=8
 """
 
 from __future__ import annotations

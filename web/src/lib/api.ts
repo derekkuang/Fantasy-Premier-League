@@ -36,13 +36,61 @@ export type Breakdown = {
   total: number;
 };
 
-export type SquadPlayer = PlayerLite & {
+// --- per-player context: why a projection looks the way it does ------------------- //
+// None of this moves a number — availability already reached the projection through the
+// minutes model. It exists so the UI can EXPLAIN a number instead of just printing it.
+
+/** `factor` is the exact multiplier availability applied to the minutes model: 0 for
+ *  injured/suspended, chance/100 for doubtful, 1 otherwise. A player on 0.00 xP with
+ *  factor 0 is flagged, not broken. */
+export type Availability = {
+  status: string | null;   // FPL code: a | d | i | s | u | n | o
+  label: string | null;    // human form of the code ("doubtful")
+  chance: number | null;   // chance_of_playing_next_round, 0-100
+  factor: number;
+  news: string;            // e.g. "Groin injury - Expected back 21 Aug"
+  news_added: string | null;
+};
+
+export type Recent = {
+  form: number;             // mean points over the last 30 days — 0 for everyone in preseason
+  points_per_game: number;  // season-to-date; the honest fallback while form is still 0
+  ep_next: number | null;   // FPL's OWN expected points — the benchmark this model is scored against
+};
+
+/** All zero until the season starts — prices do not move in preseason. */
+export type PriceMoves = {
+  change_event: number;    // £m moved this gameweek
+  change_start: number;    // £m moved since the season began
+  transfers_in: number;
+  transfers_out: number;
+  net_transfers: number;
+};
+
+/** Set-piece duty, 1 = first choice. null = no listed duty (the common case). */
+export type SetPieces = {
+  penalties: number | null;
+  corners: number | null;
+  freekicks: number | null;
+};
+
+export type PlayerContext = {
+  availability: Availability;
+  recent: Recent;
+  price_moves: PriceMoves;
+  set_pieces: SetPieces;
+};
+
+export type SquadPlayer = PlayerLite & PlayerContext & {
   position: "GK" | "DEF" | "MID" | "FWD";
   ownership: number;
   is_starter: boolean;
   is_captain: boolean;
   x_minutes?: number;
   diff_value?: number;
+  template_risk?: number;
+  risk_tier?: number;
+  risk_label?: string;
   captain_score?: number;
   breakdown?: Breakdown | null;
 };
@@ -75,6 +123,7 @@ export type Meta = {
   model_ver: string;
   run_ts: string;
   n_records: number;
+  horizon?: number;  // gameweeks the precompute carried (optional: older payloads predate it)
 };
 
 export type TeamResponse = {
@@ -114,7 +163,7 @@ export type PredictionFixture = {
   fdr: number;   // position-appropriate true FDR, 1..5
 };
 
-export type Prediction = {
+export type Prediction = PlayerContext & {
   element_id: number;
   web_name: string;
   position: "GK" | "DEF" | "MID" | "FWD";
@@ -122,7 +171,10 @@ export type Prediction = {
   price: number;
   xp: number;
   ownership: number;
-  diff_value: number;
+  diff_value: number;                // xP × (1 − own%): what owning them gains vs the field
+  template_risk: number;             // xP × own%: what NOT owning them costs vs the field
+  risk_tier: number;                 // 1 Template .. 5 Deep punt — ownership only, NOT quality
+  risk_label: string;                // the tier's name, e.g. "Differential"
   x_minutes: number;
   low_coverage: boolean;
   captain_score: number;
@@ -173,6 +225,84 @@ export function fixturesByTeam(resp: FixturesResponse): Record<string, TickerFix
 /** The FDR a given position cares about: GK/DEF want a clean sheet, MID/FWD want goals. */
 export function fdrFor(position: string, fx: TickerFixture): number {
   return position === "GK" || position === "DEF" ? fx.defence_fdr : fx.attack_fdr;
+}
+
+// --- matches (per-fixture scoreline distribution + projected XIs + briefing) --------- #
+
+/** One slot in a projected XI. Availability is already applied to `x_minutes` upstream. */
+export type LineupPlayer = {
+  element_id: number;
+  web_name: string;
+  position: "GK" | "DEF" | "MID" | "FWD";
+  x_minutes: number;
+  xp: number;
+  price: number | null;
+  status: string | null;      // FPL availability code
+  chance: number | null;      // chance of playing next round, 0-100
+  penalties: number | null;   // set-piece order, 1 = first choice
+};
+
+/** `confidence` is the XI's mean share of a full match — how nailed the side is, not a
+ *  probability that the XI is exactly right. */
+export type ProjectedLineup = {
+  formation: string;          // e.g. "4-3-3"
+  xi: LineupPlayer[];
+  bench: LineupPlayer[];
+  confidence: number;
+};
+
+/** A written read on the fixture. `generated_by` is either the model id or "template" — the
+ *  deterministic fallback used whenever generation is unavailable or fails the numeric guard.
+ *  `fact_pack` is every figure the prose was allowed to use, so a reader can check it. */
+export type MatchBrief = {
+  headline: string;
+  angles: { text: string; evidence: string[] }[];
+  generated_by: string;
+  attempts?: number;
+  rejected?: string[];        // why a generated briefing was refused, if one was
+  fact_pack: Record<string, unknown>;
+};
+
+export type Scoreline = { home: number; away: number; p: number };
+
+export type Match = {
+  match_id: string;
+  gw: number;
+  home_id: number; home: string | null;
+  away_id: number; away: string | null;
+  source: "market" | "model";   // de-vigged betting line, or the Dixon-Coles engine
+  lam_home: number; lam_away: number;
+  result: { home_win: number; draw: number; away_win: number };
+  btts: number;
+  over_2_5: number;
+  under_2_5: number;
+  clean_sheet: { home: number; away: number };
+  most_likely_score: [number, number];
+  scorelines: Scoreline[];
+  scorelines_p: number;         // probability mass the listed scorelines cover — the rest is tail
+  fdr: {
+    home: { attack: number; defence: number };
+    away: { attack: number; defence: number };
+  };
+  lineups?: { home: ProjectedLineup | null; away: ProjectedLineup | null };
+  brief?: MatchBrief;
+};
+
+export type MatchesResponse = { meta: Meta; matches: Match[] };
+export type MatchResponse = { meta: Meta; match: Match; assets: Prediction[] };
+
+/** Every fixture in the precomputed window, with its scoreline distribution. */
+export async function getMatches(gw = 1): Promise<MatchesResponse> {
+  const res = await fetch(`${API_URL}/matches/${gw}`, { next: { revalidate: 3600 } });
+  if (!res.ok) throw new Error(`matches request failed (${res.status})`);
+  return res.json();
+}
+
+/** One fixture, plus both clubs' players ranked by xP for that gameweek. */
+export async function getMatch(gw: number, matchId: string): Promise<MatchResponse> {
+  const res = await fetch(`${API_URL}/matches/${gw}/${matchId}`, { next: { revalidate: 3600 } });
+  if (!res.ok) throw new Error(`match request failed (${res.status})`);
+  return res.json();
 }
 
 /** Fetch a manager's personalised dashboard. Throws Error(detail) on a 4xx/5xx. */

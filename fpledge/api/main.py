@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections import Counter
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ..balance import check_balance
 from ..differentials import find_differentials
 from ..models.optimizer import best_xi
+from ..playermeta import EMPTY_META
 from ..transfers import suggest_transfers
 from . import store
 
@@ -115,10 +117,28 @@ def _project_prediction(r: dict) -> dict:
         "ownership": r["ownership"], "diff_value": round(r["diff_value"], 2),
         "x_minutes": round(r["x_minutes"], 1), "low_coverage": r["low_cov"],
         "captain_score": round(r.get("captain_score", 0.0), 2),
+        # what NOT owning them costs against the field — the mirror of diff_value
+        "template_risk": round(r.get("template_risk", 0.0), 2),
+        # the same trade-off banded 1 (template) .. 5 (deep punt), for display
+        "risk_tier": r.get("risk_tier", 3),
+        "risk_label": r.get("risk_label", ""),
         # multi-gameweek outlook (default to this GW if a record predates the field)
         "xp_next3": round(r.get("xp_next3", r["xp"]), 2),
         "fixtures": r.get("fixtures", []),  # [{gw, opp, home, xp, fdr}, ...]
         "breakdown": r.get("breakdown"),    # per-term xP split for the sheet (may be None)
+        **_context(r),
+    }
+
+
+def _context(r: dict) -> dict:
+    """The descriptive bundle (why a projection looks the way it does). Defaults keep the
+    response shape total for records precomputed before these fields existed.
+    """
+    return {
+        "availability": r.get("availability", EMPTY_META["availability"]),
+        "recent": r.get("recent", EMPTY_META["recent"]),
+        "price_moves": r.get("price_moves", EMPTY_META["price_moves"]),
+        "set_pieces": r.get("set_pieces", EMPTY_META["set_pieces"]),
     }
 
 
@@ -130,22 +150,52 @@ def _project_player(p: dict) -> dict:
     }
 
 
+DEMO_BUDGET = 100.0   # the FPL starting budget the sample squad must fit inside
+
+
 def _demo_picks(records: list[dict]) -> dict:
-    """A sample 15-man squad from the top precomputed players (2/5/5/3 by xP over the
-    reliable pool). Lets the dashboard render without a real FPL id — useful in preseason
-    (the API won't expose upcoming picks) and as a 'see a sample team' on the landing page.
+    """A sample 15-man squad — and a LEGAL one.
+
+    This is the primary demo: in preseason the FPL API exposes no real squad, so every visitor
+    who hasn't got a team id sees this. An earlier version took the top 2/5/5/3 by xP with no
+    constraints, which produced a £116.5m side containing four Arsenal players — impossible
+    under the game's rules, and obvious at a glance to anyone who plays it.
+
+    Greedy by xP subject to all three real constraints, with a lookahead so an expensive early
+    pick can't leave the remaining slots unaffordable.
     """
     quota = {"GK": 2, "DEF": 5, "MID": 5, "FWD": 3}
-    by_pos: dict = {}
-    for r in sorted(records, key=lambda r: r["xp"], reverse=True):
-        if r["low_cov"] or not r["price"]:
-            continue
-        by_pos.setdefault(r["position"], []).append(r["element_id"])
+    pool = sorted(
+        (r for r in records if not r["low_cov"] and r["price"]),
+        key=lambda r: r["xp"], reverse=True,
+    )
+    cheapest = {
+        pos: min((r["price"] for r in pool if r["position"] == pos), default=0.0)
+        for pos in quota
+    }
+
+    need = dict(quota)
+    clubs: Counter = Counter()
     ids: list[int] = []
-    for pos, n in quota.items():
-        ids += by_pos.get(pos, [])[:n]
+    spend = 0.0
+    for r in pool:
+        pos = r["position"]
+        if need.get(pos, 0) == 0 or clubs[r["team_id"]] >= 3:
+            continue
+        # could we still fill every remaining slot at the cheapest going rate after this?
+        after = {**need, pos: need[pos] - 1}
+        floor = sum(cheapest[p] * n for p, n in after.items())
+        if spend + r["price"] + floor > DEMO_BUDGET:
+            continue
+        ids.append(r["element_id"])
+        spend += r["price"]
+        need[pos] -= 1
+        clubs[r["team_id"]] += 1
+        if not sum(need.values()):
+            break
+
     return {"element_ids": ids, "captain": None, "vice_captain": None,
-            "bank": 0.0, "squad_value": 0.0}
+            "bank": round(DEMO_BUDGET - spend, 1), "squad_value": round(spend, 1)}
 
 
 def _load_or_404(gw: int) -> dict:
@@ -188,6 +238,38 @@ def fixtures(gw: int, response: Response, horizon: int | None = Query(default=No
         })
     teams.sort(key=lambda t: (t["team_name"] or ""))
     return {"meta": payload["meta"], "start_gw": gw, "teams": teams}
+
+
+@app.get("/matches/{gw}")
+def matches(gw: int, response: Response) -> dict:
+    """Every fixture in the precomputed window with its scoreline distribution."""
+    payload = _load_or_404(gw)
+    response.headers["Cache-Control"] = _WEEKLY_CACHE
+    return {"meta": payload["meta"], "matches": payload.get("matches", [])}
+
+
+@app.get("/matches/{gw}/{match_id}")
+def match(gw: int, match_id: str, response: Response) -> dict:
+    """One fixture: the scoreline distribution, the projected XIs, and every FPL asset in it.
+
+    `assets` is both clubs' players ranked by xP for THIS gameweek — the "who do I own from
+    this game" view. It is only meaningful for the current gameweek, so it is attached only
+    when the requested match is in it.
+    """
+    payload = _load_or_404(gw)
+    response.headers["Cache-Control"] = _WEEKLY_CACHE
+    found = next((m for m in payload.get("matches", []) if m["match_id"] == match_id), None)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"No match {match_id!r} in GW{gw}.")
+
+    assets: list[dict] = []
+    if found["gw"] == gw:
+        sides = {found["home_id"], found["away_id"]}
+        assets = sorted(
+            (_project_prediction(r) for r in payload["records"] if r["team_id"] in sides),
+            key=lambda r: r["xp"], reverse=True,
+        )
+    return {"meta": payload["meta"], "match": found, "assets": assets}
 
 
 @app.get("/differentials/{gw}")
@@ -276,10 +358,15 @@ def team(
             "ownership": p["ownership"],
             "x_minutes": round(p["x_minutes"], 1),
             "diff_value": round(rec.get("diff_value", 0.0), 2),
+            "template_risk": round(rec.get("template_risk", 0.0), 2),
+            "risk_tier": rec.get("risk_tier", 3),
+            "risk_label": rec.get("risk_label", ""),
             "captain_score": round(rec.get("captain_score", 0.0), 2),
             "breakdown": rec.get("breakdown"),  # the per-term xP split (may be None)
             "is_starter": p["id"] in starter_ids,
             "is_captain": p["id"] == captain_id,
+            # a squad row is exactly where "why is he on 0.00?" gets asked
+            **_context(rec),
         }
 
     squad = sorted(
