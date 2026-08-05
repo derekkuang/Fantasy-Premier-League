@@ -14,7 +14,15 @@ import io
 from . import landing
 
 VAASTAV_BASE = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
-_POS = {"GKP": "GK", "GK": "GK", "DEF": "DEF", "MID": "MID", "FWD": "FWD"}
+# FPL itself has exactly four positions (element_type 1-4). This dataset carries a few extra
+# labels across seasons — "GKP" for goalkeepers, and in 2024-25 an "AM" on ~1.2% of rows, which
+# is not an FPL position at all. Everything is normalised to the four the scoring rules know,
+# with AM folded into MID because that is how the game scores an attacking midfielder. Left
+# unmapped it reached `config.GOAL_POINTS[pos]` and raised KeyError mid-walk-forward.
+_POS = {
+    "GKP": "GK", "GK": "GK", "DEF": "DEF", "MID": "MID", "FWD": "FWD",
+    "AM": "MID",
+}
 
 
 def _get(url: str) -> str:
@@ -64,7 +72,42 @@ def fetch_player_gws(season: str) -> list[dict]:
                 "fpl_xp": _f(r.get("xP")),
             }
         )
+    _add_clean_baseline(rows)
     return rows
+
+
+def _add_clean_baseline(rows: list[dict]) -> None:
+    """Add `fpl_xp_prev` — FPL's projection as it stood BEFORE each gameweek.
+
+    THE COLUMN AS SHIPPED IS NOT A PRE-MATCH FORECAST. Upstream's README says so plainly:
+    `xP` is the bootstrap `ep_this` field, "the scraper runs AFTER each gameweek ends, so if
+    FPL updates `ep_this` post-match, the scraped value will contain information that was not
+    available to managers before the deadline", and "using it unshifted as a feature to predict
+    same-GW `total_points` has been observed to cause severe lookahead bias". The recommended
+    fix is exactly this: "apply `shift(1)` within each `element` group, or exclude the column".
+
+    The mechanism is visible in the same README: live `ep_this` correlates ~0.98 with `form`,
+    and `form` is a rolling points average that absorbs a gameweek's points once it finishes.
+    So a value scraped after GW N encodes GW N's points — not through match detail, which is
+    why it shows no correlation at all with conversion luck (-0.018) or cards (-0.033), but
+    through the points total itself entering the average it is computed from.
+
+    Measured on 2024-25, played-only per-GW Spearman against realised points:
+        as-scraped  0.568   <- not a forecast; it has already seen the gameweek
+        shifted     0.292   <- the same number, using only what preceded the deadline
+
+    Both are kept. `fpl_xp` remains available so the contamination can be demonstrated rather
+    than asserted; `fpl_xp_prev` is what any honest comparison must use.
+    """
+    by_el: dict = {}
+    for r in rows:
+        by_el.setdefault(r["element"], []).append(r)
+    for series in by_el.values():
+        series.sort(key=lambda r: r["gw"])
+        prev = None
+        for r in series:
+            r["fpl_xp_prev"] = prev
+            prev = r["fpl_xp"]
 
 
 def fetch_fixtures(season: str) -> list[dict]:

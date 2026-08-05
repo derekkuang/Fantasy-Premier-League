@@ -80,3 +80,50 @@ def test_point_in_time_no_leakage():
     past_after = {(g, el): my for (g, el, my, *_ ) in after if g < 6}
     assert past_base == past_after
     assert past_base  # and there were actually earlier-GW predictions to compare
+
+
+# --- the baseline must be a FORECAST, not a scraped post-match value ------------------ #
+# Upstream's `xP` column is scraped after the gameweek and absorbs that gameweek's points
+# through FPL's `form` average (see ingest.vaastav._add_clean_baseline). Scoring against it
+# compares a projection to something that already saw the answer, which is how this project
+# spent four months believing its model lost.
+
+def test_the_shifted_baseline_is_preferred_over_the_scraped_one():
+    """When both are present, the comparison must use the pre-deadline value."""
+    from fpledge.eval.fpl_backtest import validate_xp
+
+    rows, fixtures, teams = _synthetic()
+    for r in rows:
+        r["fpl_xp_prev"] = 0.0      # a deliberately useless forecast
+        r["fpl_xp"] = float(r["total_points"])   # a perfect "forecast" — because it cheated
+    out = validate_xp(rows, fixtures, teams, burn_in=2)
+    assert out["baseline_clean"] is True
+    # If the raw column were being used, its Spearman would be ~1.0 by construction.
+    sp = out["played_only"]["gw_spearman_fpl"] if out.get("played_only") else None
+    assert sp is None or sp < 0.99, "the scraped column leaked into the comparison"
+
+
+def test_a_caller_without_the_shifted_column_is_flagged_not_silently_trusted():
+    """Legacy callers still work — but the result says the baseline is not clean, so a
+    number produced this way can never be mistaken for a valid comparison."""
+    from fpledge.eval.fpl_backtest import validate_xp
+
+    rows, fixtures, teams = _synthetic()
+    for r in rows:
+        r.pop("fpl_xp_prev", None)
+    out = validate_xp(rows, fixtures, teams, burn_in=2)
+    assert out["baseline_clean"] is False
+
+
+def test_a_players_first_gameweek_has_no_baseline_and_is_skipped():
+    """No prior forecast exists, so there is nothing to compare against. Scoring it would
+    silently pit our projection against an implicit zero."""
+    from fpledge.ingest.vaastav import _add_clean_baseline
+
+    rows = [
+        {"element": 7, "gw": 1, "fpl_xp": 3.0},
+        {"element": 7, "gw": 2, "fpl_xp": 5.0},
+        {"element": 7, "gw": 3, "fpl_xp": 4.0},
+    ]
+    _add_clean_baseline(rows)
+    assert [r["fpl_xp_prev"] for r in rows] == [None, 3.0, 5.0]

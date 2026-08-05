@@ -55,6 +55,12 @@ def validate_xp(
 
     With return_records=True, also returns the raw (gw, element, my_xp, fpl_xp, actual, pos)
     tuples — used by the point-in-time leakage test.
+
+    THE BASELINE IS `fpl_xp_prev`, NOT `fpl_xp`. The shipped `xP` column is scraped after the
+    gameweek and absorbs that gameweek's points through FPL's `form` average, so scoring
+    against it compares a forecast to something that has already seen the answer. See
+    `ingest.vaastav._add_clean_baseline`. Rows predating that field fall back to `fpl_xp` and
+    are flagged by `baseline_clean` in the result.
     """
     import scipy.stats as st  # noqa: PLC0415
 
@@ -89,6 +95,7 @@ def validate_xp(
             return sum(wi * v for wi, v in zip(w, vals, strict=True)) / (den / 90.0)
         return a[key] / (a["minutes"] / 90.0) if a["minutes"] >= min_rate_minutes else 0.0
 
+    baseline_clean = True   # set False if a legacy caller supplies no shifted column
     acc: dict = {}  # element -> rolling totals (from GWs strictly before the current one)
     records = []    # (gw, element, my_xp, fpl_xp, actual, position, minutes)
 
@@ -154,8 +161,25 @@ def validate_xp(
                     my_xp += expected_points(ctx)
                     scored = True
                 if scored:
+                    # Three cases, kept distinct on purpose:
+                    #   key absent   -> a caller that predates the shift (tests, legacy);
+                    #                   fall back to the raw column and say so via
+                    #                   `baseline_clean=False` rather than dropping the data.
+                    #   key is None  -> a player's FIRST gameweek. No prior forecast exists,
+                    #                   so there is nothing to compare against; skip the row
+                    #                   rather than score the baseline against an implicit 0.
+                    #   key is a num -> the clean pre-deadline forecast. Use it.
+                    if "fpl_xp_prev" not in rows[0]:
+                        fpl_clean = sum(r["fpl_xp"] for r in rows)
+                        baseline_clean = False
+                    else:
+                        prevs = [r.get("fpl_xp_prev") for r in rows]
+                        if all(p is None for p in prevs):
+                            continue
+                        fpl_clean = sum(p for p in prevs if p is not None)
+                        baseline_clean = True
                     records.append(
-                        (n, el, my_xp, sum(r["fpl_xp"] for r in rows),
+                        (n, el, my_xp, fpl_clean,
                          sum(r["total_points"] for r in rows), pos,
                          sum(r["minutes"] for r in rows))
                     )
@@ -181,6 +205,7 @@ def validate_xp(
                 a["bonus"] += r["bonus"]
 
     metrics = _score(records, st)
+    metrics["baseline_clean"] = baseline_clean
     return (metrics, records) if return_records else metrics
 
 
@@ -234,34 +259,52 @@ def _subset_metrics(recs, st) -> dict | None:  # noqa: ANN001
     if not recs:
         return None
     my = [r[2] for r in recs]
-    fpl = [r[3] for r in recs]
     act = [r[4] for r in recs]
 
     per_gw: dict = defaultdict(list)
     for r in recs:
         per_gw[r[0]].append(r)
+    # THE BASELINE IS OFTEN ABSENT, AND THAT USED TO BE HIDDEN.
+    #
+    # vaastav's `xP` column is not populated for every gameweek — in 2025-26 it carries real
+    # values for four of thirty, and is a column of zeros for the rest. The earlier version of
+    # this function appended our Spearman whenever ours was defined and FPL's whenever theirs
+    # was, which silently averaged the two over DIFFERENT gameweek sets: ours over all thirty,
+    # theirs over the four. It also took FPL's MAE across every record, so 86% of that average
+    # was |0 − actual| — a comparison against a column of zeros, which our model duly "beat".
+    #
+    # Both numbers went onto a public page claiming to publish how well the model does. So:
+    # a gameweek now counts only when BOTH predictors are defined on it, MAE is computed on
+    # exactly those records, and `baseline_gws` reports how thin the comparison is.
     sp_m, sp_f, beat, compared = [], [], 0, 0
+    common: list = []
     for g in per_gw.values():
         if len(g) < 10:  # too few players to rank-correlate meaningfully
             continue
-        compared += 1
         m, f, a = [r[2] for r in g], [r[3] for r in g], [r[4] for r in g]
         sm, sf = st.spearmanr(m, a).correlation, st.spearmanr(f, a).correlation
-        if sm == sm:
-            sp_m.append(sm)
-        if sf == sf:
-            sp_f.append(sf)
+        if not (sm == sm and sf == sf):   # either side undefined => not a comparison
+            continue
+        compared += 1
+        common.extend(g)
+        sp_m.append(sm)
+        sp_f.append(sf)
         mm = statistics.mean(abs(x - y) for x, y in zip(m, a, strict=True))
         mf = statistics.mean(abs(x - y) for x, y in zip(f, a, strict=True))
         beat += mm <= mf
 
+    # Our own error is still worth reporting over everything we scored; FPL's is only
+    # meaningful where FPL actually predicted something.
     return {
         "n": len(recs),
         "mae_model": statistics.mean(abs(x - y) for x, y in zip(my, act, strict=True)),
-        "mae_fpl": statistics.mean(abs(x - y) for x, y in zip(fpl, act, strict=True)),
+        "mae_model_common": statistics.mean(abs(r[2] - r[4]) for r in common) if common else None,
+        "mae_fpl": statistics.mean(abs(r[3] - r[4]) for r in common) if common else None,
         "gw_spearman_model": statistics.mean(sp_m) if sp_m else None,
         "gw_spearman_fpl": statistics.mean(sp_f) if sp_f else None,
-        "gws_model_mae_beats_fpl": f"{beat}/{compared}",  # denominator matches numerator
+        "gws_model_mae_beats_fpl": f"{beat}/{compared}",
+        "baseline_gws": compared,          # how many gameweeks the comparison rests on
+        "baseline_n": len(common),
     }
 
 
