@@ -2,6 +2,11 @@
 
 > Handoff document. Everything built so far + the plan to turn it into a web app with real
 > users. Written 2026-07 (preseason 2026/27). 17 commits, 72 tests, all local, ~$0/mo.
+>
+> **Superseded — read `docs/HANDOFF.md` first.** This is historical design rationale; its
+> "what's built" stopped being current around 2026-08-01. The accuracy figures were corrected
+> in place on 2026-08-05 (see §5) because leaving a known-wrong number in a document about
+> honesty is worse than the document being stale. Nothing else here has been updated.
 
 ---
 
@@ -13,9 +18,12 @@ points (xP), and turns that into actionable FPL tooling (captain/transfer/differ
 an optimal squad, a fixture ticker, a squad-health check). It is honestly validated against a
 full season, and its limits are documented rather than hidden.
 
-**Honest headline:** the model does **not** out-predict FPL's own projection (played-only
-per-GW Spearman **0.32 vs FPL's 0.56** — the public-data ceiling). The value is the *tooling*,
-the *optimizer*, and the *intellectual honesty*, not raw prediction superiority.
+**Honest headline:** the model **out-predicts FPL's own projection** — played-only per-GW
+Spearman **0.374 vs 0.299**, MAE **2.013 vs 2.244**, on 2024-25 across 30 gameweeks and 21,886
+player-gameweeks. That reverses what this document claimed for four months; the correction, and
+why the original was wrong, is in §5. The value is still primarily the *tooling*, the
+*optimizer* and the *intellectual honesty* — a +0.075 Spearman edge is real but it is not what
+makes the product worth using.
 
 ## 2. Architecture (the pipeline)
 
@@ -91,9 +99,18 @@ player inputs are last season's.
 - **Match engine:** well-calibrated (predicted λ 0.70–3.01, matches actual). Betting: **no edge**
   (model log-loss ~1.06 vs de-vigged market ~1.01; ROI CI straddles 0). Framed as a calibration
   benchmark, not a profit tool.
-- **FPL xP:** played-only per-GW Spearman **0.32 (structured) vs FPL 0.56**. The one measured
-  improvement was recency-weighted minutes (all-players 0.67→0.73). Recency-xG, returns-bonus,
-  and LightGBM were all null-or-worse → the structured model is at the public-data ceiling.
+- **FPL xP:** played-only per-GW Spearman **0.374 (structured) vs FPL 0.299**; MAE **2.013 vs
+  2.244**; all-players **0.685 vs 0.608**. 2024-25, 30 gameweeks, 21,886 player-gameweeks.
+  The one measured *internal* improvement was recency-weighted minutes (all-players 0.67→0.73).
+  Recency-xG, returns-bonus and LightGBM were all null-or-worse → the structured model is at the
+  ceiling of what *these* features give, which is a different claim from being at FPL's level.
+- **This number was wrong here until 2026-08-05, in FPL's favour.** The old claim (0.32 vs 0.56)
+  benchmarked against the community dataset's `xP` column, which is scraped *after* each gameweek
+  from `ep_this` and correlates ~0.98 with `form` — so it had already absorbed the result it was
+  being asked to predict. It is not a forecast. Scored against a genuine pre-deadline baseline
+  (`fpl_xp_prev`) the comparison inverts. Full account in `docs/HANDOFF.md` §16; a separate
+  coverage bug in the same comparison is §13. **Any benchmark against an external number must
+  answer, before it is trusted: when was this value recorded, relative to the event it predicts?**
 - **Limits:** preseason (last-season inputs); new signings carry prior-club output; promoted
   teams' players excluded (no data); single-gameweek (no multi-GW/chip planning); optimizer
   benches cheap fodder (the balance check flags this).
@@ -114,9 +131,11 @@ experiments) are satisfied; B3 (AWS/MLOps) is the remaining engineering piece.
 action plan — projected points, best captain, best transfer (net of hit), differentials,
 fixture ticker, squad-health — updated weekly. No login needed to start.
 
-**The honest edge** (since the model doesn't out-predict FPL): superior **tooling** (optimizer,
-transfer planner, balance check), a **true fixture ticker** (real model λ, not FPL's static
-FDR), and **radical honesty** (show calibration; don't claim to beat FPL) as a trust signal.
+**The honest edge:** superior **tooling** (optimizer, transfer planner, balance check), a **true
+fixture ticker** (real model λ, not FPL's static FDR), and **radical honesty** (publish the
+measurements, including the ones that went against us) as a trust signal. The projection edge
+over FPL is real but modest, and it is the least durable of these — the tooling has no FPL
+equivalent at all.
 
 ### Product / MVP screens
 1. **Connect team** — enter FPL id (frictionless, shareable URL `/team/{id}`).
