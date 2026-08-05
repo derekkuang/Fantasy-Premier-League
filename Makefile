@@ -1,4 +1,4 @@
-.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot model-card clean
+.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -35,6 +35,12 @@ backtest:
 # reconstructed later (see docs/HANDOFF.md §17). WINDOW=12 hours by default.
 snapshot:
 	.venv/bin/python scripts/snapshot.py --if-near-deadline $(if $(WINDOW),--window $(WINDOW))
+
+# Capture anytime-goalscorer prices before the deadline. Weekly, from 2026-08-21, alongside
+# `snapshot`. Free tier: ~10 credits/gameweek against 500/month. Needs ODDS_API_KEY.
+# Run `capture-props ARGS=--list-markets` ONCE first to confirm the market key.
+capture-props:
+	.venv/bin/python scripts/capture_props.py --if-near-deadline $(if $(WINDOW),--window $(WINDOW)) $(ARGS)
 
 # Regenerate the measured accuracy the /model page reads. Slow (full walk-forward).
 model-card:
