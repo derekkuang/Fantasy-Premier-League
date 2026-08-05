@@ -58,6 +58,7 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | **19** | **where the model can still improve — and why it is team news, not modelling** |
 | **20** | **working that list: what each grade of team news costs, and why props are back on** |
 | 21 | free routes to market data; why prediction markets do not fit |
+| **22** | **props capture live; §14's blend inverted; what is actually left to explore** |
 
 ---
 
@@ -1380,3 +1381,91 @@ principle. It is the wrong instrument here for reasons that are structural rathe
 Where a prediction market genuinely would help is a question with one contract and real volume —
 title winner, top four, relegation, Golden Boot. Those are season-long, and this model is a
 single-gameweek player-ranking model. Different question.
+
+---
+
+## 22. The props capture is live, and §14's blend result is now inverted (2026-08-05)
+
+### Forward capture, running
+
+`scripts/capture_props.py` / `make capture-props`. Weekly anytime-goalscorer prices, ~10 credits
+a gameweek against a free tier of 500 a month. Same discipline as `snapshot.py`: run it from
+2026-08-21, because by roughly GW10 there is enough paired data to answer whether props beat our
+xP, and every week missed costs $30-scale money to recover later.
+
+**Do this once before trusting it:** `make capture-props ARGS=--list-markets`. A wrong market key
+returns an empty bookmaker list rather than an error — indistinguishable from "no book has priced
+it yet" — so it would capture nothing all season and look like a quiet week every time. A capture
+where every fixture returns zero bookmakers now prints that ambiguity and exits non-zero.
+
+**The live path is unverified.** Written without an API key; offline behaviour is tested through a
+fake session and no real request has been made.
+
+### Can the model use props now? Two different questions
+
+**Validation: no, not yet** — that is what the capture is for, and why it starts now.
+
+**Production use: yes, technically, from GW1** — props are available live; nothing stops the
+precompute consuming them. The reason not to is discipline, not capability: this project's whole
+position is that it publishes measured numbers, and shipping an unvalidated signal into the
+projection would be the first time it acted on a hunch. Capture now, measure around GW10, ship
+after. That sequencing costs one half-season and keeps the claim honest.
+
+### §14's headline is now inverted, not merely void
+
+§16 said to re-run the blend against the clean baseline and nobody had. §14 concluded "the
+optimal weight on our model is 0.0 at every position" — measured against a column that had
+already seen the gameweek.
+
+Clean baseline, rank space, weights fitted on GW9–23 and scored on GW24–38:
+
+| weight on OURS | train | test |
+|---|---|---|
+| 0.0 (FPL alone) | 0.2792 | 0.3182 |
+| 0.5 | 0.3608 | 0.3818 |
+| 0.8 | 0.3834 | 0.3919 |
+| **1.0 (ours alone)** | **0.3888** | 0.3869 |
+
+Weight chosen honestly on train: **1.0**, and the gain over ours alone is **+0.0000**. Per
+position the answer is 1.00 everywhere except FWD at 0.95, worth +0.0021.
+
+**"Our model adds nothing to FPL's" is now exactly backwards: FPL's clean projection adds nothing
+to ours.** One caveat kept because it is real — the test half peaks at w≈0.8 (0.3919) where the
+train half peaks at 1.0. That is either noise or a small blend benefit the train half is too
+short to see, and honest selection does not capture it. Not established, worth one re-run on a
+second season.
+
+**This settles the §8 / §14 strategic question.** The site shows one xP per player, ours, and
+hides FPL's `ep_next`. That was defensible-but-awkward when we thought we were behind. It is now
+simply correct: ours is better, and theirs adds nothing on top of it.
+
+### What is actually left to explore
+
+The *prediction* is close to its ceiling on public data — five nulls and two small wins this
+session. The remaining upside sits in two places, and only one of them is about modelling.
+
+**A. Data we do not have** (§19–§21): team news, and props. Both now capturing.
+
+**B. Turning predictions into DECISIONS — never measured at all.** Every number this project has
+published is a *ranking* metric. The product does not rank; it decides: which transfer, who to
+captain, who to bench, when to play a chip. A +0.01 Spearman may change no decision, and a
+recalibration that cannot move Spearman at all may change many.
+
+1. **Simulate a season following the model's own advice** and report final points and rank against
+   the field, as a distribution with a skill-vs-luck split. This is the number a user cares about
+   and the one `/model` should arguably lead with. Never computed.
+2. **Expected-rank objective instead of raw xP.** `models/xpoints.py` says outright that raw-xP
+   maximisation is not rank maximisation and that captaincy and differentials should optimise
+   expected rank against effective ownership. `models/rank.py` exists; the optimiser still
+   maximises raw xP. A product improvement needing no new data and no better forecast.
+3. **Dispersion, judged by decisions rather than by Spearman.** We are under-dispersed (ours sd
+   1.46–2.00, actual 2.76–3.45). A monotone rescaling cannot move Spearman by construction — which
+   is exactly why it has never been tested — but it moves every threshold that matters: whether a
+   transfer clears the −4 hit, how big a captaincy edge looks.
+4. **Auto-subs and bench order.** Pure optimisation, no new data, worth real points over a season.
+   The optimiser currently has no bench ordering at all.
+5. **Chip timing** (wildcard, bench boost, triple captain, free hit) as a Monte Carlo over the
+   fixture calendar.
+6. **Price-change model.** Team value compounds across a season and is entirely unmodelled.
+7. **Defensive Contribution calibration.** New 2025/26 scoring, a meaningful share of DEF/MID
+   points now, and `dc_point_probability` has never been validated on its own.
