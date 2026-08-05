@@ -17,8 +17,23 @@ import { Card, Flag, SectionTitle, Stat } from "@/components/ui";
 import { SquadBoard } from "@/components/pitch";
 import { CaptainCompare } from "@/components/captain-compare";
 import { PlayerSheet, type SwapOption } from "@/components/player-sheet";
+import { AdvisorChat } from "@/components/advisor-chat";
 
-export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures: Record<string, TickerFixture[]> }) {
+export function TeamDashboard({
+  data,
+  fixtures,
+  source = "fpl",
+}: {
+  data: TeamResponse;
+  fixtures: Record<string, TickerFixture[]>;
+  /** "manual" = assembled in the builder rather than fetched from an entry id. The squad
+   *  maths is identical either way; what differs is that a hand-built squad has no prior
+   *  squad to transfer FROM, so the transfer card would be answering a question nobody
+   *  asked. Hiding it beats showing "no transfer beats holding" about a squad with no
+   *  holdings. */
+  source?: "fpl" | "manual";
+}) {
+  const manual = source === "manual";
   const originalIds = useMemo(
     () => new Set(data.squad.filter((p) => p.is_starter).map((p) => p.element_id)),
     [data],
@@ -88,11 +103,11 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
     >
       <header className="flex items-end justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <Link href="/" className="text-[13px] text-emerald-600 hover:underline">
+          <Link href="/" className="press text-[13px] text-emerald-600 hover:underline">
             ← another team
           </Link>
-          <h1 className="text-lg font-semibold tracking-[-.01em]">
-            Team {data.entry_id} · GW{data.gw}
+          <h1 className="t-title text-lg font-semibold">
+            {manual ? `Your squad · GW${data.gw}` : `Team ${data.entry_id} · GW${data.gw}`}
           </h1>
         </div>
         <span className="rounded-full bg-black/5 px-2 py-1 font-mono text-[11px] text-black/50 dark:bg-white/10 dark:text-white/50">
@@ -108,7 +123,11 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
           />
           <div className="flex gap-6 text-right">
             <Stat label="bank" value={`£${data.bank.toFixed(1)}`} />
-            <Stat label={data.free_transfers === 1 ? "free transfer" : "free transfers"} value={data.free_transfers} />
+            {manual ? (
+              <Stat label="squad cost" value={`£${(100 - data.bank).toFixed(1)}`} />
+            ) : (
+              <Stat label={data.free_transfers === 1 ? "free transfer" : "free transfers"} value={data.free_transfers} />
+            )}
           </div>
         </div>
       </Card>
@@ -127,7 +146,15 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
 
         <div className="flex flex-col gap-5">
           <CaptainCompare starters={starters} basis={basis} onBasis={setBasis} captainId={captainId} />
-          <TransferCard move={data.best_transfer} freeTransfers={data.free_transfers} />
+          {!manual && <TransferCard move={data.best_transfer} freeTransfers={data.free_transfers} />}
+          {/* Sits BELOW the free precomputed answer on purpose — the chip prompts are all
+              follow-ups to it, which is the only thing it is worth paying a model for. */}
+          <AdvisorChat
+            gw={data.gw}
+            owned={data.squad.map((p) => p.element_id)}
+            bank={data.bank}
+            freeTransfers={data.free_transfers}
+          />
           {data.unscored_elements.length > 0 && (
             <p className="px-1 text-xs text-black/50 dark:text-white/50">
               {data.unscored_elements.length} owned player(s) have no prediction (promoted or
@@ -140,7 +167,7 @@ export function TeamDashboard({ data, fixtures }: { data: TeamResponse; fixtures
 
       <p className="px-1 text-center text-[11px] leading-relaxed text-black/40 dark:text-white/40">
         Club colours only — generic kit shapes, no official kits or crests. Not affiliated with
-        the Premier League. xP is model-estimated and roughly on par with FPL&apos;s own.
+        the Premier League. xP is model-estimated; how well it does is measured and published.
       </p>
 
       {open && (
@@ -192,13 +219,24 @@ function TransferCard({ move, freeTransfers }: { move: TransferMove | null; free
 }
 
 function BalanceCard({ flags }: { flags: BalanceFlag[] }) {
+  // One at a time. Opening a second flag closes the first, so the column keeps its shape
+  // and the detail you are reading is always the detail you just asked for — with several
+  // expanded at once the card grows past the fold and the verdicts stop being scannable.
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+
   return (
     <div>
-      <SectionTitle>Squad health</SectionTitle>
+      <SectionTitle>Squad health · tap a flag</SectionTitle>
       <div className="flex flex-col gap-2">
-        {flags.map(([level, msg], i) => (
-          <Flag key={i} level={level}>
-            {msg}
+        {flags.map((f, i) => (
+          <Flag
+            key={i}
+            level={f.level}
+            detail={f.detail}
+            open={openIdx === i}
+            onToggle={() => setOpenIdx((cur) => (cur === i ? null : i))}
+          >
+            {f.message}
           </Flag>
         ))}
       </div>

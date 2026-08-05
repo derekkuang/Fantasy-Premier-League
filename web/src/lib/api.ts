@@ -305,6 +305,58 @@ export async function getMatch(gw: number, matchId: string): Promise<MatchRespon
   return res.json();
 }
 
+// --- model card (how well the model actually does) ---------------------------------- #
+
+export type CardSubset = {
+  n: number;
+  spearman_model: number | null;
+  spearman_fpl: number | null;
+  /** Error on the records the comparison actually rests on — see `baseline_gws`. */
+  mae_model: number | null;
+  /** Our error everywhere we scored, including gameweeks FPL published nothing for. */
+  mae_model_all: number | null;
+  mae_fpl: number | null;
+  gws_model_mae_beats_fpl: string;
+  /** How many gameweeks carried BOTH projections. The comparison is only this wide. */
+  baseline_gws: number;
+  baseline_n: number;
+};
+
+export type Experiment = {
+  name: string;
+  question: string;
+  delta: string;
+  verdict: string;
+  measured: string;
+};
+
+export type ModelCard = {
+  generated_at: string;
+  season: string;
+  model_ver: string;
+  measured: {
+    n_player_gws: number;
+    gws_scored: number;
+    played_only: CardSubset;
+    all_players: CardSubset;
+    mae_by_position_played: Record<string, number>;
+  };
+  method: Record<string, string>;
+  experiments: Experiment[];
+  not_modelled: { topic: string; detail: string }[];
+};
+
+/** The measured accuracy of the model. 404s until `scripts/build_model_card.py` has run —
+ *  a page that publishes accuracy must never fall back to a placeholder number. */
+export async function getModelCard(): Promise<ModelCard> {
+  const res = await fetch(`${API_URL}/model`, { next: { revalidate: 3600 } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `model card request failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** Fetch a manager's personalised dashboard. Throws Error(detail) on a 4xx/5xx. */
 export async function getTeam(entryId: string, gw = 1): Promise<TeamResponse> {
   // no-store: this is per-user and cheap; never cache it at the framework layer.

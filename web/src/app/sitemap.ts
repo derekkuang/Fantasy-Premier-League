@@ -4,9 +4,11 @@ import { SITE_URL } from "./layout";
 // Only the public, non-personalised routes. /team/{id} is deliberately excluded (see robots).
 const ROUTES: [string, number, MetadataRoute.Sitemap[number]["changeFrequency"]][] = [
   ["/", 1.0, "weekly"],
+  ["/squad", 0.9, "weekly"],
   ["/predictions", 0.9, "weekly"],
   ["/fixtures", 0.8, "weekly"],
   ["/differentials", 0.8, "weekly"],
+  ["/model", 0.7, "monthly"],
   ["/privacy", 0.2, "yearly"],
   ["/terms", 0.2, "yearly"],
 ];
