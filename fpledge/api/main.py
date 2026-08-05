@@ -14,14 +14,16 @@ functions expect id/name/team dicts, so `_pool_dict`/`_balance_dict` translate.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
 from collections import Counter
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from .. import config
 from ..balance import check_balance
 from ..differentials import find_differentials
 from ..models.optimizer import best_xi
@@ -47,6 +49,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from ..advisor.agent import MODEL as _ADVISOR_MODEL
+
 _WEEKLY_CACHE = "public, max-age=3600"   # precomputed data changes ~weekly
 _TEAM_CACHE = "public, max-age=120"       # a manager's picks change occasionally
 
@@ -59,12 +63,12 @@ _client_lock = threading.Lock()
 _shared_client = None
 
 
-def get_fpl_client():  # noqa: ANN201
+def get_fpl_client():
     global _shared_client
     if _shared_client is None:
         with _client_lock:
             if _shared_client is None:
-                from ..ingest.fpl_api import FPLClient  # noqa: PLC0415
+                from ..ingest.fpl_api import FPLClient
                 _shared_client = FPLClient()
     return _shared_client
 
@@ -76,7 +80,7 @@ _picks_lock = threading.Lock()
 _picks_cache: dict[tuple[int, int], tuple[float, dict]] = {}
 
 
-def _cached_picks(client, entry_id: int, gw: int) -> dict:  # noqa: ANN001
+def _cached_picks(client, entry_id: int, gw: int) -> dict:
     key = (entry_id, gw)
     hit = _picks_cache.get(key)
     if hit and time.monotonic() - hit[0] < _PICKS_TTL_S:
@@ -214,6 +218,27 @@ def health() -> dict:
     return {"status": "ok", "available_gws": store.available_gws()}
 
 
+@app.get("/model")
+def model_card(response: Response) -> dict:
+    """How well the model actually does, measured rather than asserted.
+
+    Served from an artifact `scripts/build_model_card.py` writes, so the honesty page can
+    never drift from what was last measured — if the number on the page is stale, the
+    artifact is stale, and its `generated_at` says so out loud.
+
+    404 rather than a placeholder when it hasn't been generated: a page claiming to publish
+    the model's accuracy must not invent it.
+    """
+    path = config.DATA_DIR / "eval" / "model_card.json"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="No model card yet — run `python scripts/build_model_card.py`.",
+        )
+    response.headers["Cache-Control"] = _WEEKLY_CACHE
+    return json.loads(path.read_text())
+
+
 @app.get("/predictions/{gw}")
 def predictions(gw: int, response: Response) -> dict:
     payload = _load_or_404(gw)
@@ -296,7 +321,7 @@ def team(
     response: Response,
     gw: int = Query(..., description="gameweek to analyse (must be precomputed)"),
     free_transfers: int = Query(default=1, ge=0, le=5),
-    client=Depends(get_fpl_client),  # noqa: ANN001
+    client=Depends(get_fpl_client),
 ) -> dict:
     payload = _load_or_404(gw)
     response.headers["Cache-Control"] = _TEAM_CACHE
@@ -307,7 +332,7 @@ def team(
     else:
         try:
             picks = _cached_picks(client, entry_id, gw)
-        except Exception as exc:  # noqa: BLE001 — translate client/HTTP failures to friendly errors
+        except Exception as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status == 404:
                 # FPL only exposes a squad AFTER that gameweek's deadline, so before the
@@ -407,4 +432,151 @@ def team(
         "best_transfer": best_transfer,
         "balance": balance,
         "unscored_elements": unscored,  # owned players with no prediction (promoted/low-data)
+    }
+
+
+# --- advisor ------------------------------------------------------------------------ #
+# The one endpoint that costs money per call, so it is the one endpoint that refuses to
+# pretend. No client configured => 503 with the reason, never a canned answer that looks
+# like the feature working.
+
+_ADVISOR_MAX_MESSAGE = 600        # a question, not a pasted essay
+_ADVISOR_MAX_HISTORY = 24         # ~12 exchanges; the loop resends all of it every turn
+_ADVISOR_WINDOW_S = 3600.0
+_ADVISOR_PER_WINDOW = 4           # placeholder for the real per-manager gameweek quota
+
+_advisor_lock = threading.Lock()
+_advisor_hits: dict[str, list[float]] = {}
+
+
+def _advisor_client():
+    """The Anthropic client, the scripted stub, or None. Never a silent no-op."""
+    if os.environ.get("FPLEDGE_ADVISOR_STUB") == "1":
+        from ..advisor.stub import StubClient
+        return StubClient(), True
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None, False
+    try:
+        import anthropic
+    except ImportError:
+        return None, False
+    return anthropic.Anthropic(), False
+
+
+def _jsonable(obj):
+    """Flatten SDK content blocks into plain JSON.
+
+    The conversation has to round-trip through the browser — the Messages API is stateless,
+    so continuing a chat means resending every prior turn including the assistant's tool_use
+    blocks. Those arrive as SDK objects, which FastAPI cannot serialise. Plain dicts both
+    serialise and are accepted back by the API unchanged, so this loses nothing.
+    """
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonable(v) for v in obj]
+    if hasattr(obj, "model_dump"):          # anthropic SDK blocks are pydantic models
+        return _jsonable(obj.model_dump())
+    if hasattr(obj, "__dict__"):            # the scripted stub's blocks are plain objects
+        return {k: _jsonable(v) for k, v in vars(obj).items()}
+    return obj
+
+
+def _advisor_rate_limit(key: str) -> None:
+    """In-process, per-IP, best-effort.
+
+    NOT the real quota. The real one is per manager per gameweek and needs a database that
+    this app does not have yet (see docs/HANDOFF.md §6). This exists so that shipping the
+    endpoint cannot produce an unbounded bill in the window before that lands, and it dies
+    with the process — a second worker doubles the ceiling.
+    """
+    now = time.monotonic()
+    with _advisor_lock:
+        hits = [t for t in _advisor_hits.get(key, []) if now - t < _ADVISOR_WINDOW_S]
+        if len(hits) >= _ADVISOR_PER_WINDOW:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Advisor limit reached ({_ADVISOR_PER_WINDOW} per hour while this is "
+                       "in preview). Try again later.",
+            )
+        hits.append(now)
+        _advisor_hits[key] = hits
+
+
+@app.get("/advise")
+def advise_status() -> dict:
+    """Whether the advisor can actually answer, so the UI can say so before anyone types."""
+    client, stub = _advisor_client()
+    return {
+        "available": client is not None,
+        "stub": stub,
+        "model": _ADVISOR_MODEL,
+        "reason": None if client else (
+            "The advisor needs an ANTHROPIC_API_KEY and the `anthropic` package "
+            '(pip install -e ".[llm]"). It is switched off rather than faked.'
+        ),
+    }
+
+
+@app.post("/advise")
+def advise_endpoint(body: dict, request: Request) -> dict:
+    """One conversational turn about a squad.
+
+    Takes either an `entry_id` (fetched from FPL) or an explicit `owned` list of element ids,
+    so a squad built in the browser can be advised on exactly like a real one.
+    """
+    client, stub = _advisor_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail=advise_status()["reason"])
+
+    message = str(body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+    if len(message) > _ADVISOR_MAX_MESSAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Keep it under {_ADVISOR_MAX_MESSAGE} characters — this is a question box, "
+                   "not a document upload.",
+        )
+    history = body.get("history") or []
+    if not isinstance(history, list) or len(history) > _ADVISOR_MAX_HISTORY:
+        raise HTTPException(status_code=400, detail="history too long — start a new conversation")
+
+    gw = int(body.get("gw") or 0)
+    payload = _load_or_404(gw)
+    records = payload["records"]
+
+    owned = body.get("owned")
+    if owned:
+        owned_ids = [int(e) for e in owned][:15]
+        bank = float(body.get("bank") or 0.0)
+        free_transfers = int(body.get("free_transfers") or 0)
+    else:
+        entry_id = int(body.get("entry_id") or 0)
+        picks = _demo_picks(records) if entry_id == 0 else _cached_picks(get_fpl_client(), entry_id, gw)
+        owned_ids = list(picks["element_ids"])
+        bank = picks["bank"]
+        free_transfers = int(body.get("free_transfers") or 1)
+
+    if len(owned_ids) < 11:
+        raise HTTPException(status_code=400, detail="need a squad of at least 11 known players")
+
+    _advisor_rate_limit(request.client.host if request.client else "unknown")
+
+    from ..advisor.agent import advise
+    from ..advisor.tools import AdvisorTools
+
+    tools = AdvisorTools(
+        records, owned_ids, bank=bank, free_transfers=free_transfers,
+        ticker={str(k): v for k, v in payload.get("fixture_ticker", {}).items()},
+    )
+    result = advise(tools, message, history=history, client=client)
+    return {
+        "reply": result["reply"],
+        "history": _jsonable(result["messages"]),
+        "tool_calls": result["tool_calls"],
+        "usage": result["usage"],
+        "cost_usd": result["cost_usd"],
+        "stopped_at_limit": result["stopped_at_limit"],
+        "stub": stub,
     }
