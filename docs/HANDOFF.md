@@ -57,6 +57,7 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | 18 | Understat unblocked; the mirrored-pitch bug; the saves experiment |
 | **19** | **where the model can still improve — and why it is team news, not modelling** |
 | **20** | **working that list: what each grade of team news costs, and why props are back on** |
+| 21 | free routes to market data; why prediction markets do not fit |
 
 ---
 
@@ -1308,3 +1309,74 @@ subscription, and it is cheap enough to settle rather than argue.
    Revisit once snapshots show what the free FPL availability fields already deliver.
 5. **Nothing else on the modelling side.** Five nulls now: recency-xG, returns-bonus, LightGBM
    (×3), Understat player features, set-piece duty.
+
+---
+
+## 21. Free routes to market data, and whether prediction markets help (2026-08-05)
+
+§20 said props cost ~$30 to validate. Asked whether that is avoidable, three free routes exist and
+one of them was already sitting in the repo.
+
+### The free market signal we already had — and it works
+
+`validate_xp(fixture_lambdas=)` and the production precompute both prefer market-implied lambdas
+over the engine's. **That preference had never been scored on FPL player ranking**, only on match
+outcomes, and it could not be: `parse_csv` carried the closing 1X2 triple but not the over/under
+2.5 prices, and `market_lambdas` needs both — 1X2 fixes supremacy, O/U fixes total goals. The
+`_ou_odds` helper existed and was wired only into the live path. So the historical half of a
+shipped feature was unmeasurable by construction.
+
+Two fields later, 2024-25 played-only per-GW Spearman:
+
+| engine | played | vs shipped | p |
+|---|---|---|---|
+| goals (shipped) | 0.3758 | — | — |
+| goals + market λ | 0.3853 | +0.0095 | 0.017 |
+| **xG (§19)** | **0.3878** | **+0.0120** | **0.0015** |
+| xG + market λ | 0.3853 | +0.0095 | 0.017 |
+
+**The market-lambda preference is vindicated** against the shipped engine — assumed until now.
+**And our xG-fitted engine already matches the market** (−0.0025, p=0.42, indistinguishable). Free
+Football-Data closing odds, free Understat xG, and the two land in the same place.
+
+The last row is identical to the second because `validate_xp` bypasses the engine entirely for any
+fixture carrying a market lambda; at 380/380 coverage the engine is never consulted. Production
+coverage is partial (books post lines ~2 weeks out), so production is a real hybrid — do not read
+that row as "market and xG cancel out".
+
+**This narrows the props case usefully.** If a team-level market view adds nothing over our own xG
+engine, props are not worth buying because "the market knows the fixture better". They are worth
+buying for the two things they uniquely carry: the **player-level split** of a team's goals, and
+**team news priced in by construction** — a benched player is priced long, which is a share of the
++0.168 prize from §19.
+
+### Free routes to props
+
+| route | cost | what you get | catch |
+|---|---|---|---|
+| **The Odds API, forward capture** | **free** | anytime-goalscorer weekly from now | ~10 credits/gameweek against a 500/month free tier — fits ten times over. Builds history from zero, same bet as `snapshot.py` |
+| **The Odds API, historical** | free, slowly | 50 events/month on the free tier | 380-match season ≈ 8 months. A 150-match sample for a first read ≈ 3 months, or $30 buys it now |
+| **Betfair Exchange historical** | **free** | Basic tier, 1-minute last-traded price, back to 2016 | **no volume field** — and an illiquid last-traded price is not a market-clearing probability, so the free tier strips exactly what you would need to tell the two apart. Whether goalscorer markets are downloadable on Basic is NOT confirmed in public docs; it needs a Betfair account and ten minutes to check |
+
+The honest recommendation: **start the free forward capture now**, alongside the snapshot cron, for
+the same reason — it cannot be backfilled and it costs nothing. Buy the historical month only if
+you want the answer before next May.
+
+### Prediction markets — no, not for this
+
+Kalshi does list EPL match markets and is CFTC-regulated with no vig, which makes it attractive in
+principle. It is the wrong instrument here for reasons that are structural rather than incidental:
+
+- **Breadth.** This model needs ~200 player-match scoring probabilities per gameweek — every
+  plausible starter across ten fixtures. Kalshi's soccer props are mostly season-long futures
+  (Golden Boot, relegation), not per-match goalscorer lines. Bookmakers price all 200 every week.
+- **Liquidity.** A prediction market is informative in proportion to its volume, and Kalshi's
+  depth sits in US sports and marquee soccer events. An EPL mid-table anytime-goalscorer contract
+  would be thin or absent.
+- **Redundancy where it does have coverage.** Kalshi's EPL match markets duplicate what
+  Football-Data closing odds already give us for free — and the table above shows our xG engine
+  already matches that signal.
+
+Where a prediction market genuinely would help is a question with one contract and real volume —
+title winner, top four, relegation, Golden Boot. Those are season-long, and this model is a
+single-gameweek player-ranking model. Different question.
