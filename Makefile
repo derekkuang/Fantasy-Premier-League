@@ -1,4 +1,4 @@
-.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props model-card clean
+.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props simulate-season model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -41,6 +41,11 @@ snapshot:
 # Run `capture-props ARGS=--list-markets` ONCE first to confirm the market key.
 capture-props:
 	.venv/bin/python scripts/capture_props.py --if-near-deadline $(if $(WINDOW),--window $(WINDOW)) $(ARGS)
+
+# Play a whole season on each projection and count the points — the first measurement of
+# DECISIONS rather than ranking. Slow (a walk-forward plus a simulation per policy).
+simulate-season:
+	.venv/bin/python scripts/simulate_season.py $(SEASON)
 
 # Regenerate the measured accuracy the /model page reads. Slow (full walk-forward).
 model-card:

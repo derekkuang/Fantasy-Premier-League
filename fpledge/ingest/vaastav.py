@@ -70,6 +70,11 @@ def fetch_player_gws(season: str) -> list[dict]:
                 "bonus": _i(r.get("bonus")),
                 "total_points": _i(r.get("total_points")),
                 "fpl_xp": _f(r.get("xP")),
+                # Price at that gameweek, in tenths of a million (50 = £5.0m). Needed by the
+                # season simulator: a projection is not a decision until it is affordable.
+                "value": _i(r.get("value")),
+                # Absolute ownership count, for template/effective-ownership baselines.
+                "selected": _i(r.get("selected")),
             }
         )
     _add_clean_baseline(rows)
