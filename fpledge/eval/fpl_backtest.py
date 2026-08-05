@@ -126,6 +126,7 @@ def validate_xp(
     saves_mode: str = "lambda",
     match_saves: Sequence[dict] | None = None,
     sharpen_minutes: bool = False,
+    availability: dict | None = None,
     oracle_minutes=False,  # False | "exact" | "starter" | "appears" — see _OracleMinutes
     return_records: bool = False,
     fixture_lambdas: dict | None = None,
@@ -192,7 +193,25 @@ def validate_xp(
             saves_rates = saves_model.SavesRates.build(save_counts) if save_counts else None
         if n > burn_in and acc:
             engine = DixonColesModel(half_life_days).fit([f for f in fixtures if f["gw"] < n])
-            xmins = {el: _mp(a).x_minutes for el, a in acc.items()}
+            def _mp_avail(el, a, gw=n):  # noqa: ANN001
+                """Minutes prediction with live availability already folded in.
+
+                Availability MUST be applied before `rate_shares` runs, because production
+                does it in that order (`models/xp_table.py`): an injured player's expected
+                minutes fall, so his share of the team's goals falls with them. Applying it
+                afterwards leaves him holding a full share of the attack while his appearance
+                points go to zero — a different model from the shipped one, which would make
+                any measurement of what availability is worth simply wrong.
+                """
+                mp_ = _mp(a)
+                av = availability.get((gw, el)) if availability else None
+                if av:
+                    mp_ = minutes_model.apply_availability(
+                        mp_, av.get("chance_of_playing"), av.get("status")
+                    )
+                return mp_
+
+            xmins = {el: _mp_avail(el, a).x_minutes for el, a in acc.items()}
 
             # Sharpening: commit to a starting XI instead of hedging across the squad.
             # Our minutes model outputs a continuous expectation, so a nailed-on starter and a
@@ -223,7 +242,9 @@ def validate_xp(
                 a = acc.get(el)
                 if not a or a["games"] == 0:
                     continue
-                mp = _mp(a)
+                # A player with no snapshot entry is left alone rather than assumed fit, so a
+                # partial feed degrades to current behaviour instead of zeroing the unknown.
+                mp = _mp_avail(el, a)
                 if sharpen_minutes:
                     mp = _OracleMinutes(0.0, started=el in predicted_xi, mode="starter")
                 if oracle_minutes:
