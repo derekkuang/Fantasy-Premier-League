@@ -56,6 +56,7 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | **17** | **data collection for the new season** |
 | 18 | Understat unblocked; the mirrored-pitch bug; the saves experiment |
 | **19** | **where the model can still improve — and why it is team news, not modelling** |
+| **20** | **working that list: what each grade of team news costs, and why props are back on** |
 
 ---
 
@@ -1189,3 +1190,121 @@ Not wired in: it needs a weekly Understat fetch beside a precompute that still d
 More historical per-player statistics, in any form, from any source. That is four independent
 nulls, and §18's was measured against the clean baseline with features FPL does not even publish.
 The model's remaining error is not in what it knows about the past.
+
+---
+
+## 20. Working the §19 list, 1 to 5 (2026-08-05)
+
+Each item measured or built rather than argued. Two produced code, two produced nulls, one
+overturned a standing assumption about cost.
+
+### 1 & 2 — team news: what each grade of it is actually worth
+
+§19's +0.168 for perfect team news is not purchasable. Graded into things that are:
+
+| what you know | played-only | all players |
+|---|---|---|
+| model minutes (shipped) | 0.3878 | 0.6895 |
+| the STARTING XI | 0.5252 | 0.6947 |
+| who APPEARS | 0.3906 | 0.8194 |
+| EXACT minutes | 0.5562 | 0.8285 |
+
+The two columns disagree, and that is the useful part. For ranking players who feature, knowing
+the eleven is **82% of the whole prize** and knowing merely who appeared is worth nothing — that
+is what "played-only" already conditions on. Across the full pool it inverts: knowing who appears
+is worth +0.130 and knowing the eleven almost nothing, because the dominant error there is
+projecting points for players who never get on.
+
+**Our minutes model already names the starting XI at 78.3%** (5,024 of 6,413 slots, point-in-time).
+Graded by feed accuracy:
+
+| feed accuracy | played-only | all players |
+|---|---|---|
+| 78.4% (ours today) | +0.0431 | −0.0725 |
+| **84% (Sportmonks' EPL claim)** | **+0.0671** | **−0.0513** |
+| 90% | +0.0874 | −0.0295 |
+| 100% | +0.1374 | +0.0052 |
+
+So a paid feed is worth about **+0.067 on who-to-pick, not +0.168** — and naive integration makes
+all-player ranking *worse*, because replacing the model wholesale commits ~16,000 non-starters to
+a crude bench profile the continuous model handles better. A real integration would blend, so the
+truth sits between the columns. Smaller and more conditional than §19 implied.
+
+**A rejected idea, recorded because it looks obviously right.** The feed-at-our-own-accuracy row
+gaining +0.043 suggests the gap is sharpness, not accuracy — our model hedges a nailed-on starter
+and a rotation risk into the same 60–75 minute band. So `sharpen_minutes` takes our own top eleven
+and applies the empirical starter profile: same information, discretised, no new data. **It loses**
+(−0.0062 played, −0.0889 all). Committing to an XI you get right 78% of the time amplifies your
+own errors; the continuous model is the better description of real uncertainty.
+
+**Built:** `fpledge/eval/snapshots.py` reads pre-deadline captures back, and
+`validate_xp(availability=...)` finally lets the backtest apply the `availability_factor`
+production has always applied. Writing its test **found a real bug** — the first version applied
+availability *after* `rate_shares`, so a ruled-out player scored zero appearance points while
+keeping a full share of his team's attack. Production has the order right; a backtest that
+disagrees measures a model nobody ships.
+
+### 3 — the xG-fitted engine, now a supported path
+
+`ingest/understat.substitute_xg(matches, understat_fixtures)` returns engine-ready matches plus a
+coverage report. Verified on real data: 380/380 joined, all twenty teams mapped. The join needs
+the date — each pairing happens twice a season, so matching on teams alone attaches the reverse
+fixture's xG to half of them, plausibly. Partial coverage is reported rather than logged, because
+part-xG-part-goals is a different model on different seasons.
+
+### 4 — set-piece duty: real signal, does not convert
+
+§14's last untested idea, and the argument for it is good: our xG per 90 already contains
+historical penalty xG, so the "it double-counts" objection is right about the past and silent
+about the future. Three duties built point-in-time from Understat — penalties (83 events all
+season), direct free kicks (269), corner delivery via `player_assisted` on corner shots (1,619).
+
+Partial correlation with points, our xP held constant:
+
+| duty | all players | p | among players WITH the duty | p |
+|---|---|---|---|---|
+| penalty | +0.0045 | 0.64 | **+0.1575** | **0.0013** |
+| freekick | +0.0022 | 0.80 | +0.0183 | 0.61 |
+| corner | +0.0031 | 0.77 | −0.0203 | 0.30 |
+
+**Penalty duty carries genuine signal among takers.** It still does not convert. A rank blend is
+worse (−0.0095) for a mechanical reason — 94% of rows are zero, so `rankdata` collapses them into
+one tied block and shuffles every non-taker. So it was retried the way a model would do it, as a
+targeted additive bonus `xp' = xp + k·pen_share` that moves only takers: train improves
+monotonically to k=1.5, **test is flat** (peak +0.0003 at k≈0.5), and choosing k honestly on train
+gives **−0.0006**. Textbook overfitting on a sparse feature.
+
+The reason is arithmetic. At 0.22 penalties per match, a designated taker's expected penalty value
+is ~0.1 xP per gameweek — below the noise floor of single-gameweek scoring. **Fifth null.**
+
+### 5 — player props are NOT scarce or expensive. §15 was wrong about this
+
+§15 parked props because "historical props are scarce and expensive, which means a prop-based
+model could be built forward and not validated before committing." That is no longer true, and it
+was the only thing keeping this off the list.
+
+[The Odds API](https://the-odds-api.com/historical-odds-data/) carries historical **player props
+from 3 May 2023** at 5-minute snapshots, on every tier including free. Historical additional
+markets cost 10 credits per market per region per event. Three EPL seasons is 1,140 events ×
+10 credits = **~11,400 credits — one month of the $30/20K tier.**
+
+So the whole "cannot validate before committing" objection collapses to roughly **$30 and a
+weekend**. And props are strategically better than they look: an anytime-goalscorer price is a
+market-clearing P(scores) that already embeds team news, so a benched player is priced long. It is
+a way to buy a share of the +0.168 team-news prize *and* a quality estimate in one number, from a
+source with no 84%-accuracy ceiling.
+
+**This is now the highest-value untested idea in the project**, ahead of the lineups
+subscription, and it is cheap enough to settle rather than argue.
+
+### Revised order
+
+1. **Buy one month of historical props and backtest them.** ~$30, three seasons, settles the
+   largest open question. Was parked on an assumption that is no longer true.
+2. **Snapshots from 2026-08-21.** Unchanged, free, cannot be backfilled, and the plumbing to
+   consume them now exists.
+3. **xG engine.** +0.0088, replicated, ready — after the precompute fails loudly.
+4. **Expected-lineups feed.** +0.067 on who-to-pick, negative on all-players without blending.
+   Revisit once snapshots show what the free FPL availability fields already deliver.
+5. **Nothing else on the modelling side.** Five nulls now: recency-xG, returns-bonus, LightGBM
+   (×3), Understat player features, set-piece duty.
