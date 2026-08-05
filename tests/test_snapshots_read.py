@@ -183,3 +183,47 @@ def test_a_doubtful_player_is_discounted_not_removed():
     target = [k for k in b if k[1] == 103]
     assert target
     assert all(0 < h[k] < b[k] for k in target)
+
+
+# --- the field, which is the one thing the season simulation could not measure ------------- #
+def _capture_with_events(tmp_path, events, ts="20260828T140000Z", gw=2, hours=3.0):
+    import gzip as _gz
+    p = tmp_path / f"bootstrap_snapshot_{ts}.json.gz"
+    with _gz.open(p, "wt", encoding="utf-8") as fh:
+        json.dump({"elements": [], "events": events}, fh)
+    return {"ingest_ts": ts, "for_gameweek": gw, "hours_before_deadline": hours,
+            "paths": [str(p)]}
+
+
+def test_field_scores_are_read_from_the_bootstrap_events(tmp_path):
+    from fpledge.eval.snapshots import field_scores
+    idx = [_capture_with_events(tmp_path, [
+        {"id": 1, "average_entry_score": 57, "highest_score": 131, "ranked_count": 11_000_000},
+        {"id": 2, "average_entry_score": 0, "highest_score": None, "ranked_count": 0},
+    ])]
+    fs = field_scores(idx)
+    assert fs[1]["average_entry_score"] == 57
+    assert fs[1]["highest_score"] == 131
+    assert 2 not in fs                       # not played yet
+
+
+def test_an_unplayed_gameweek_is_not_recorded_as_a_zero_average(tmp_path):
+    """FPL reports 0, not null, for a gameweek that has not happened. Taking that at face value
+    would put a zero into the field series and drag any comparison against it downwards."""
+    from fpledge.eval.snapshots import field_scores
+    idx = [_capture_with_events(tmp_path, [
+        {"id": 5, "average_entry_score": 0, "highest_score": None, "ranked_count": 0},
+    ])]
+    assert field_scores(idx) == {}
+
+
+def test_later_captures_supersede_earlier_ones_for_the_same_gameweek(tmp_path):
+    """The field average firms up after a gameweek settles, so the newest capture wins."""
+    from fpledge.eval.snapshots import field_scores
+    early = _capture_with_events(tmp_path, [
+        {"id": 1, "average_entry_score": 50, "highest_score": 100, "ranked_count": 9_000_000},
+    ], ts="20260821T140000Z")
+    late = _capture_with_events(tmp_path, [
+        {"id": 1, "average_entry_score": 57, "highest_score": 131, "ranked_count": 11_000_000},
+    ], ts="20260828T140000Z")
+    assert field_scores([late, early])[1]["average_entry_score"] == 57

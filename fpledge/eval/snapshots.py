@@ -111,3 +111,39 @@ def coverage(availability: dict, gameweeks) -> dict:
         "share": round(len(want & have) / len(want), 3) if want else 0.0,
         "missing": sorted(want - have),
     }
+
+
+def field_scores(index: list[dict] | None = None) -> dict:
+    """{gameweek: {"average_entry_score", "highest_score", "ranked_count"}} — the FIELD.
+
+    The one thing §23–§25 could not measure. A season simulation can be compared against other
+    projections, which is what those sections do, but "what rank would this have finished" needs
+    the distribution of what real managers scored, and no historical dataset carries it —
+    vaastav has players and fixtures, not gameweek summaries.
+
+    FPL publishes it on `bootstrap-static`'s `events`, and `scripts/snapshot.py` already lands
+    the whole bootstrap, so no new capture is needed. It arrives ONE WEEK IN ARREARS by nature:
+    a snapshot taken before GW N's deadline cannot know GW N's average, but it carries every
+    completed gameweek before it. So the chain of weekly snapshots yields the full season, and
+    the final gameweek needs one capture after the season ends.
+
+    Unplayed gameweeks report `average_entry_score` as 0 rather than null, which is
+    indistinguishable from a real zero by value alone — so rows with `ranked_count == 0` are
+    dropped as not-yet-played rather than recorded as a gameweek where nobody scored.
+    """
+    rows = load_index() if index is None else index
+    out: dict = {}
+    for row in sorted(rows, key=lambda r: r.get("ingest_ts") or ""):
+        bootstrap = _read_bootstrap(row)
+        if not bootstrap:
+            continue
+        for ev in bootstrap.get("events", []) or []:
+            gw, ranked = ev.get("id"), ev.get("ranked_count") or 0
+            if gw is None or not ranked:
+                continue
+            out[gw] = {
+                "average_entry_score": ev.get("average_entry_score"),
+                "highest_score": ev.get("highest_score"),
+                "ranked_count": ranked,
+            }
+    return out

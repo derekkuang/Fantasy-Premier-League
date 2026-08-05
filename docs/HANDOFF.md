@@ -1705,3 +1705,30 @@ This, rather than an accuracy table. The measured claims are:
 
 Claim 3 is the honest sales pitch, claim 1 is the honest technical claim, and claim 2 is the one
 almost no FPL tool states at all — which is precisely why this project should.
+
+### The field — the last gap in §23–§25, and it closes itself
+
+Those sections compare policies against each other, never against real managers, because
+"what rank would this have finished" needs the distribution of what the field scored and **no
+historical dataset carries it** — vaastav has players and fixtures, not gameweek summaries. That
+was recorded as a limitation.
+
+It turns out not to need any new work. FPL publishes `average_entry_score`, `highest_score` and
+`ranked_count` on `bootstrap-static`'s `events`, and `scripts/snapshot.py` already lands the
+whole bootstrap. `eval/snapshots.field_scores()` reads them back.
+
+Two mechanics worth knowing:
+
+- **It arrives one week in arrears, by nature.** A snapshot taken before GW N's deadline cannot
+  know GW N's average, but it carries every completed gameweek before it. The weekly chain
+  therefore yields the whole season, and the final gameweek needs one capture after the season
+  ends — worth a calendar note in May.
+- **An unplayed gameweek reports `average_entry_score` as 0, not null**, which is
+  indistinguishable from a real zero by value alone. Rows with `ranked_count == 0` are dropped
+  rather than recorded as a gameweek in which nobody scored, because a zero in the field series
+  would drag every comparison against it downwards. Same species as §16 — a value that means
+  "not yet" being read as a measurement.
+
+So from 2026-08-21 the season simulator can finally be scored the way a manager thinks: not
+"more points than FPL's projection", but **what rank this would have finished**. That is the
+comparison worth putting on `/model`, and it needs a season of snapshots and no new code.
