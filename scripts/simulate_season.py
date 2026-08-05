@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
-"""Play a season on each projection and compare what they actually scored.
+"""Play seasons on each projection and compare what they actually scored.
 
-The project's accuracy numbers are all RANKING metrics. This measures the thing the product
-does — buy fifteen, pick eleven, choose a captain, decide whether a transfer is worth −4 — by
-running a full season under FPL's rules and counting the points.
+The project's accuracy numbers are all RANKING metrics. This measures the thing the product does
+— buy fifteen, pick eleven, choose a captain, decide whether a transfer is worth −4 — by running
+full seasons under FPL's rules and counting the points.
+
+WHY IT DEFAULTS TO MANY STARTS AND MANY SEASONS, which is not a convenience:
+
+  The first version of this script ran ONE start on ONE season and reported that our projection
+  loses to FPL's by 4.13 points a gameweek. Across eighteen starts of the same season the same
+  code says we WIN by 2.08. Across a second season it says we lose by 1.47. All three numbers are
+  arithmetically correct and two of them are worthless, because the opening squad is a single
+  decision whose consequences persist for the whole run — a season total is one draw from a very
+  wide distribution (sd ≈ 4.3 points a gameweek between starts).
+
+  §23 published a headline from one season and §24 had to retract it. So the defaults here are
+  the honest configuration, and running narrower than that prints a warning rather than a number
+  that looks like a finding.
 
 Four policies through the IDENTICAL simulator, so every simplification (no chips, no multi-week
-planning, no price-rise trading) cancels and the difference is attributable to the projection:
+planning, no price-rise trading) cancels and any difference is attributable to the projection:
 
     ours        our structured xP
     fpl         FPL's own pre-deadline ep_next
     template    ownership — "follow the crowd", which is what most managers are
     random      noise, which is what the machinery scores with no projection at all
 
-Usage: python scripts/simulate_season.py [season] [--xg] [--bootstrap N]
+Usage:
+    python scripts/simulate_season.py                       # 2023-24 and 2024-25, 18 starts each
+    python scripts/simulate_season.py --seasons 2024-25     # one season — prints a warning
 """
 
 from __future__ import annotations
@@ -23,6 +38,7 @@ import pathlib
 import random
 import statistics as st
 import sys
+from collections import defaultdict
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -31,84 +47,82 @@ from fpledge.eval.season_sim import build_gw_pool, simulate_season
 from fpledge.ingest import vaastav
 
 POLICIES = [
-    ("ours", "xp", "our structured xP"),
-    ("fpl", "fpl_xp", "FPL's pre-deadline ep_next"),
-    ("template", "ownership", "follow the crowd (ownership)"),
-    ("random", "random", "noise — the machinery with no projection"),
+    ("ours", "xp"),
+    ("FPL", "fpl_xp"),
+    ("template", "ownership"),
+    ("random", "random"),
 ]
+DEFAULT_SEASONS = ["2023-24", "2024-25"]
+MIN_GAMEWEEKS = 12          # a run shorter than this is dominated by its opening squad
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("season", nargs="?", default="2024-25")
-    ap.add_argument("--bootstrap", type=int, default=2000,
-                    help="resamples for the gameweek-level confidence interval")
-    ap.add_argument("--seed", type=int, default=7)
-    args = ap.parse_args()
+def run_season(season: str, seed: int) -> dict:
+    rows = vaastav.fetch_player_gws(season)
+    fixtures = vaastav.fetch_fixtures(season)
+    teams = vaastav.fetch_teams(season)
 
-    print(f"loading {args.season}...", flush=True)
-    rows = vaastav.fetch_player_gws(args.season)
-    fixtures = vaastav.fetch_fixtures(args.season)
-    teams = vaastav.fetch_teams(args.season)
-
-    print("walking forward (point-in-time projections)...", flush=True)
     met, records = validate_xp(rows, fixtures, teams, burn_in=8, minutes_mode="recent",
                                return_records=True)
     if not met.get("baseline_clean"):
-        print("WARNING: the FPL baseline is the contaminated column — see docs/HANDOFF.md §16")
+        print(f"  WARNING [{season}]: the FPL baseline is the contaminated column — see §16")
 
     pool = build_gw_pool(rows, records, teams)
-    rng = random.Random(args.seed)
+    rng = random.Random(seed)
     for gw in pool.values():
         for p in gw.values():
             p["random"] = rng.random()
 
     gws = sorted(pool)
-    print(f"{len(gws)} gameweeks (GW{gws[0]}..GW{gws[-1]}), "
-          f"{sum(len(v) for v in pool.values())} player-gameweeks\n")
+    starts = [g for g in gws if g <= gws[-1] - MIN_GAMEWEEKS]
+    per: dict = defaultdict(list)
+    for s in starts:
+        for label, key in POLICIES:
+            per[label].append(simulate_season(pool, projection=key, start_gw=s)["points_per_gw"])
+    return {"season": season, "starts": starts, "per": per,
+            "spearman_ours": met["played_only"]["gw_spearman_model"],
+            "spearman_fpl": met["played_only"]["gw_spearman_fpl"]}
 
-    results = {}
-    for name, key, label in POLICIES:
-        r = simulate_season(pool, projection=key)
-        results[name] = r
-        print(f"{label:34s} {r['total_points']:6.0f} pts  "
-              f"({r['points_per_gw']:5.2f}/gw, {r['total_transfers']:3d} transfers, "
-              f"{r['total_hits']} hits)")
 
-    base = results["ours"]
-    print(f"\n{'':34s} {'total':>6s} {'/gw':>7s} {'captain':>8s} {'bench':>7s}")
-    for name, _key, label in POLICIES:
-        r = results[name]
-        print(f"{label:34s} {r['total_points']:6.0f} {r['points_per_gw']:7.2f} "
-              f"{r['captain_points']:8d} {r['bench_points']:7d}")
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seasons", nargs="+", default=DEFAULT_SEASONS)
+    ap.add_argument("--seed", type=int, default=7)
+    args = ap.parse_args()
 
-    # --- is the gap real, or is it one season of luck? ---------------------------------- #
-    print("\n=== ours vs each baseline, paired by gameweek ===")
-    ours_gw = {h["gw"]: h["points"] for h in base["history"] if "raw_points" in h}
-    for name, _key, label in POLICIES:
-        if name == "ours":
-            continue
-        other = {h["gw"]: h["points"] for h in results[name]["history"] if "raw_points" in h}
-        shared = sorted(set(ours_gw) & set(other))
-        diffs = [ours_gw[g] - other[g] for g in shared]
-        if not diffs:
-            continue
-        rng2 = random.Random(args.seed)
-        boots = [
-            st.mean(rng2.choices(diffs, k=len(diffs)))
-            for _ in range(args.bootstrap)
-        ]
-        boots.sort()
-        lo = boots[int(0.025 * len(boots))]
-        hi = boots[int(0.975 * len(boots))]
-        wins = sum(d > 0 for d in diffs)
-        print(f"  vs {label:32s} {st.mean(diffs):+6.2f} pts/gw   "
-              f"95% CI [{lo:+.2f}, {hi:+.2f}]   won {wins}/{len(diffs)} gameweeks")
+    results = []
+    for season in args.seasons:
+        print(f"loading and walking forward: {season}...", flush=True)
+        results.append(run_season(season, args.seed))
 
-    print("\nSKILL vs LUCK: the interval above is over GAMEWEEKS within one season. It answers")
-    print("'is this gap bigger than week-to-week noise', not 'would it recur next season' —")
-    print("that needs more seasons, and one season is one sample however many times it is")
-    print("resampled.")
+    print(f"\n{'season':10s} {'starts':>7s} " + "".join(f"{lbl:>10s}" for lbl, _ in POLICIES)
+          + f"{'ours-FPL':>10s} {'wins':>7s}")
+    diffs_all = []
+    for r in results:
+        per = r["per"]
+        d = [a - b for a, b in zip(per["ours"], per["FPL"])]
+        diffs_all.append((r["season"], d))
+        cells = "".join(f"{st.mean(per[lbl]):10.2f}" for lbl, _ in POLICIES)
+        print(f"{r['season']:10s} {len(r['starts']):7d} {cells}"
+              f"{st.mean(d):+10.2f} {sum(x > 0 for x in d):3d}/{len(d):<3d}")
+
+    print(f"\n{'season':10s} {'Spearman ours':>15s} {'Spearman FPL':>14s}")
+    for r in results:
+        print(f"{r['season']:10s} {r['spearman_ours']:15.3f} {r['spearman_fpl']:14.3f}")
+
+    print("\n--- reading this honestly ---")
+    signs = {season: (1 if st.mean(d) > 0 else -1) for season, d in diffs_all}
+    pooled = [x for _s, d in diffs_all for x in d]
+    sd = st.pstdev(pooled) if len(pooled) > 1 else 0.0
+    print(f"pooled ours-FPL: {st.mean(pooled):+.2f}/gw   sd between starts {sd:.2f}")
+    if len(results) < 2:
+        print("ONE SEASON ONLY. §23 published a one-season headline and §24 retracted it. "
+              "Run at least two before calling anything a finding.")
+    elif len(set(signs.values())) > 1:
+        print("THE SIGN FLIPS BETWEEN SEASONS. The decision-level difference is not established "
+              "— see docs/HANDOFF.md §24. Ranking replicates; decisions do not.")
+    else:
+        print("Same sign in every season. Still check the magnitude against the start-to-start "
+              f"sd of {sd:.2f} before treating it as an edge.")
 
 
 if __name__ == "__main__":
