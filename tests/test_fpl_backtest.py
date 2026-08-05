@@ -185,3 +185,35 @@ def test_saves_mode_falls_back_when_no_data_is_supplied():
     _, none = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
                           saves_mode="shots", match_saves=None, return_records=True)
     assert {(g, el): my for (g, el, my, *_) in base} == {(g, el): my for (g, el, my, *_) in none}
+
+
+def test_oracle_minutes_is_off_by_default_and_cheats_when_on():
+    """The oracle exists to price a decision (what is team news worth?), not to report
+    accuracy. Two things must hold: it is off unless asked for, and when on it genuinely
+    uses the realized minutes — an oracle that quietly does nothing would understate the
+    ceiling and could talk someone out of buying the data that matters most."""
+    rows, fixtures, teams = _synthetic()
+    _, base = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                          return_records=True)
+    _, same = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                          oracle_minutes=False, return_records=True)
+    assert base == same
+
+    benched = copy.deepcopy(rows)
+    for r in benched:                    # everyone is dropped from GW4 onward...
+        if r["gw"] >= 4:
+            r["minutes"] = 0
+    _, honest = validate_xp(benched, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                            return_records=True)
+    _, cheating = validate_xp(benched, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                              oracle_minutes=True, return_records=True)
+    # ...the honest model cannot know that in advance; the oracle can, and marks them down.
+    h = {(g, el): my for (g, el, my, *_) in honest if g >= 4}
+    o = {(g, el): my for (g, el, my, *_) in cheating if g >= 4}
+    assert h and o.keys() == h.keys()
+    assert all(o[k] <= h[k] for k in h)
+    assert any(o[k] < h[k] for k in h)
+    # NOT zero, and the reason is documented on _OracleMinutes: goal and assist shares are
+    # allocated before the substitution, so an attacker keeps a share based on predicted
+    # minutes. The oracle therefore UNDERSTATES what perfect team news is worth.
+    assert max(o.values()) > 0

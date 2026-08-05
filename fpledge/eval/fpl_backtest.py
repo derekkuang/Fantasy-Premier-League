@@ -39,6 +39,33 @@ def _per90(total: float, minutes: float, min_minutes: int) -> float:
     return total / (minutes / 90.0) if minutes >= min_minutes else 0.0
 
 
+class _OracleMinutes:
+    """A minutes prediction that already knows the answer. CHEATING, on purpose.
+
+    `oracle_minutes=True` replaces the minutes model with the minutes actually played, which
+    makes the walk-forward no longer point-in-time and its output no longer a validation number.
+    It exists to price a decision: perfect team-news is the ceiling any lineup feed — a paid
+    expected-lineups API, a scraped predicted XI — is buying a fraction of. Without the ceiling
+    there is no way to judge whether 84%-accurate lineups are worth a subscription, and the
+    honest answer might be no.
+
+    IT IS A LOWER BOUND, not the true ceiling. Goal and assist shares are allocated across a
+    squad by `rate_shares` BEFORE this substitution happens, using the model's expected minutes,
+    so the largest term in an attacker's projection still runs on a guess. Only appearance,
+    clean sheet (through p_60), saves, defensive contribution and bonus get the real number.
+    Perfect team news is worth strictly more than this measures.
+
+    Never call this from anything that reports accuracy.
+    """
+
+    __slots__ = ("p_60", "p_play", "x_minutes")
+
+    def __init__(self, minutes: float):
+        self.x_minutes = float(minutes)
+        self.p_play = 1.0 if minutes > 0 else 0.0
+        self.p_60 = 1.0 if minutes >= 60 else 0.0
+
+
 def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes):  # noqa: ANN001
     """Expected saves under the selected model.
 
@@ -73,6 +100,7 @@ def validate_xp(
     bonus_mode: str = "rate",
     saves_mode: str = "lambda",
     match_saves: Sequence[dict] | None = None,
+    oracle_minutes: bool = False,
     return_records: bool = False,
     fixture_lambdas: dict | None = None,
 ):
@@ -150,6 +178,8 @@ def validate_xp(
                 if not a or a["games"] == 0:
                     continue
                 mp = _mp(a)
+                if oracle_minutes:
+                    mp = _OracleMinutes(sum(r["minutes"] for r in rows))
                 sh = shares.get(el, {"goal_share": 0.0, "assist_share": 0.0})
                 dc90 = _per90(a["dc"], a["minutes"], min_rate_minutes)
                 bon90 = _per90(a["bonus"], a["minutes"], min_rate_minutes)
