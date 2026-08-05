@@ -1,9 +1,61 @@
 # fpledge — Handoff
 
-> **Read this first.** Current state as of **2026-08-03**. 39 commits, 226 tests passing,
-> nothing pushed to a remote. Supersedes the status sections of `PROJECT.md`, which is now the
-> historical design rationale (written 2026-07-28 at 17 commits / 72 tests) — still worth
-> reading for *why* the architecture is shaped the way it is, but its "what's built" is stale.
+> **Read this first.** State as of **2026-08-05**. 40 commits plus a large uncommitted working
+> tree, **265 tests passing**, nothing pushed to a remote. `PROJECT.md` is historical design
+> rationale only — its "what's built" is nine months stale.
+
+## START HERE — the three things that matter
+
+**1. The model beats FPL's own projection.** This reverses the positioning the project carried
+for four months. The old claim came from benchmarking against a dataset column that is scraped
+*after* each gameweek and contains the result. Corrected, on 2024-25 (30 gameweeks, 21,886
+player-gameweeks, played-only per-GW Spearman):
+
+| | ours | FPL (clean) | FPL (as-scraped, contaminated) |
+|---|---|---|---|
+| ranking | **0.374** | 0.299 | 0.568 |
+| error (MAE) | **2.013** | 2.244 | — |
+
+Full story and the decisive test in **§16**. `README.md` and `PROJECT.md` still carry the old
+claim in prose — **fix those before showing anyone.**
+
+**2. Run `make snapshot` weekly from 2026-08-21.** The first deadline of the new season. This
+captures FPL's pre-deadline state — a genuinely uncontaminated `ep_next`, plus the availability
+fields (`chance_of_playing_next_round`, `status`, `news`) that exist in no historical dataset.
+**Neither can be reconstructed later; the FPL API serves only the present.** Every week missed
+is gone. See **§17**.
+
+**3. Deploy.** Four config values and a Dockerfile (**§4**). It has been item one since
+2026-08-03 and the list of things built since is longer than the list of things blocking it.
+Ship with the advisor switched off — that is a supported, tested state.
+
+## Where things are
+
+```bash
+make precompute     # data/serving/gw1.json (engine fit, ~2 min)
+make serve          # FastAPI :8000
+cd web && npm run dev
+make snapshot       # weekly, from 2026-08-21
+make model-card     # regenerate /model's numbers (slow)
+make eval-brief     # briefing-guard recall (no API key needed)
+.venv/bin/python -m pytest -q
+```
+
+Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote.
+
+## Section map
+
+| § | |
+|---|---|
+| 1–9 | architecture, API, frontend, deploy blockers, known-broken, advisor design, LLM work, positioning, conventions |
+| 10–11 | motion; the Apple-design interface pass |
+| 12 | holistic review + prioritised next steps |
+| 13 | a validation coverage bug (real, fixed) |
+| 14–15 | the search for edge — **partly invalidated by §16, read that first** |
+| **16** | **the contaminated benchmark. The most important section.** |
+| **17** | **data collection for the new season** |
+
+---
 
 ---
 
@@ -59,17 +111,31 @@ GET /matches/{gw}
 GET /matches/{gw}/{match_id}     ← + both clubs' players ranked by xP
 GET /differentials/{gw}?...
 GET /team/{entry_id}?gw=         ← /team/0 is the sample squad
+GET /model                       ← measured accuracy; 404s until build_model_card.py runs
+GET /advise                      ← is the advisor configured, and why not
+POST /advise                     ← one conversational turn (the only route that costs money)
 ```
 
-All read from `data/serving/gw{N}.json`. The engine is never fitted here.
+All read from `data/serving/gw{N}.json` except `/model` (its own artifact) and `/advise`.
+The engine is never fitted here.
 
 ### Frontend (`web/`)
 
-Next.js 16 + React 19 + Tailwind v4. Routes: `/`, `/predictions`, `/fixtures`,
-`/differentials`, `/team/[id]`, `/privacy`, `/terms`, plus `robots.ts` and `sitemap.ts`.
+Next.js 16 + React 19 + Tailwind v4. Routes: `/`, `/squad`, `/predictions`, `/fixtures`,
+`/differentials`, `/model`, `/team/[id]`, `/privacy`, `/terms`, plus `robots.ts` and `sitemap.ts`.
 
-All three content pages have been redesigned. Pagination (25/50/100, default 50) on Predictions
-and Differentials. Global footer carries the legal notices.
+- **`/squad` — build a team by hand.** Pick 15 under the real rules, or Auto-pick a legal one,
+  then get the full dashboard. Needs no team id and works in preseason, which is why it is the
+  landing page's primary call to action. Squads encode to a 45-char `?s=` code, so they share.
+  No backend involvement: a `Prediction` is a squad row plus two booleans, and the dashboard
+  already computed everything client-side.
+- **`/model` — the honesty page.** Renders `GET /model`; every figure comes from the artifact,
+  nothing is typed into the template, and the generation date is printed so a stale claim
+  announces itself.
+- **Advisor chat** sits on the team dashboard below the free precomputed transfer answer.
+
+Pagination (25/50/100, default 50) on Predictions and Differentials. Global footer carries the
+legal notices.
 
 ---
 
@@ -77,14 +143,18 @@ and Differentials. Global footer carries the legal notices.
 
 **In order. The first item is the only one that matters until it's done.**
 
-1. **DEPLOY.** The product has been finishable for a while and keeps growing instead. See §4
-   for the blocking list — it is four config values and a Dockerfile.
-2. **Match page UI.** The backend is complete and serving; there is no UI for it. Needs a
-   design handoff like the other three pages got. This is the highest-value visible feature
-   sitting unused.
-3. **Supabase + advisor endpoint + chat UI.** Auth, quota, payments are one project — see §6.
-4. Optional/parked: Tier-2 shot zones (§5), an eval harness for the briefing guard (§7), the
-   one deferred animation (§10).
+**See §12 for the reasoned version of this list.** The short form:
+
+1. **DEPLOY, with the advisor switched off.** See §4 — four config values and a Dockerfile.
+   No key means `/advise` reports unavailable and the UI says so; that is a supported state.
+2. **Make the weekly precompute exit non-zero on a dropped fetch** (§4) before scheduling it.
+3. **Get five people to build a squad at `/squad`.** Works today, preseason, no team id —
+   user feedback is available now and has never been collected.
+4. **Match page UI.** Backend complete since 2026-08-02, still no UI.
+5. **Supabase + real quota + a live advisor key.** Auth, quota, payments are one project (§6).
+4. Optional/parked: Tier-2 shot zones (§5), the one deferred animation (§10). The briefing
+   eval harness (§7) is built; its live half runs the first time there's an API key —
+   `make eval-brief LIVE=1`, which is also the first real exercise of the LLM path (§5).
 
 ---
 
@@ -113,10 +183,17 @@ metadata and terms — but not zero-risk. A distinct name is the only way to rem
 
 ## 5. Things that don't work, and why
 
-**Live LLM path is unverified.** `brief.py` and `advisor/agent.py` have never made a real API
-call — no `ANTHROPIC_API_KEY` and `anthropic` isn't installed in the venv. The template path,
-the guard, retry and fallback are all tested against a stubbed client. **The first real run may
-need a fix to the request shape.** Install with `pip install -e ".[llm]"`.
+**No real model call has ever been made by anything in this project.** No `ANTHROPIC_API_KEY`,
+no `anthropic` package, no `ant` CLI. `brief.py` and `advisor/agent.py` are both exercised only
+against scripted clients. **The first real run may need a fix to the request shape** — though
+the shapes were checked against current API docs on 2026-08-03 and were correct as written.
+Install with `pip install -e ".[llm]"`.
+
+`FPLEDGE_ADVISOR_STUB=1` runs the advisor against `advisor/stub.py`: the real loop and the real
+tools, with scripted prose. Every number it reports is genuine; only the sentences are canned,
+and the `stub` flag is carried through to the browser and shown as a banner. It proves the loop,
+the tool layer and the UI — it proves nothing about whether a model reasons well. **Never set it
+in production.**
 
 **Understat fetch adapters fail, for two separate reasons** (both documented at the call site
 in `ingest/understat.py`):
@@ -206,9 +283,33 @@ the *whole* fact pack let "41% down the left" through, because 41 happened to be
 clean-sheet probability. A value-based check cannot separate an *invented* number from a
 *misattributed* one. Fix: scope each sentence to only the facts it cites.
 
-**Cheapest thing that would strengthen all of this:** an eval harness — run the generator over N
-fixtures and log guard rejection rate, retry-success rate, fallback rate. Turns "I built a
-hallucination guard" into "measured a 12% rejection rate over 200 generations". Needs an API key.
+**The eval harness is built** — `fpledge/eval/brief_eval.py` + `scripts/eval_brief.py`
+(`make eval-brief`, add `LIVE=1` to generate for real). It has two halves, because the guard
+has two failure directions and only one of them is obvious:
+
+- **Injection (offline, no API key, in CI).** Corrupts briefings the guard already passed —
+  digit drift, misattribution, arithmetic on two cited values, invented precision, phantom
+  evidence keys — and counts what it catches. Known-bad *by construction from the fact pack*,
+  never by asking `verify`, so it's a true recall number rather than the guard grading itself.
+  **Measured 2026-08-03: 400/400 = 100% recall over 80 fixtures** (template-seeded, so the
+  prose is formulaic — model prose is the harder corpus and needs the live half).
+- **Live generation.** First-attempt pass rate, guard rejection rate, **retry-success rate**
+  (the only test of whether feeding the rejection reason back actually works), fallback rate,
+  a taxonomy of *why* the guard fired, and cost per gameweek. Never run — needs a key.
+
+**The harness is discriminating, and here is the proof.** Swap `verify` for the pack-wide check
+that predated the evidence-scoping fix and recall drops **100% → 60%**: misattribution goes
+80/80 → **0/80**. That is the §7 story with a number attached — "a value-based check cannot
+separate an invented number from a misattributed one" is now measured, not asserted.
+
+Three things changed in `brief.py` to make this possible, all of which matter on their own:
+`narrate()` takes an optional `trace` (production passes none); the failure modes are now
+distinguishable (`api_error` / `parse_error` / `refusal` / `guard_rejected` — they were one
+bare `except` that made a dead API key look like a 100% hallucination rate); and a
+`stop_reason == "refusal"` check runs **before** reading content, since a declined request is a
+successful response with an empty `content` array that would otherwise raise and be filed as
+malformed output. `model`/`effort` are now arguments, which makes the harness an A/B rig —
+`--model claude-haiku-4-5` answers the 5×-cost question with data.
 
 ---
 
@@ -269,3 +370,569 @@ between pitch and bench, and a FLIP/layout transition would show the exchange. I
 item needing either a motion library or a careful manual FLIP / View Transitions implementation,
 so it was left for a session where the dependency decision can be made deliberately rather than
 unattended. Everything else in the audit is done.
+
+---
+
+## 11. Interface pass (2026-08-03)
+
+A second review, against Apple's fluid-interface and design principles rather than the motion
+audit in §10. The conclusion there still holds — this app earns very little *decorative* motion
+— so nothing was added for its own sake. What was missing was **response**, not animation.
+
+**Foundation, in `globals.css`:**
+
+| Addition | Why |
+|---|---|
+| `.tap` | Grows the hit area ±8px with no layout change. A 28px close button stays 28px however much padding surrounds it. |
+| `:where(…):focus-visible` ring | Zero-specificity default. The search input had `outline-none` and *nothing* replacing it; rows had a background tint too faint to locate. |
+| `.chrome` / `.chrome-edge` | Translucent floating chrome with a soft scroll edge instead of a 1px rule. |
+| `--nav-h: 48px` | Replaces `sticky top-[43px]`, which was a measurement of whatever the nav happened to be. |
+| `t-display` / `t-title` / `t-label` | **Eleven** ad-hoc tracking values became three size-specific roles across 33 sites. `.07em` and `0.07em` both appeared — the tell that they were picked per-site, not from a scale. |
+| `prefers-reduced-transparency`, `prefers-contrast` | Neither was handled; the app is built on `backdrop-filter`. |
+
+**`components/sheet.tsx` (new)** — both sheets were near-identical copies, which is how they came
+to agree on what didn't matter and differ on what did. The shell now owns focus-into/restore-on-
+close, a Tab trap, body scroll lock, and `role="dialog"` + `aria-modal` — none of which either
+copy had.
+
+**`lib/use-sheet-drag.ts` (new)** — drag-to-dismiss on the mobile sheet. 1:1 tracking under
+pointer capture, rubber-banding upward against the sheet's own top edge, momentum projection on
+release (`(v/1000)·d/(1−d)`, `d = 0.998` — the exponential-decay form, not `v²/2a`), and a live
+`DOMMatrix` read on grab so a sheet caught mid-spring-back is picked up where it visually *is*.
+Touch only. **The grip's `touch-action: none` is load-bearing, not cosmetic:** the panel scrolls,
+so the browser may claim a vertical drag before one `pointermove` arrives, and a claimed gesture
+can't be taken back.
+
+**Press feedback** reached the pitch tokens, bench tokens, sheet swap buttons, nav links, theme
+toggle and the submit button — all of which previously had `hover:` only, i.e. **nothing at all
+on the touch device the view is designed for**.
+
+**Verified:** `tsc` clean, production build clean, all five routes render, every new class and
+all three `prefers-*` branches present in the compiled CSS, ESLint unchanged at the same 8
+pre-existing problems (§9).
+
+**NOT verified — no browser driver in this session:** the drag gesture itself. The physics are
+right on paper and the code paths typecheck, but nobody has pulled the sheet down. Do that first.
+
+**Knowingly left alone:**
+
+- **`text-[8px]` in `next3-strip`, `split-cell`, `fixture-ticker`** (and a `text-[7px]` FDR digit
+  in `next3-strip`). Everything else at 8–9px went to 10px; these sit in 34px grid cells that
+  were tuned around them, and both carry comments showing the size was already reasoned about.
+  Raising them needs a visual check, not a find-and-replace. **It is still too small.**
+- **Full `rem`/Dynamic Type conversion.** Every size is px, so browser text-size settings do
+  nothing. This is the largest remaining typography gap and a genuinely big refactor.
+- **Desktop sheets don't anchor to their trigger** — they scale from centre with no spatial
+  relationship to the row that opened them.
+- **No route to the team dashboard from the nav.** Once you leave `/team/{id}` there is no way
+  back to it except the home page. That's a product call, not a design one.
+
+---
+
+## 12. Holistic review — 2026-08-04
+
+Written at the end of a long working session, for whoever picks this up next. It is a review of
+the whole project, not of the session.
+
+### Where this actually is
+
+Roughly **7,400 lines of Python** and **5,700 of TypeScript**, 258 tests, eight web routes, and
+one thing it has never had: **a URL**. That imbalance is the single most important fact about
+the project, and it has been true for three sessions running. The handoff has said "DEPLOY" as
+item 1 since 2026-08-03 and the list of things built since then is longer than the list of things
+blocking deploy.
+
+**What is genuinely good, and rarer than it looks:**
+
+- **A real from-scratch model.** Dixon-Coles by MLE, not a library call. A full scoreline matrix
+  per fixture with everything downstream derived from it. That is the substance most portfolio
+  projects of this shape don't have.
+- **Validated, and validated honestly.** Walk-forward, leakage-guarded, scored against FPL's own
+  projection, with the losses recorded. `/model` now publishes it.
+- **A discipline that shows up in the code.** The numeric guard on briefings, tools-compute-not-
+  the-model in the advisor, `low_coverage` exclusions, "not yet" instead of "no form" in
+  preseason. These are the same instinct applied at six different layers.
+- **Review-driven history.** Multiple real bugs caught by adversarial passes and written down.
+
+**What is weak:**
+
+- **No users, no deploy, no feedback.** Every design decision so far is a guess validated only
+  by taste. That is fine for six weeks and dangerous at three months.
+- **Preseason has hidden the hardest problems.** Nothing has been tested against live team news,
+  price changes, a real deadline, or a weekly precompute that must not fail. The known silent-
+  degradation trap (§4) is exactly the class of bug that only appears in production.
+- **One person's taste, uncorrected.** Including mine, in the last two sessions.
+
+### The three risks that actually matter
+
+1. **Scope growth is outrunning shipping.** This session alone added a squad builder, a model
+   page, a chat feature, an eval harness and a landing-page rewrite. Every one is defensible.
+   Collectively they are three more sessions of not deploying. **The next session should add no
+   features.**
+2. **The name.** "FPL Edge" uses FPL's abbreviation and the Premier League word mark, and it is
+   now the first thing on a page explicitly designed to be shared. Free to change today.
+   Expensive once a link is in circulation. Decide before deploying, not after.
+3. **The advisor is a cost surface with no durable quota.** The in-process limiter (§6) dies
+   with the process and a second worker doubles the ceiling. It is a fuse, not a quota. Do not
+   deploy the advisor with a real key until the Supabase work lands — or ship it with the key
+   absent, which is a supported state and degrades honestly.
+
+### What I'd do next, in order
+
+1. **Deploy, with the advisor switched off.** Four config values and a Dockerfile (§4). The
+   advisor is designed to be absent — no key means `/advise` reports unavailable and the UI says
+   so. Everything else is a read from a JSON file. There is no reason this isn't live.
+2. **Make the weekly precompute fail loudly** before anything schedules it. A dropped
+   Football-Data fetch currently prints `warn:` and exits 0 while the fit quietly degrades.
+   This is the one thing that will silently rot a deployed site.
+3. **Name decision.** Ten minutes, and it stops being reversible the moment someone shares a link.
+4. **Get five real people to build a squad.** The builder works today, preseason, with no team
+   id — which means user feedback is available *now* and doesn't need the 21 August deadline.
+   This is the highest-information, lowest-cost action available and it has never been taken.
+5. **Then, and only then:** the Match Lab UI (backend complete since 2026-08-02, still no UI),
+   Supabase + real quota + the advisor with a key, and the eval harness's live half.
+
+### Things that are done but unproven
+
+Listed together because they share a failure mode — they typecheck, they render, nobody has
+used them:
+
+| Thing | Unproven part |
+|---|---|
+| Sheet drag-to-dismiss | The gesture itself. No browser driver in any session so far. |
+| Squad builder | Verified against the real 555-player pool in Node; never driven by a human. |
+| Briefing guard | 100% injection recall — but on template-seeded prose, not model prose. |
+| Advisor | Loop, tools and UI proven end-to-end via the scripted stub. **No real model call has ever been made, by anything, in this project.** |
+| Model card | Numbers are real and freshly measured. The page has never been read by anyone but me. |
+
+
+---
+
+## 13. A validation bug, and what it changes (2026-08-04)
+
+**The headline claim this project has made since 2026-07-26 was measured wrong.** Found while
+searching for model improvements; the search is §14, this is the correction.
+
+### The bug
+
+`eval/fpl_backtest._subset_metrics` compared our projection against FPL's own. It did this:
+
+```python
+if sm == sm: sp_m.append(sm)     # ours: appended whenever ours was defined
+if sf == sf: sp_f.append(sf)     # FPL's: appended whenever THEIRS was defined
+```
+
+Two averages over **different sets of gameweeks**, printed side by side as a comparison. The
+community dataset does not carry FPL's `xP` for every gameweek — in 2025-26 it is populated for
+**4 of 30**, an empty column for the rest. So our score averaged 30 gameweeks and FPL's averaged
+4, and nothing in the output said so.
+
+The MAE comparison was worse. FPL's error was taken across *every* record, 86% of which had
+`xP = 0`, so most of that average was the distance from an empty column to reality. Our model
+duly "beat" it.
+
+### What the numbers actually are
+
+Fixed: a gameweek counts only when both predictors are defined on it, MAE is computed on exactly
+those records, and the card now reports `baseline_gws` so a thin comparison declares itself.
+Primary season moved to **2024-25**, which carries the baseline for 27 usable gameweeks against
+2025-26's 4.
+
+| Played-only | Was reported | Corrected (2024-25, 27 GWs, 8,113 player-GWs) |
+|---|---|---|
+| per-GW Spearman | 0.338 vs 0.587 | **0.373 vs 0.581** |
+| MAE | 2.148 vs 2.896 — *we win* | **1.995 vs 1.733 — we lose** |
+| gameweeks we're closer in | 26/30 | **2/27** |
+
+**The ranking gap was roughly right. The error claim was inverted.** "Lower MAE but worse
+ranking", and the under-dispersion story built on it, was an artifact of comparing against
+zeros. FPL's projection is better than ours on *both* measures.
+
+### What had to change because of it
+
+- `/model` no longer says we miss by less — it says FPL wins on both, and carries a section
+  explaining that an earlier version got this wrong in our own favour. An honesty page that
+  quietly restates a number is worth nothing.
+- `scripts/build_model_card.py` defaults to a season with a real baseline and records how wide
+  the comparison is.
+- `ingest/vaastav.py` normalises an `AM` position code present on ~1.2% of 2024-25 rows, which
+  is not an FPL position and raised `KeyError` mid-walk-forward.
+
+### The lesson worth keeping
+
+The bug survived four months and multiple review passes because **both branches looked
+individually reasonable** — each guards a NaN, which is correct in isolation. What was missing
+was the invariant that binds them: *these two numbers must describe the same gameweeks.*
+Nothing asserted it, so nothing caught it. Any future baseline comparison should carry an
+explicit coverage count next to it.
+
+---
+
+## 14. The search for edge (2026-08-04) — what was tried, what was found
+
+`scripts/model_search.py`. The six earlier A/Bs each changed the model and re-ran the whole
+walk-forward, which is why so few of them ran. This takes a cheaper axis: cache one walk-forward's
+`(gw, element, my_xp, fpl_xp, actual, pos, minutes)` records, then score any number of
+transformations without refitting anything. Rules it holds to — gameweeks split in half by time
+so nothing is tuned on what it is judged by, and no monotone rescaling is tested, because
+Spearman is rank correlation and cannot move under one.
+
+Run it: `python scripts/model_search.py [season]` (defaults to 2024-25; `--refresh` re-walks).
+
+### Result 1 — our model adds nothing to FPL's. Not a little. Nothing.
+
+Blend weights fitted on GW9–21, scored on GW23–38:
+
+| | test Spearman |
+|---|---|
+| ours alone | 0.383 |
+| FPL alone | **0.601** |
+| best blend (0.2 ours / 0.8 FPL) | 0.586 |
+| rank-blend, z-blend, every weight | all between the two, monotone |
+
+**The optimal weight on our model is 0.0 at every position** — GK, DEF, MID and FWD alike. Any
+amount of our projection mixed into FPL's makes it worse. There is no orthogonal signal to
+recover; whatever we know, they already know.
+
+### Result 2 — our ranking is mostly "who plays", not "who returns"
+
+Conditioning on minutes collapses us and not them:
+
+| subgroup | ours | FPL |
+|---|---|---|
+| under 60 min | 0.033 | 0.298 |
+| 60–85 min | 0.202 | 0.505 |
+| 85+ min | 0.229 | 0.516 |
+
+Among players we already know will play a full match, our ordering is close to noise. That is
+the gap in one line, and it says the minutes model is carrying almost all of our signal.
+
+### Result 3 — goalkeepers are the worst area, and it looks fixable
+
+Per-position played-only Spearman: **GK 0.064** (FPL 0.438), DEF 0.300, MID 0.399, FWD 0.477.
+
+It is not a degenerate prediction — within-gameweek spread of our GK xP is 1.36, against FPL's
+1.66 — so the ordering is simply wrong. A likely cause is in `fpl_backtest`/`xpoints`: saves are
+modelled as `opp_lambda × 3 × (x_minutes/90)`, i.e. proportional to expected goals conceded. That
+sets clean-sheet points and save points against each other almost exactly — a good defence earns
+the clean sheet, a bad one earns the saves — which flattens the ranking. Real save volume tracks
+*shots faced*, which is not the same as goals conceded and is not in the model. **Fixing this
+needs shots-against data**, which is the Tier-2 ingest that is currently broken upstream (§5).
+
+### Result 4 — we are under-dispersed everywhere (real, but not the explanation)
+
+Within-position standard deviations: ours 1.46–2.00, FPL 2.17–2.65, actual 2.76–3.45. Our
+projections really are too tightly clustered. It is worth knowing for anything that reads the
+*value* — captaincy margins, transfer deltas — but it cannot be the ranking gap, because
+stretching a distribution monotonically leaves every rank exactly where it was.
+
+### The strategic question this raises — for a human, not for me
+
+§8 records a deliberate decision: FPL's own `ep_next` ships in our payload and is **never
+displayed**, because there should be "one projection per player, ours". That was defensible when
+the two were thought to be near-par. They are not. On the thing a manager actually wants — who
+to pick — FPL's number is materially better, and we ship it and hide it.
+
+Four options, none of them obviously right:
+
+1. **Keep showing ours.** Consistent with the model card, which now says plainly that theirs is
+   better. Costs the user accuracy in exchange for an explainable number.
+2. **Show theirs.** Best for the user, and raises the obvious question of what the model is for.
+3. **Show both.** Most transparent; two numbers per player is a real UX cost and invites
+   "which do I trust?"
+4. **Rank by theirs, explain with ours.** Our decomposition is the thing FPL genuinely does not
+   provide — but the two disagree, so the explanation would not add up to the headline number.
+
+My read: option 1 remains defensible **only because** `/model` now states the loss outright, and
+the product's value was already re-based on tooling rather than forecasting. But this should be a
+conscious choice, re-made now with the real numbers, not inherited from when the gap was thought
+to be smaller.
+
+### What is NOT worth trying again
+
+- Blending with FPL's projection, in any space, at any weight, globally or per position.
+- Anything justified by "the model is under-dispersed" that aims to improve *ranking*.
+- LightGBM on single-gameweek points (already rejected 2026-07-27; nothing here changes that).
+
+### What might still be worth trying
+
+- **Saves from shots faced** (Result 3). The clearest mechanical defect found, in the position
+  with the biggest gap. Blocked on Tier-2 ingest.
+- **Set-piece and penalty duty as a forward-looking signal.** Skipped earlier as "xG already
+  includes penalty xG" — true of *historical* xG, but a player who has just taken over penalties
+  has no historical penalty xG and their future rate should reflect the duty, not the past.
+- **A bonus-point model from underlying BPS components** rather than a per-90 bonus rate.
+
+---
+
+## 15. Where the edge actually is (2026-08-04)
+
+§14 established that no combination of our model and FPL's beats FPL's alone. This asks the
+next question — *what is FPL's number made of, and can it be reconstructed?* — and the answer
+redirects the whole search. Scripts: `scripts/returns_model.py`, plus the oracle probes recorded
+below.
+
+### The target was re-posed first
+
+The 2026-07-27 LightGBM attempt predicted a player's total points. That was the wrong target,
+because it bundles a problem already solved with the one that isn't:
+
+| | ours | FPL |
+|---|---|---|
+| predicting **who plays at all** | **0.744** | 0.710 |
+| ranking returns among players who went 85+ min | 0.229 | **0.516** |
+
+Our minutes model is *better than FPL's*. The entire deficit is ranking returns given a player
+featured. So `returns_model.py` trains only on players who featured.
+
+### Result: historical statistics cannot reconstruct FPL's number
+
+Point-in-time rolling per-90s of every column the model had never touched — `threat`,
+`creativity`, `influence`, `ict_index`, `bps`, `saves`, `expected_goals_conceded` — plus our own
+xP, on a time-split test half:
+
+| predictor | Spearman |
+|---|---|
+| ours (structured xP) | 0.334 |
+| **FPL xP** | **0.562** |
+| `threat` per 90 alone | 0.094 |
+| recent points per 90 alone (pure form) | 0.130 |
+| LightGBM on all unused columns + our xP | 0.256 |
+| LightGBM *with FPL's xP handed to it as a feature* | 0.504 |
+
+Every historical rate is near-worthless alone (~0.1). The learned model is worse than our
+structured one, and it is worse than FPL's number even when given that number to work with —
+it destroys signal rather than adding any. **That is the third independent null for machine
+learning on this problem.** Stop trying.
+
+### Then: how much skill is even achievable?
+
+Oracles that cheat, as an upper bound:
+
+| predictor | Spearman |
+|---|---|
+| ORACLE — each player's true season points-per-appearance | 0.421 |
+| ORACLE — actual minutes played in that gameweek | 0.430 |
+| ORACLE — true season rate × actual minutes | 0.553 |
+| ORACLE — true season rate + our fixture model (rank-blended) | 0.442 |
+| **FPL xP** | **0.571** |
+
+**FPL's projection beats an oracle that knows both the player's true season-long scoring rate
+and how many minutes they actually played.** A perfect player-quality estimate combined with our
+fixture model reaches 0.442 and still loses by 0.13.
+
+So what FPL has is not player quality, and not fixture difficulty. Both of those are bounded
+above by numbers we just measured, and neither gets there. It is **match-level forward-looking
+information** — who is starting, who is carrying a knock, who is being rested — which no
+historical statistics table contains and no model of the past can recover.
+
+### The one caveat that cuts in our favour
+
+**The backtest is handicapped against us and always has been.** Production applies
+`availability_factor` from the live bootstrap (injury status, `chance_of_playing_next_round`).
+The historical dataset carries no such column, so `validate_xp` runs a version of our model with
+availability switched off — while FPL's `xP`, recorded at the time, had that information baked
+in. The published 0.373 therefore understates the shipped model by an unknown amount.
+
+This is not an excuse and must not be used as one: the direction and rough size of the gap are
+not in doubt, and the fix is to measure it, not to claim it. **Highest-value validation work
+available:** capture `chance_of_playing_next_round` weekly from now on so that a future backtest
+can run availability-on and quantify what it is worth. That data does not exist retroactively —
+if it isn't captured starting now, this question stays unanswerable for another season.
+
+### What this means for data sources
+
+The evidence points in one direction, and it is not "more history".
+
+**Worth pursuing — player prop betting odds.** Anytime-goalscorer prices are precisely the
+missing quantity: a market-clearing probability that a specific player scores in a specific
+match, which already incorporates the team news, rotation intelligence and sharp money that the
+oracle probes say we are missing. It maps directly onto the model too — the anytime-scorer
+probability substitutes for `goal_share × team_lambda`, the single largest term for attackers.
+It also solves the minutes problem for free, because a player expected to be benched is priced
+long. Two honest obstacles: **historical prop data for backtesting is expensive and scarce**, so
+this could be built forward but not validated before committing; and it is a live weekly fetch
+with a real failure mode next to a precompute that already degrades silently (§4).
+
+**Worth pursuing — expected lineups / team news.** The same information, from the other
+direction and much cheaper. Starts with the free version: capture FPL's own availability fields
+weekly, as above.
+
+**Not worth pursuing.** More historical statistics in any form, finer xG decomposition,
+Understat shot zones *for this purpose* (they remain interesting for the Match Lab), and any
+further machine learning on single-gameweek points. Three nulls is enough.
+
+**And the honest option that should stay on the table:** stop competing on projection. The
+oracle probes suggest a genuinely good single-gameweek projection needs inputs this project is
+unlikely to obtain cheaply. The tooling — true split FDR, the optimiser, squad health, the
+builder — has no equivalent in FPL and does not depend on winning this fight.
+
+---
+
+## 16. The benchmark was contaminated. We beat FPL. (2026-08-04)
+
+**Supersedes §13–§15's conclusion.** Everything in those sections was measured against a column
+that is not a forecast. The mechanics were right; the thing being compared to was not.
+
+### What the `xP` column actually is
+
+Upstream's own README, verbatim:
+
+> The `xP` column in `gws/merged_gw.csv` is sourced from the FPL bootstrap-static API's
+> `ep_this` field.
+>
+> The scraper runs **after** each gameweek ends, so if FPL updates `ep_this` post-match, the
+> scraped value will contain information that was not available to managers before the deadline.
+>
+> If you are training ML models on this dataset: treat `xP` as potentially post-match. Either
+> apply `shift(1)` within each `element` group, or exclude the column entirely.
+>
+> Using it unshifted as a feature to predict same-GW `total_points` has been observed to cause
+> severe lookahead bias.
+
+And the mechanism, from the same file: **live `ep_this` correlates ~0.98 with `form`.** FPL's
+projection is essentially a function of its rolling points average — and that average absorbs a
+gameweek's points the moment the gameweek ends. A value scraped afterwards has therefore already
+seen the result it is being asked to predict.
+
+### Confirmed independently, before the README was found
+
+| test | result | reading |
+|---|---|---|
+| `xP(N)` → points(N) | 0.571 | suspiciously high |
+| `xP(N)` → points(N+1) | 0.311 | a real forecast would not fall this far |
+| `xP(N-1)` → points(N) | 0.290 | what it is worth as an actual forecast |
+| `xP(N)` → goals *minus* xG (pure conversion luck) | **−0.018** | it does **not** know match detail |
+| `xP(N)` → yellow cards | **−0.033** | nor unforecastable events |
+
+The last two matter: the leak is not the match, it is the **points total** entering the form
+average. Precisely what the README's 0.98 correlation predicts. It also explains the result that
+first raised suspicion — the unshifted column beats a hindsight oracle that knows a player's true
+season scoring rate *and* their actual minutes (0.571 vs 0.553). Nothing that forecasts can do
+that. Something that has already seen the answer can.
+
+### The corrected comparison
+
+`ingest/vaastav.py` now emits `fpl_xp_prev` (the projection as it stood before the deadline) and
+`eval/fpl_backtest.py` scores against that. Three cases are kept distinct — key absent means a
+legacy caller and sets `baseline_clean=False`; key `None` means a player's first gameweek and the
+row is skipped rather than scored against an implicit zero; a number is used.
+
+2024-25, 30 gameweeks, 21,886 player-gameweeks:
+
+| played-only | ours | FPL (clean) | FPL (as-scraped) |
+|---|---|---|---|
+| per-GW Spearman | **0.374** | 0.299 | 0.568 *(contaminated)* |
+| MAE | **2.013** | 2.244 | — |
+| all-players Spearman | **0.685** | 0.608 | 0.757 *(contaminated)* |
+
+**We beat FPL's own projection on every measure**, by about +0.075 Spearman.
+
+### What this invalidates
+
+- **"The model does NOT beat FPL's xP"** — the project's central positioning since 2026-07-26,
+  in `PROJECT.md`, this handoff, the README and (until today) the site. It was never measured
+  against a forecast.
+- **§14's "our model adds nothing to FPL's"** — the optimal-blend-weight-of-zero result was
+  measured against the contaminated column, which of course dominates: it has seen the answer.
+  **Rerun `scripts/model_search.py` against `fpl_xp_prev` before trusting any of it.**
+- **§15's oracle framing** — the ceiling probes stand on their own (they never used `xP`), but
+  "FPL beats a hindsight oracle, therefore they have match-level information we lack" was the
+  wrong inference. They beat the oracle because they had already seen the gameweek.
+- **§15's conclusion that historical statistics cannot reconstruct FPL's number** — true, and now
+  unsurprising: no historical feature can reconstruct a value containing the outcome. That null
+  says nothing about whether historical features are useful.
+
+### What still stands
+
+- The `_subset_metrics` coverage bug (§13) was a real, separate bug and its fix is still correct.
+- The LightGBM nulls stand — those compared against our own structured model, not against `xP`.
+- The minutes-vs-returns diagnostic stands in shape, though the FPL side of every number in it
+  needs recomputing against the clean baseline.
+- The oracle ceilings stand: player-quality-oracle 0.421, quality × actual-minutes 0.553. Our
+  0.374 against those is a fair reflection of how hard single-gameweek prediction is.
+
+### The lesson
+
+Two measurement bugs in one day, both in the same direction: **the comparison was wrong, not the
+model.** The first (§13) flattered us, the second flattered FPL, and neither was visible in code
+that read correctly line by line. What was missing both times was a check on the *meaning* of the
+thing being compared to — coverage in one case, timing in the other.
+
+Any future benchmark against an external number must answer, in writing, before it is trusted:
+**when was this value recorded, relative to the event it predicts?**
+
+---
+
+## 17. Collecting our own data — start 2026-08-21
+
+`scripts/snapshot.py` / `make snapshot`. Written 2026-08-05, before the season starts, because
+of what §16 found.
+
+### Why
+
+§16 established that the community dataset's `xP` is not a forecast — it is scraped after the
+gameweek and absorbs the result through FPL's `form` average. The corrected benchmark works by
+shifting that column back a week, which is honest but imperfect: it takes FPL's snapshot from
+just after the *previous* gameweek, so it misses whatever they learn in the days before the next
+deadline. FPL is being judged on a slightly stale version of itself.
+
+Capturing our own removes the guesswork. A value this script writes is unambiguously
+pre-deadline, because it is written before the deadline and stamped with how long before.
+
+Two things become possible, and **both are lost forever for any week the capture doesn't run**:
+
+1. **An honest benchmark, permanently.** FPL's `ep_next` recorded against the deadline it
+   applies to. No shifting, no reconstruction, no argument.
+2. **Availability in the backtest.** `chance_of_playing_next_round`, `status` and `news` live
+   only in the live bootstrap — no historical dataset carries them. Production already uses them
+   to cut an injured player's projection; the backtest cannot, so **every validation number this
+   project has published describes a handicapped version of the shipped model.** A season of
+   snapshots makes that measurable for the first time.
+
+The FPL API serves only the present. There is no back-fill.
+
+### What it does
+
+Captures `bootstrap-static` (every player: `ep_this`, `ep_next`, `form`, `status`,
+`chance_of_playing_*`, `news`, price, ownership, ICT components, BPS — plus events and teams) and
+`fixtures`. Both land immutably under `data/raw/` partitioned by ingest timestamp, so a re-run
+never overwrites an earlier capture. Each run appends one line to
+`data/raw/snapshot_index.jsonl` recording when it ran, which gameweek it was for, how many hours
+before the deadline, and how many players were flagged — so "what do we have" never means walking
+the partition tree.
+
+### Running it
+
+```
+0 */6 * * *  cd /path/to/repo && .venv/bin/python scripts/snapshot.py --if-near-deadline
+```
+
+`--if-near-deadline` exits without capturing unless a deadline is inside `--window` hours
+(default 12), so a frequent cron yields roughly one useful snapshot per gameweek. Omit the flag
+to force one. **Aim for 2–4 hours before the deadline** — late enough that team news has landed,
+early enough that it is still a forecast.
+
+Verified against the live API on 2026-08-05: found the GW1 deadline (2026-08-21 17:30 UTC),
+captured 568 players, 527 already carrying a non-zero `ep_next`, 60 flagged. Four tests cover
+deadline selection, because a snapshot filed against the wrong gameweek looks like evidence and
+is not — the exact failure mode this whole effort exists to eliminate.
+
+### What to do with it, once a season exists
+
+1. Re-run the validation with a **real** pre-deadline FPL baseline and replace §16's shifted
+   figures. That settles the comparison permanently.
+2. Run the backtest with availability **on** and quantify what it is worth. This is the number
+   nobody has ever been able to compute.
+3. Re-run `scripts/model_search.py` against the clean baseline — §14's "our model adds nothing
+   to FPL's" was measured against the contaminated column and is not to be trusted.
+4. Re-examine whether the site should still hide FPL's `ep_next` (§8, §14). The reasoning
+   changes now that we are ahead rather than behind.
+
+### Worth adding later, not now
+
+Player prop odds (anytime goalscorer) remain the most promising external source — they price
+exactly the forward-looking information no historical table carries. But **historical props are
+scarce and expensive**, which means a prop-based model could be built forward and not validated
+before committing. Snapshotting is the cheaper move and it starts paying immediately. Revisit
+props once there is a season of our own data to test against.
