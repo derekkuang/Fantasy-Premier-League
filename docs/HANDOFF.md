@@ -51,9 +51,10 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | 10–11 | motion; the Apple-design interface pass |
 | 12 | holistic review + prioritised next steps |
 | 13 | a validation coverage bug (real, fixed) |
-| 14–15 | the search for edge — **partly invalidated by §16, read that first** |
+| 14–15 | the search for edge — **partly invalidated by §16 and §18, read those first** |
 | **16** | **the contaminated benchmark. The most important section.** |
 | **17** | **data collection for the new season** |
+| 18 | Understat unblocked; the mirrored-pitch bug; the saves experiment |
 
 ---
 
