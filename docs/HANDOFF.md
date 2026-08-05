@@ -34,8 +34,9 @@ Ship with the advisor switched off — that is a supported, tested state.
 **And the one claim to be careful about.** We rank players better than FPL, in both seasons
 measured. We do **not** have evidence that this wins points over a season: the same simulator
 says +2.08/gw in 2024-25 and −1.47/gw in 2023-24 (**§24**). Say "ranks better", never "scores
-more". The measurement of how much of an FPL season is noise is the more valuable output, and
-arguably belongs on `/model`.
+more". **§25** has the reason, measured: having *a* model is worth +40 pts/gw over guessing,
+while the gap between good models is 2.14 against 3.31 of pure luck. That is what `/model`
+should lead with.
 
 **Also running weekly from 2026-08-21:** `make capture-props` (**§22**), free-tier goalscorer
 odds. Same logic as the snapshot — cannot be back-filled without paying for it. Run
@@ -75,6 +76,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **22** | **props capture live; §14's blend inverted; what is actually left to explore** |
 | 23 | the season simulation rig — *headline corrected by §24* |
 | **24** | **it does not replicate: we rank better, we do not decide better** |
+| **25** | **how much of an FPL season is skill — and what `/model` should say** |
 
 ---
 
@@ -1660,3 +1662,46 @@ Expected-rank objective instead of raw xP. §23 argued for it; §24 sharpens the
 ranking edge of +0.075 Spearman cannot be detected in season outcomes, then optimising raw xP
 harder is not the lever. Optimising for *expected rank against the field* is a different
 objective, and the simulator built here is the rig that can finally test whether it pays.
+
+---
+
+## 25. How much of an FPL season is skill? (2026-08-05)
+
+The last piece of the season-simulation brief, and the most quotable thing to come out of it.
+Same grid as §24 — two seasons, 18 starts each, four policies — decomposed into where the points
+actually come from. `make simulate-season` prints it.
+
+| | pts/gw |
+|---|---|
+| having **any** sensible projection, over random noise | **+40.4** |
+| **SKILL** — sd between real projections, at a fixed start | **2.14** |
+| **LUCK** — sd between starts, for a fixed projection | **3.31** |
+| *(best-minus-worst range between projections, for reference)* | *5.03* |
+
+**About forty points a gameweek comes from having a model at all. Choosing between good models
+moves 2.14, against 3.31 from nothing but which stretch of season you happen to play.**
+
+So the skill in FPL projection is overwhelmingly the gap between modelling and not modelling —
+not between models. Ours, FPL's and the template all sit within ~2 points a gameweek of each
+other; a coin-flip projection sits forty below. That is the honest shape of the problem, and it
+explains §24 without contradicting it: an edge of one to three points a gameweek is real but
+cannot be demonstrated inside a season whose own draw moves the answer by three.
+
+**Method note, kept because the first version was wrong.** Skill was initially measured as the
+best-minus-worst RANGE between projections and compared against an sd. The range of three
+samples runs about 1.7× their sd, so it inflated skill by roughly that factor before anyone
+interpreted anything — it read 5.0 against 3.3, i.e. "skill beats luck", where the like-for-like
+comparison is 2.14 against 3.31 and says the opposite. Both are printed now, labelled.
+
+### What to put on `/model`
+
+This, rather than an accuracy table. The measured claims are:
+
+1. Our projection ranks players better than FPL's own — **0.374 / 0.371 vs 0.299 / 0.293**, two
+   seasons, replicated.
+2. That edge does **not** demonstrably win points over a season (§24), and here is the reason
+   quantified: luck moves 3.31 a gameweek, the gap between good models moves 2.14.
+3. Having *a* model is worth **+40** a gameweek over guessing.
+
+Claim 3 is the honest sales pitch, claim 1 is the honest technical claim, and claim 2 is the one
+almost no FPL tool states at all — which is precisely why this project should.

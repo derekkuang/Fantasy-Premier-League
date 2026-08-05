@@ -124,6 +124,55 @@ def main() -> None:
         print("Same sign in every season. Still check the magnitude against the start-to-start "
               f"sd of {sd:.2f} before treating it as an edge.")
 
+    skill_vs_luck(results)
+
+
+REALISTIC = ["ours", "FPL", "template"]     # `random` is not a manager anyone could be
+
+
+def skill_vs_luck(results) -> None:
+    """How much of an FPL season outcome is the projection, and how much is the draw?
+
+    Two variance components, from the same start x policy grid:
+
+      SKILL  — the spread between REALISTIC policies, holding the start fixed. This is what
+               choosing a better projection is worth. `random` is excluded: nobody manages by
+               dice, and including it would inflate "skill" with a policy no human occupies.
+      LUCK   — the spread between starts, holding the policy fixed. Same model, same rules, a
+               different draw of the season.
+
+    The comparison people actually want is the ratio. If skill is small against luck, then a
+    season's outcome mostly is not about the model, which is a measurable claim rather than a
+    modest-sounding aside — and it is the strongest form of this project's honesty position.
+    """
+    print("\n--- skill vs luck ---")
+    # BOTH as standard deviations. The first version of this compared a best-minus-worst RANGE
+    # against an sd, which is not like for like — the range of three samples runs about 1.7x
+    # their sd, so it overstated skill by roughly that factor before anything was interpreted.
+    skill_sds, luck_sds, ranges = [], [], []
+    for r in results:
+        per = r["per"]
+        n = len(per["ours"])
+        for i in range(n):
+            at_start = [per[p][i] for p in REALISTIC]
+            skill_sds.append(st.pstdev(at_start))
+            ranges.append(max(at_start) - min(at_start))
+        luck_sds.extend(st.pstdev(per[p]) for p in REALISTIC)
+
+    skill = st.mean(skill_sds)
+    luck = st.mean(luck_sds)
+    floor = st.mean([st.mean(r["per"][p]) for r in results for p in REALISTIC]) - \
+        st.mean([st.mean(r["per"]["random"]) for r in results])
+
+    print(f"  having ANY sensible projection : {floor:+6.1f} pts/gw over random noise")
+    print(f"  SKILL — sd between real projections, at a fixed start : {skill:5.2f} pts/gw")
+    print(f"  LUCK  — sd between starts, for a fixed projection     : {luck:5.2f} pts/gw")
+    print(f"  (best-minus-worst range between projections: {st.mean(ranges):.2f})")
+    print(f"\n  ~{floor:.0f} points a gameweek comes from having a model AT ALL. Choosing")
+    print(f"  between good models moves {skill:.2f}, against {luck:.2f} from nothing but which")
+    print("  stretch of season you happen to play. Almost all of what looks like projection")
+    print("  skill in FPL is the gap between modelling and not modelling, not between models.")
+
 
 if __name__ == "__main__":
     main()
