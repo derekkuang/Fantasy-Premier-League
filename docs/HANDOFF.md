@@ -1,8 +1,9 @@
 # fpledge — Handoff
 
-> **Read this first.** State as of **2026-08-05**. 40 commits plus a large uncommitted working
-> tree, **265 tests passing**, nothing pushed to a remote. `PROJECT.md` is historical design
-> rationale only — its "what's built" is nine months stale.
+> **Read this first.** State as of **2026-08-06**. 41 commits on
+> `feat/match-lab-and-advisor`, working tree clean, **352 tests passing**, nothing pushed to a
+> remote. `PROJECT.md` is historical design rationale; its accuracy figures were corrected in
+> place on 2026-08-05, the rest is stale.
 
 ## START HERE — the three things that matter
 
@@ -16,8 +17,9 @@ player-gameweeks, played-only per-GW Spearman):
 | ranking | **0.374** | 0.299 | 0.568 |
 | error (MAE) | **2.013** | 2.244 | — |
 
-Full story and the decisive test in **§16**. `README.md` and `PROJECT.md` still carry the old
-claim in prose — **fix those before showing anyone.**
+Replicated on 2023-24: ours **0.371** against FPL's **0.293**. Full story and the decisive test
+in **§16**; `PROJECT.md` was corrected in place on 2026-08-05, and `README.md` never carried this
+claim (its "beat" references are about the betting market, a separate and still-valid null).
 
 **2. Run `make snapshot` weekly from 2026-08-21.** The first deadline of the new season. This
 captures FPL's pre-deadline state — a genuinely uncontaminated `ep_next`, plus the availability
@@ -29,6 +31,16 @@ is gone. See **§17**.
 2026-08-03 and the list of things built since is longer than the list of things blocking it.
 Ship with the advisor switched off — that is a supported, tested state.
 
+**And the one claim to be careful about.** We rank players better than FPL, in both seasons
+measured. We do **not** have evidence that this wins points over a season: the same simulator
+says +2.08/gw in 2024-25 and −1.47/gw in 2023-24 (**§24**). Say "ranks better", never "scores
+more". The measurement of how much of an FPL season is noise is the more valuable output, and
+arguably belongs on `/model`.
+
+**Also running weekly from 2026-08-21:** `make capture-props` (**§22**), free-tier goalscorer
+odds. Same logic as the snapshot — cannot be back-filled without paying for it. Run
+`make capture-props ARGS=--list-markets` ONCE first to confirm the market key.
+
 ## Where things are
 
 ```bash
@@ -36,12 +48,14 @@ make precompute     # data/serving/gw1.json (engine fit, ~2 min)
 make serve          # FastAPI :8000
 cd web && npm run dev
 make snapshot       # weekly, from 2026-08-21
+make capture-props  # weekly, from 2026-08-21 (needs a free ODDS_API_KEY)
 make model-card     # regenerate /model's numbers (slow)
 make eval-brief     # briefing-guard recall (no API key needed)
+make simulate-season  # decisions, not ranking — two seasons, 18 starts each (slow)
 .venv/bin/python -m pytest -q
 ```
 
-Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote.
+Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote.
 
 ## Section map
 
