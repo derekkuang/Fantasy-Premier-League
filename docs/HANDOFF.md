@@ -55,6 +55,7 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | **16** | **the contaminated benchmark. The most important section.** |
 | **17** | **data collection for the new season** |
 | 18 | Understat unblocked; the mirrored-pitch bug; the saves experiment |
+| **19** | **where the model can still improve — and why it is team news, not modelling** |
 
 ---
 
@@ -1096,3 +1097,95 @@ does not predict. Use it for content and matchup context, not as model features.
 Caveats worth carrying: one season; 94.3% identity-join coverage with the miss skewed toward
 mid-season transfers; and this tests features *added to* our xP, not a ground-up model built on
 them.
+
+---
+
+## 19. Where the model can still improve (2026-08-05)
+
+A survey of the remaining options — different engine, different features, different data —
+measured rather than argued. **The headline: one modelling change works and it is small, and the
+thing that actually matters is not a model at all.**
+
+### The number that should drive prioritisation
+
+`validate_xp(oracle_minutes=True)` replaces the minutes model with the minutes actually played.
+It cheats; that is the point. 2024-25, played-only per-GW Spearman:
+
+| configuration | played | all players |
+|---|---|---|
+| shipped | 0.3758 | 0.6866 |
+| + xG-fitted engine | 0.3878 | 0.6895 |
+| **+ xG engine + perfect minutes** | **0.5562** | **0.8285** |
+| *(FPL clean baseline)* | *0.2993* | *0.6077* |
+
+**Perfect team news is worth +0.168. The best modelling change found is worth +0.012.** Fourteen
+to one. And +0.168 is a LOWER bound — goal and assist shares are allocated before the oracle
+substitutes, so an attacker's largest term still runs on predicted minutes.
+
+Everything below is inside the small gap. The large one is bought with data.
+
+### What worked: fit the engine on xG, not goals
+
+The practitioner consensus is that xG estimates team strength better than goals. The canonical
+reference for combining it with Dixon-Coles (statsandsnakeoil, 2018) says outright that it never
+tested the claim — "I would like to put it to the test" — so this does.
+
+Mechanically it is a substitution: the likelihood already uses `gammaln(y+1)`, the continuous
+generalisation of `log(y!)`, and that term is constant in the parameters, so feeding it
+non-integer xG leaves the MLE valid.
+
+| season | goals | xG | delta | p | gws better |
+|---|---|---|---|---|---|
+| 2024-25 | 0.3758 | 0.3878 | +0.0120 | 0.0015 | 20/30 |
+| 2023-24 (out of sample) | 0.3714 | 0.3770 | +0.0057 | 0.076 | 18/30 |
+| **pooled** | | | **+0.0088** | **0.0003** | **38/60** |
+
+95% CI **[+0.0042, +0.0135]**. Replicated in direction on a season no parameter was chosen on,
+though the out-of-sample effect is half the size and only marginal on its own.
+
+**The control matters.** Fitting on xG silently disables Dixon-Coles' tau correction, whose masks
+key on exact integer scorelines — so the comparison is really DC-on-goals against Poisson-on-xG.
+Re-running goals with `+1e-9` added (identical likelihood, masks stop matching) isolates it: **tau
+is worth −0.0002.** The whole gain is the xG. As a side finding, the tau correction is worth
+nothing to FPL player ranking, whatever it does for exact-scoreline betting markets.
+
+**npxG is worse than xG** (+0.0097 in 2024-25, +0.0008 in 2023-24 — not replicated). Stripping
+penalties removes real signal, not noise.
+
+Not wired in: it needs a weekly Understat fetch beside a precompute that still degrades silently
+(§4), same trade as the saves model in §18, and it is small next to the team-news number.
+
+### What did not work
+
+- **Understat player features** (`xGChain`, `xGBuildup`, `key_passes`, shots, xG, xA) — §18. Tiny
+  pooled partial correlations that vanish within position; every out-of-sample blend worse than
+  our xP alone. Fourth null, first one measured against a clean baseline.
+- **Saves from shots faced** — §18. Significantly better goalkeeper MAE, no ranking gain.
+- **npxG** — above.
+
+### The ranked list, with the reasoning attached
+
+1. **Team news / expected lineups.** Worth up to +0.168, an order of magnitude beyond anything
+   else. The free version is already running: `scripts/snapshot.py` captures
+   `chance_of_playing_next_round`, `status` and `news` weekly from 2026-08-21, and **production
+   already applies `availability_factor` while the backtest cannot** — so every published number
+   understates the shipped model by an unmeasured amount. A season of snapshots makes that
+   measurable and is the precondition for judging anything else here.
+2. **Paid expected-lineups feed.** Sportmonks advertises 84% EPL accuracy pre-kickoff. Now has a
+   price attached: a fraction of +0.168. Worth revisiting once snapshots quantify what the free
+   FPL availability fields already deliver — buy the gap, not the whole thing.
+3. **xG-fitted engine.** +0.0088, replicated, ready. Cheap, but carries the same weekly-fetch
+   operational cost as everything else Understat-based, so it should land after the precompute
+   fails loudly.
+4. **Set-piece and penalty duty as a forward-looking signal.** Still untested and still the best
+   remaining *feature* idea (§14). Historical xG cannot express "took over penalties last week";
+   `playermeta.py` already parses the order fields and is explanatory-only today.
+5. **Player prop odds.** Unchanged from §15: prices exactly the forward-looking information no
+   historical table carries, and historical props remain scarce and expensive, so it can be built
+   forward but not validated before committing.
+
+### What is now firmly closed
+
+More historical per-player statistics, in any form, from any source. That is four independent
+nulls, and §18's was measured against the clean baseline with features FPL does not even publish.
+The model's remaining error is not in what it knows about the past.
