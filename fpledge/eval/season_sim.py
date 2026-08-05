@@ -232,16 +232,22 @@ def simulate_season(
     if not gws:
         raise ValueError("no gameweeks in range")
 
-    # Position, club and last-known price for every player who ever appears. A squad member with
-    # no row in a given gameweek has a BLANK — his club is not playing — and a blank is a normal
-    # part of an FPL season, not missing data. The first version skipped those gameweeks
-    # entirely, which silently deleted three of thirty from the total and would have made the
-    # simulation look tidier than the game is.
+    # Position and club for every player who ever appears. A squad member with no row in a given
+    # gameweek has a BLANK — his club is not playing — and a blank is a normal part of an FPL
+    # season, not missing data. The first version skipped those gameweeks entirely, which
+    # silently deleted three of thirty from the season total.
+    #
+    # PRICE IS DELIBERATELY NOT TAKEN FROM HERE. Position and club are static attributes, but a
+    # price is a value that moves, and a table built from the whole pool up front holds the price
+    # from the LAST gameweek a player appears in — the future. Selling a blanked player at a
+    # price he has not reached yet is a small leak, and small leaks in this project have a
+    # history of surviving review. `last_price` below carries the most recent price actually
+    # observed at the time.
     meta: dict = {}
     for pool_n in gw_pool.values():
         for el, p in pool_n.items():
-            meta[el] = {"id": el, "position": p["position"], "team_id": p["team_id"],
-                        "price": p["price"]}
+            meta[el] = {"id": el, "position": p["position"], "team_id": p["team_id"]}
+    last_price: dict = {}
 
     if not any(projection in p for pool_n in gw_pool.values() for p in pool_n.values()):
         raise KeyError(
@@ -255,6 +261,10 @@ def simulate_season(
 
     for n in gws:
         pool = gw_pool[n]
+        # Record prices as they are observed, BEFORE any decision is taken this gameweek, so a
+        # blanked player is valued at the last price actually seen rather than a future one.
+        for el, p in pool.items():
+            last_price[el] = p["price"]
         transfers = 0
         if allow_transfers and n != gws[0]:
             squad, transfers = _apply_transfers(squad, pool, projection)
@@ -270,7 +280,8 @@ def simulate_season(
         pool = dict(pool)
         for i in squad.ids:
             if i not in pool and i in meta:
-                pool[i] = {**meta[i], "xp": 0.0, "fpl_xp": 0.0, "actual": 0, "minutes": 0}
+                pool[i] = {**meta[i], "price": last_price.get(i, squad.bought_at.get(i, 0.0)),
+                           "xp": 0.0, "fpl_xp": 0.0, "actual": 0, "minutes": 0}
                 blanks += 1
         owned = [i for i in squad.ids if i in pool]
         if len(owned) < SQUAD_SIZE:

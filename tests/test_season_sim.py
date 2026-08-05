@@ -226,3 +226,33 @@ def test_a_blank_gameweek_scores_zero_rather_than_being_skipped():
     r = simulate_season(pool, projection="xp")
     assert r["gameweeks"] == 4                            # GW3 still scored
     assert r["blank_player_gameweeks"] > 0
+
+
+def test_a_blanked_player_is_valued_at_a_price_already_observed():
+    """Point-in-time, applied to prices. A table of player attributes built from the whole season
+    up front holds each player's LAST price — the future. Selling a blanked player at a price he
+    has not reached yet is a small leak, and this project's history is small leaks surviving
+    review, so it gets an assertion."""
+    pool = _season_pool(n_gw=4)
+    target = next(iter(pool[1]))
+    for gw in (1, 2):
+        pool[gw][target]["price"] = 50.0
+    del pool[3][target]                      # blank in GW3...
+    pool[4][target]["price"] = 90.0          # ...and a much higher price afterwards
+
+    seen = {}
+    orig = __import__("fpledge.eval.season_sim", fromlist=["_apply_transfers"])._apply_transfers
+
+    def spy(squad, pool_n, key, **kw):
+        if target in pool_n:
+            seen.setdefault("price_at_blank", pool_n[target]["price"])
+        return orig(squad, pool_n, key, **kw)
+
+    import fpledge.eval.season_sim as mod
+    mod._apply_transfers = spy
+    try:
+        simulate_season(pool, projection="xp")
+    finally:
+        mod._apply_transfers = orig
+    # Whatever price the blanked player carried, it must never be the post-blank one.
+    assert seen.get("price_at_blank") != 90.0

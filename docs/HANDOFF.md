@@ -59,7 +59,8 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | **20** | **working that list: what each grade of team news costs, and why props are back on** |
 | 21 | free routes to market data; why prediction markets do not fit |
 | **22** | **props capture live; §14's blend inverted; what is actually left to explore** |
-| **23** | **the season simulation — we beat FPL on decisions, and why one season proves nothing** |
+| 23 | the season simulation rig — *headline corrected by §24* |
+| **24** | **it does not replicate: we rank better, we do not decide better** |
 
 ---
 
@@ -1473,7 +1474,13 @@ recalibration that cannot move Spearman at all may change many.
 
 ---
 
-## 23. The season simulation — the model beats FPL on DECISIONS too (2026-08-05)
+## 23. The season simulation — DECISIONS, not ranking (2026-08-05)
+
+> **CORRECTED by §24, same day.** This section's headline — "the model beats FPL on decisions
+> too" — was measured on 2024-25 alone. It does **not** replicate on 2023-24, where FPL wins by a
+> similar margin. The numbers below are correct for the season they describe; the *conclusion*
+> drawn from them was not, and §24 has the two-season picture. What survives is the machinery,
+> the variance warning, and the dispersion null.
 
 The first measurement of what the product actually does. Every prior number is a ranking metric
 over players; this buys fifteen, picks eleven, chooses a captain and decides whether a transfer
@@ -1565,3 +1572,77 @@ still returned a plausible-looking number; it now raises.
 
 Plus the two data captures now running — snapshots (§17) and props (§22) — which are the only
 items on any list with a deadline attached.
+
+---
+
+## 24. It does not replicate. We rank better; we do not decide better (2026-08-05)
+
+§23 reported that our projection makes better DECISIONS than FPL's, worth +2.08 points a gameweek.
+That was one season. Run on 2023-24 — different champion, different promoted sides, no parameter
+chosen by looking at it — the sign flips.
+
+| engine | 2024-25 | 2023-24 | mean |
+|---|---|---|---|
+| goals — ours − FPL | **+2.08**/gw (12/18 starts) | **−1.47**/gw (7/18) | +0.31 |
+| xG — ours − FPL | **+3.22**/gw (13/18) | **−1.73**/gw (6/18) | +0.75 |
+
+Per-start spread is sd ≈ 4.2–4.6 either way, so a mean of +0.3 to +0.8 is indistinguishable from
+zero. In 2023-24 even the template beat us (60.29 vs 59.57).
+
+**The xG engine's decision benefit does not replicate either**: +1.14/gw in 2024-25, −0.25/gw in
+2023-24. Its RANKING gain does replicate (§19, +0.0088 pooled, CI excluding zero) — the decision
+gain does not.
+
+### What this actually establishes, which is more useful than the thing it refutes
+
+**Ranking replicates. Decisions do not.**
+
+| | 2024-25 | 2023-24 |
+|---|---|---|
+| played-only Spearman, ours | **0.374** | **0.371** |
+| played-only Spearman, FPL | 0.299 | 0.293 |
+| season sim, ours − FPL | +2.08/gw | −1.47/gw |
+
+We out-rank FPL by ~0.075 in both seasons, consistently and measurably. That edge does **not**
+convert into a reliable points advantage over a season, because the decision layer's variance
+swamps it: the effect is 1–3 points a gameweek against a start-to-start spread of 4+.
+
+So the honest claims are now bounded, and the boundary is worth stating precisely:
+
+- **CAN claim:** our projection ranks players better than FPL's own, replicated on two seasons.
+- **CANNOT claim:** using it wins you points over a season. Two seasons, opposite signs.
+- **CAN claim, and it may be the most useful thing here:** single-season FPL outcomes are
+  dominated by variance to a degree that makes an edge of this size undetectable within one
+  season. The same code on the same data said we lose by 4.13/gw from one start and win by
+  2.08/gw across eighteen, and said we win in one season and lose in the next.
+
+That last point belongs on `/model`. It is the strongest version of this project's honesty
+position — not "we are better", but "here is how much of what looks like skill in FPL is noise,
+measured".
+
+### Why this happened, and what to do differently
+
+§23 drew a conclusion from one season while explicitly noting in its own text that one season is
+one sample. The variance warning was written and then not applied to the headline directly above
+it. Every future season-simulation result needs at least two seasons before it is a finding —
+the rig is built now, so replication costs one command.
+
+**Still standing from §23**, none of which depended on the season that failed to replicate:
+
+- the simulator itself, with FPL's rules implemented and 19 tests including two leakage checks
+- the dispersion null (quantile-mapped recalibration: −0.11 and −0.86/gw) — and the record of why
+  the first version of that test was vacuous
+- the variance finding, which is now stronger rather than weaker
+- the two bugs the tests caught: skipped blank gameweeks and silent zero-scoring on a mistyped
+  projection key
+- a point-in-time fix found while auditing: blanked players were valued at their price from the
+  LAST gameweek they appear in, i.e. the future. Re-running with it corrected changed nothing
+  (+2.08 and +3.22 unchanged), which is the right outcome for a leak that small — but it was a
+  leak, and this project's history is small leaks surviving review.
+
+### The backlog is unchanged, except that item 2 is now clearly the top of it
+
+Expected-rank objective instead of raw xP. §23 argued for it; §24 sharpens the case. If a
+ranking edge of +0.075 Spearman cannot be detected in season outcomes, then optimising raw xP
+harder is not the lever. Optimising for *expected rank against the field* is a different
+objective, and the simulator built here is the rig that can finally test whether it pays.
