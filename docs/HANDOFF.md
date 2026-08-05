@@ -936,3 +936,95 @@ exactly the forward-looking information no historical table carries. But **histo
 scarce and expensive**, which means a prop-based model could be built forward and not validated
 before committing. Snapshotting is the cheaper move and it starts paying immediately. Revisit
 props once there is a season of our own data to test against.
+
+---
+
+## 18. Understat is fixed, and what the saves model did with it (2026-08-05)
+
+### The Tier-2 blocker was one request header
+
+§5 said `getMatchData/{id}` "now 404s" and that Tier-2 was blocked upstream. Half right, and the
+wrong half was the actionable one.
+
+The match page really did stop embedding `shotsData` — that part is true and it is what breaks
+every scraper written against the HTML, `soccerdata` 1.9.1 included. But `getMatchData/{id}` is
+alive: it is what the site's own `match.min.js` calls, and it answers **404 to a plain GET and
+200 to the same GET carrying `X-Requested-With: XMLHttpRequest`**. An unadorned request gets a
+response indistinguishable from a deleted endpoint, which is how it was misread.
+
+`ingest/understat.py` now talks to the JSON endpoints directly: `getLeagueData/{league}/{season}`
+for a season's teams, players and 380 fixtures in one call, `getMatchData/{id}` for shots and
+rosters. Verified live — 20 teams, 562 players, 380 fixtures, 9,878 shots for 2024-25.
+
+Two consequences worth keeping:
+
+- **No browser impersonation is needed.** The project's own honest User-Agent gets 200s. There is
+  no Cloudflare challenge and no TLS fingerprint check on these endpoints, so the `tls_requests`
+  native-library saga in §5 was *soccerdata's* transport requirement, never Understat's.
+- **`soccerdata` is off the dependency list.** It was there for this module alone.
+
+### The pitch was mirrored, and nobody had checked
+
+`Y_ZERO_IS_LEFT` was `True`, with a comment saying it **must** be verified before anything was
+labelled "left" to a user. It never was, and it was backwards.
+
+The check is self-contained, which is why it now lives in the module: Understat's roster
+`position` codes encode a side (`AML`/`AMR`, `DL`/`DR`, `ML`/`MR`, `FWL`/`FWR`). Take every player
+whose codes are consistently one-sided and who took 8+ shots, compare to their mean shot Y:
+
+| | n | mean Y | consistent |
+|---|---|---|---|
+| left-coded | 37 | 0.572 | 33/37 above 0.5 |
+| right-coded | 33 | 0.436 | 29/33 below 0.5 |
+
+**Low Y is the attacking team's right.** Exactly the silent flip the original comment feared —
+every team's attack mirrored, every number still plausible. Re-run this probe whenever the
+upstream convention is in doubt; it needs no outside knowledge of who plays where.
+
+### What shot zones can and cannot support
+
+Shot **origin** is ~80% central for every team, because that is where shots are taken regardless
+of which flank the move came down. The only varying signal is the left/right split of the
+remaining fifth, and at 150 matches **only 34% of the observed between-team spread is real** —
+the rest is sampling noise. A full season puts noise sd near 0.037 against a true between-team sd
+of ~0.057.
+
+So it is a real tendency and a weak one, and it is **not** Opta's "attacks down the left", which
+is built from possession chains. A better proxy that costs no new data: every shot carries
+`player_assisted`, and the roster codes give that assister's side — assist-chain-by-channel is
+much closer to "where the attack came from" than shot XY.
+
+### Saves from shots faced — measured, and only half of it worked
+
+§14 called this the clearest mechanical defect in the model. `x_saves = opp_lambda * 3 *
+(x_minutes/90)` makes saves proportional to expected goals conceded, so clean-sheet points and
+save points move against each other and cancel.
+
+**The feature was validated before anything was built on it.** Understat `SavedShot` counts
+against FPL's own recorded saves, 758 keeper-matches: Pearson **0.968**, 90.6% exact agreement,
+97.5% within one save.
+
+Two full walk-forwards, 2024-25, 30 gameweeks, clean baseline:
+
+| | baseline | saves-from-shots | p |
+|---|---|---|---|
+| GK MAE | 2.4648 | **2.3282** | 8.5e-09 |
+| GK per-GW Spearman | 0.0711 | 0.0893 | **0.40 — not significant** |
+| all played MAE | 2.0107 | 2.0017 | 1.3e-08 |
+| DEF / MID / FWD | unchanged | unchanged | — |
+
+**Accuracy improves significantly. Ranking does not** — 13 of 30 gameweeks improved, 17 got
+worse, and the mean gain rides on a few large ones. A hybrid taking the opponent factor from the
+engine's fixture λ is worse (MAE 2.3375, Spearman back at baseline): the opponent's season-long
+save-forcing rate beats the engine's view of the specific fixture, because λ predicts goals and
+this term needs shots on target.
+
+**§14's per-position table needs the §16 treatment.** It reported GK 0.064 against FPL's 0.438
+and called it the model's biggest positional deficit. Against the clean pre-deadline baseline FPL
+manages **0.115**. Single-gameweek goalkeeper ranking is near-noise for everyone; 0.438 was the
+contaminated column again.
+
+**Not wired to production.** Default is still `saves_mode="lambda"`; `xp_table.py` is untouched.
+Turning it on means a weekly Understat fetch beside a precompute that already degrades silently
+(§4). Do the loud-failure work first, then decide — the gain is a MAE improvement on one position
+with no ranking gain, which does not by itself justify a new live dependency.
