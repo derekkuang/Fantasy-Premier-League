@@ -1029,3 +1029,70 @@ contaminated column again.
 Turning it on means a weekly Understat fetch beside a precompute that already degrades silently
 (§4). Do the loud-failure work first, then decide — the gain is a MAE improvement on one position
 with no ranking gain, which does not by itself justify a new live dependency.
+
+### Do the Understat features improve ranking? No — and this null is clean
+
+§15 concluded that historical statistics cannot reconstruct FPL's number, but §16 voided the
+reasoning: that was measured against a column containing the outcome, so it said nothing about
+whether historical features are useful. This re-asks the question properly, against the clean
+baseline, with features the project has never had — `xGChain` and `xGBuildup` in particular have
+no FPL equivalent.
+
+Point-in-time rolling per-90s, 2024-25, 7,168 played player-gameweeks over 30 gameweeks.
+
+**1. Marginal — each feature alone against actual points:**
+
+| our structured xP | xG | xGChain | xA | shots | key_passes | xGBuildup |
+|---|---|---|---|---|---|---|
+| **+0.331** | +0.134 | +0.130 | +0.123 | +0.124 | +0.114 | −0.017 |
+
+**2. Orthogonal — and this is where the naive version of the test lies.** The obvious check is
+whether a feature correlates with `rank(actual) − rank(our xP)`. It does, strongly and
+negatively, for almost everything. That result is an **artifact**: rank residuals are bounded by
+construction, so the player we rank first can only move down and the player we rank last can only
+move up. Any feature correlated with our xP inherits a negative correlation for purely mechanical
+reasons — and every feature here is correlated with our xP, because our xP is built from xG and
+xA. Reported as-is it would have looked like a large exploitable bias.
+
+The correct test is a partial correlation with our xP held constant: *among players we already
+rate equally, does this feature separate them?*
+
+| feature | partial r | p | within DEF / MID / FWD |
+|---|---|---|---|
+| key_passes | +0.068 | 0.0003 | all p > 0.08 |
+| shots | +0.058 | 0.0024 | all p > 0.36 |
+| xGChain | +0.056 | 0.0033 | all p > 0.28 |
+| xA | +0.056 | 0.0009 | all p > 0.22 |
+| xG | +0.051 | 0.0037 | all p > 0.13 |
+| xGBuildup | −0.001 | 0.96 | — |
+
+Significant pooled, tiny, and **it disappears within position** — every per-position effect is
+insignificant and roughly a third the size. The pooled signal is largely *between* positions:
+the features proxy for what position a player plays, which the model already knows.
+
+**3. Conversion — time-split, weights fitted on GW9–23 and scored on GW24–38:**
+
+| model | test Spearman | vs xP alone |
+|---|---|---|
+| **our xP alone** | **0.3550** | — |
+| xp + xGChain | 0.3376 | −0.017 |
+| xp + xGBuildup | 0.3267 | −0.028 |
+| xp + chain + buildup | 0.3269 | −0.028 |
+| xp + all six | 0.3004 | −0.055 |
+| Understat features only | 0.1032 | −0.252 |
+
+**Every combination is worse out of sample.** A linear rank blend, deliberately — §15 recorded
+LightGBM destroying signal on this problem three times, and the partial correlations above bound
+what *any* model could extract regardless of its capacity.
+
+**This is the fourth null, and the first one that stands on its own.** The three in §14–§15 were
+measured against the contaminated column and were void. This one uses the clean baseline, new
+features, and a test that survives its own artifact check. Historical per-player statistics —
+including ones FPL does not publish — do not improve our ranking of players who feature.
+
+**So the Match Lab is the right home for this data**: it is genuinely interesting to *read* and
+does not predict. Use it for content and matchup context, not as model features.
+
+Caveats worth carrying: one season; 94.3% identity-join coverage with the miss skewed toward
+mid-season transfers; and this tests features *added to* our xP, not a ground-up model built on
+them.
