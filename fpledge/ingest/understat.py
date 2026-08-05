@@ -3,8 +3,8 @@
 This is the Tier-2 enrichment — the one that can say something about *where* a team attacks,
 which the FPL API cannot. Two very different pieces live here, and the risk is lopsided:
 
-  * `fetch_*` are thin adapters over `soccerdata`. Network-bound, slow, and fragile to
-    upstream layout changes, but a failure is loud and obvious.
+  * `UnderstatClient` / `fetch_*` talk to Understat's JSON endpoints directly. Network-bound,
+    slow, and fragile to upstream layout changes, but a failure is loud and obvious.
   * `build_fpl_id_map` joins Understat's player identities to FPL `element_id`. A failure
     here is SILENT: a mis-joined player quietly attributes one man's shots to another, and
     every downstream number stays plausible. This is the highest-risk piece in the project,
@@ -143,11 +143,27 @@ def coverage(report: dict, understat_players: Sequence[dict]) -> float:
 
 # --- shot zones ----------------------------------------------------------------------- #
 # Understat gives each shot an (X, Y) in [0, 1]: X along the pitch toward the goal being
-# attacked, Y across it. ORIENTATION IS AN ASSUMPTION — we take Y=0 as the attacking side's
-# LEFT. It is one constant to flip, and it MUST be verified against a club with a known strong
-# flank before any of this is labelled "left" in user-facing copy: a silent flip would mirror
-# every team's attack and still read entirely plausibly.
-Y_ZERO_IS_LEFT = True
+# attacked, Y across it.
+#
+# ORIENTATION — VERIFIED 2026-08-05, and the original assumption was BACKWARDS. This constant
+# was written as True ("Y=0 is the attacking side's left") with a comment saying it must be
+# checked before anything was labelled "left" to a user. It never was. The check:
+#
+#   Understat's own roster `position` codes encode a side — AML/AMR, DL/DR, ML/MR, FWL/FWR.
+#   Take every player whose codes are consistently one-sided across 60 matches and who took
+#   8+ shots, then compare that side against their mean shot Y. Over 70 players:
+#
+#       left-coded  (n=37): mean Y 0.572     33/37 above 0.5
+#       right-coded (n=33): mean Y 0.436     29/33 below 0.5
+#
+#   Low Y is the attacking team's RIGHT. Confirmed independently by named one-sided players
+#   (Salah 0.403, Saka 0.376, Porro 0.392 right; Son 0.576, Díaz 0.575, Robinson 0.654 left).
+#
+# The test is deliberately self-contained — Understat's position codes against Understat's own
+# coordinates — so it needs no outside knowledge of who plays where and can be re-run whenever
+# the upstream convention is in doubt. This is exactly the silent flip the original comment
+# feared: every team's attack mirrored, and every number still entirely plausible.
+Y_ZERO_IS_LEFT = False
 FLANK_EDGE = 1.0 / 3.0   # y below 1/3 and above 2/3 are the channels; the rest is central
 
 
@@ -189,44 +205,186 @@ def zone_shares(shots: Sequence[dict]) -> dict:
 MIN_SHOTS_FOR_SHARE = 30
 
 
-# --- soccerdata adapters (network) ----------------------------------------------------- #
-# STATUS 2026-08-02: these two adapters DO NOT CURRENTLY WORK. Two separate problems, found by
-# running them:
+# --- network adapters ------------------------------------------------------------------ #
+# STATUS 2026-08-05: WORKING, against Understat's own JSON endpoints rather than the page HTML.
 #
-# 1. (fixed, but it will recur) soccerdata reaches Understat through `tls_requests`, which
-#    dlopens a native `tls-client` library it downloads from a GitHub release on first use —
-#    it needs a spoofed TLS fingerprint to get past Cloudflare. Its downloader uses
-#    `urllib.urlopen(..., timeout=15)`, and the asset is 10.3 MB, so on a slow link the file
-#    lands TRUNCATED. The symptom is misleading: not a network error but
-#        OSError: Failed to download the required TLS library
-#    and, if you place a partial file yourself, dlopen rejects it with "__TEXT load command
-#    content extends beyond end of file". Fix: fetch the full asset with curl (verify the byte
-#    count against the GitHub API's `size`) into tls_requests/bin/. In a container, bake it in.
+# The previous note here said `getMatchData/{id}` "now 404s" and that Tier-2 was blocked on
+# upstream. Half right, and the wrong half was the actionable one. What actually happened:
 #
-# 2. (open, upstream) With the library loaded, the shot reader still fails: it requests
-#    `understat.com/getMatchData/{id}`, which now 404s, and the match pages no longer embed the
-#    `shotsData = JSON.parse(...)` blob everyone scraped. Understat restructured; soccerdata
-#    1.9.1 has not caught up. So Tier-2 shot zones need either a newer soccerdata or a
-#    hand-written scraper against whatever endpoint the site uses now.
+#   * The match page really did stop embedding `shotsData = JSON.parse(...)`. That blob is gone
+#     and it is not coming back — every scraper written against it, soccerdata 1.9.1 included,
+#     breaks. That part of the diagnosis was correct.
+#   * `getMatchData/{id}` did NOT disappear. It is the endpoint the site's own `match.min.js`
+#     calls, and it serves shots and rosters as JSON. It answers 404 to a plain GET and 200 to
+#     the same GET carrying `X-Requested-With: XMLHttpRequest`. A 404 to an unadorned request
+#     reads exactly like a removed endpoint, which is how it was misread.
 #
-# Everything above this line is pure and tested and does not depend on either.
-def _understat(seasons):
-    import soccerdata as sd
+# So the entire blocker was one request header. Two things follow, both worth having:
+#
+#   * No browser impersonation is needed. Verified 2026-08-05: this module's honest
+#     `config.HTTP_USER_AGENT` gets 200s. There is no Cloudflare challenge and no TLS
+#     fingerprint check on these endpoints, so the `tls_requests` native-library saga that
+#     dominated the last attempt was never load-bearing — it was soccerdata's transport, not
+#     Understat's requirement.
+#   * soccerdata is no longer a dependency of this project. It was pulled in for this module
+#     alone, and it is a heavy, fragile package whose Understat reader is broken against the
+#     current site anyway.
+#
+# Coverage note: a season is 380 matches = 380 requests, throttled. Only `isResult` fixtures
+# carry data; unplayed ones are skipped rather than fetched and discarded.
+_BASE = "https://understat.com"
 
-    return sd.Understat(leagues="ENG-Premier League", seasons=seasons)
+# The whole fix. Understat's routers answer these paths only for XHR-marked requests; without
+# it every one of them 404s, which looks like the endpoint is gone rather than like a rejected
+# request. If Tier-2 breaks again, re-check this before concluding anything about the site.
+_XHR_HEADERS = {"X-Requested-With": "XMLHttpRequest"}
+
+UNDERSTAT_MIN_INTERVAL_S = 1.0   # a season is 380 calls; be a good citizen
 
 
-def fetch_shots(seasons) -> list[dict]:
-    """Every shot event for the given seasons, as plain dicts.
+class UnderstatClient:
+    """Understat's JSON endpoints. Polite, no retries — add backoff before scheduling this."""
 
-    Network-bound and slow (Understat is scraped; soccerdata caches to disk). Raises rather
-    than returning partial data — a half-fetched season skews every share computed from it.
+    def __init__(self, session=None, min_interval: float | None = None):
+        import requests
+
+        from .. import config
+
+        self.session = session or requests.Session()
+        self.session.headers.update({
+            "User-Agent": config.HTTP_USER_AGENT,
+            **_XHR_HEADERS,
+        })
+        self._timeout = config.HTTP_TIMEOUT
+        self._last_call = 0.0
+        self._min_interval = (
+            UNDERSTAT_MIN_INTERVAL_S if min_interval is None else min_interval
+        )
+
+    def _throttle(self) -> None:
+        import time
+
+        dt = time.monotonic() - self._last_call
+        if dt < self._min_interval:
+            time.sleep(self._min_interval - dt)
+        self._last_call = time.monotonic()
+
+    def _get(self, path: str) -> dict:
+        resp = self.session.get(f"{_BASE}/{path}", timeout=self._timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+    def league_season(self, season: int | str, league: str = "EPL") -> dict:
+        """One call for a whole season: `teams`, `players` and `dates` (the 380 fixtures).
+
+        `season` is the starting year, as Understat labels it — 2024 is 2024-25.
+        """
+        return self._get(f"getLeagueData/{league}/{season}")
+
+    def match(self, match_id: int | str) -> dict:
+        """`shots` and `rosters`, each split into `h`/`a`."""
+        self._throttle()
+        return self._get(f"getMatchData/{match_id}")
+
+
+def _flatten_shots(payload: dict, match_id: str) -> list[dict]:
+    """`{"h": [...], "a": [...]}` -> one list, each shot tagged with the side that took it."""
+    out: list[dict] = []
+    for side in ("h", "a"):
+        for shot in payload.get("shots", {}).get(side, []) or []:
+            out.append({**shot, "side": side, "match_id": str(shot.get("match_id", match_id))})
+    return out
+
+
+def fetch_season_shots(
+    season: int | str,
+    league: str = "EPL",
+    client: UnderstatClient | None = None,
+    on_progress=None,
+) -> list[dict]:
+    """Every shot in a season, as plain dicts carrying Understat's own keys (X, Y, xG, ...).
+
+    Raises rather than returning partial data — a half-fetched season skews every share
+    computed from it, and a quietly short season is exactly the kind of degradation that
+    stays plausible. Unplayed fixtures are skipped, not failed on.
     """
-    df = _understat(seasons).read_shot_events()
-    return df.reset_index().to_dict("records")
+    client = client or UnderstatClient()
+    fixtures = client.league_season(season, league).get("dates", [])
+    played = [f for f in fixtures if f.get("isResult")]
+
+    shots: list[dict] = []
+    for i, fixture in enumerate(played, start=1):
+        mid = str(fixture["id"])
+        shots.extend(_flatten_shots(client.match(mid), mid))
+        if on_progress:
+            on_progress(i, len(played), mid)
+    return shots
 
 
-def fetch_team_match_xg(seasons) -> list[dict]:
-    """Per-match team xG for/against — the input an xG-based engine fit would use."""
-    df = _understat(seasons).read_team_match_stats()
-    return df.reset_index().to_dict("records")
+def fetch_league_players(
+    season: int | str,
+    league: str = "EPL",
+    client: UnderstatClient | None = None,
+) -> list[dict]:
+    """Season player list, reshaped into what `build_fpl_id_map` expects.
+
+    Understat's own keys (`id`, `player_name`, `team_title`) are renamed here rather than in
+    the join, so the join keeps one input shape whatever the upstream calls its columns.
+    """
+    client = client or UnderstatClient()
+    players = client.league_season(season, league).get("players", [])
+    return [
+        {
+            "understat_id": str(p["id"]),
+            "name": p.get("player_name", ""),
+            "team": p.get("team_title", ""),
+            **{k: v for k, v in p.items() if k not in ("id", "player_name", "team_title")},
+        }
+        for p in players
+    ]
+
+
+def fetch_fixtures(
+    season: int | str,
+    league: str = "EPL",
+    client: UnderstatClient | None = None,
+) -> list[dict]:
+    """The season's fixtures, including team-level xG and Understat's own W/D/L forecast."""
+    client = client or UnderstatClient()
+    return client.league_season(season, league).get("dates", [])
+
+
+def team_shots_against(shots: Sequence[dict], fixtures: Sequence[dict]) -> dict:
+    """Shots faced per team, per match — the input the saves model does not currently have.
+
+    `x_saves` is presently `opp_lambda * 3 * (x_minutes/90)`, i.e. a linear function of
+    expected goals conceded. That sets clean-sheet points and save points almost exactly
+    against each other: a keeper behind a good defence takes the clean sheet and few saves, one
+    behind a bad defence takes neither but many saves, and the two terms cancel into a flat
+    ranking. Save volume actually tracks SHOTS FACED, which is a different quantity and is not
+    currently modelled anywhere. This is the raw material for fixing that.
+
+    Returns {team_title: {"matches": n, "shots_against": n, "per_match": float}}.
+    """
+    home = {str(f["id"]): f["h"]["title"] for f in fixtures if f.get("isResult")}
+    away = {str(f["id"]): f["a"]["title"] for f in fixtures if f.get("isResult")}
+
+    faced: dict = {}
+    seen: dict = {}
+    for shot in shots:
+        mid = str(shot.get("match_id", ""))
+        if mid not in home:
+            continue
+        # a shot taken by the home side is one FACED by the away side
+        defending = away[mid] if shot.get("side") == "h" else home[mid]
+        faced[defending] = faced.get(defending, 0) + 1
+        seen.setdefault(defending, set()).add(mid)
+
+    return {
+        team: {
+            "matches": len(seen[team]),
+            "shots_against": n,
+            "per_match": round(n / len(seen[team]), 2) if seen[team] else 0.0,
+        }
+        for team, n in sorted(faced.items())
+    }

@@ -13,7 +13,10 @@ dependencies = [
   "lightgbm>=4.3",
   "pulp>=2.8",
   "penaltyblog>=1.0",
-  "soccerdata>=1.6",
+  # soccerdata was here for ingest/understat.py alone. Dropped 2026-08-05: its Understat
+  # reader scrapes a `shotsData` blob the site no longer embeds, and the replacement talks to
+  # Understat's JSON endpoints with `requests` and one header. A heavy, fragile dependency
+  # (it pulls a native TLS library at runtime) removed for less code, not more.
   "mlflow>=2.12",
 ]
 
