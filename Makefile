@@ -1,4 +1,4 @@
-.PHONY: setup test lint pull backtest precompute serve clean
+.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -30,6 +30,21 @@ pull:
 # Walk-forward backtest (synthetic demo until DuckDB is populated).
 backtest:
 	.venv/bin/python scripts/run_backtest.py
+
+# Capture FPL's pre-deadline state. Run weekly from 2026-08-21; the data cannot be
+# reconstructed later (see docs/HANDOFF.md §17). WINDOW=12 hours by default.
+snapshot:
+	.venv/bin/python scripts/snapshot.py --if-near-deadline $(if $(WINDOW),--window $(WINDOW))
+
+# Regenerate the measured accuracy the /model page reads. Slow (full walk-forward).
+model-card:
+	.venv/bin/python scripts/build_model_card.py $(SEASON)
+
+# Measure the briefing guard. Default is the injection pass: corrupt briefings the guard
+# passed and report recall — no API key, no network. Add LIVE=1 to also generate for real.
+LIVE ?=
+eval-brief:
+	.venv/bin/python scripts/eval_brief.py $(if $(LIVE),--live) $(EVAL_ARGS)
 
 clean:
 	rm -rf .pytest_cache .ruff_cache **/__pycache__ *.egg-info
