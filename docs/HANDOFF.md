@@ -59,6 +59,7 @@ Branch `feat/match-lab-and-advisor`, 11 ahead of `main`, never pushed, no remote
 | **20** | **working that list: what each grade of team news costs, and why props are back on** |
 | 21 | free routes to market data; why prediction markets do not fit |
 | **22** | **props capture live; §14's blend inverted; what is actually left to explore** |
+| **23** | **the season simulation — we beat FPL on decisions, and why one season proves nothing** |
 
 ---
 
@@ -1469,3 +1470,98 @@ recalibration that cannot move Spearman at all may change many.
 6. **Price-change model.** Team value compounds across a season and is entirely unmodelled.
 7. **Defensive Contribution calibration.** New 2025/26 scoring, a meaningful share of DEF/MID
    points now, and `dc_point_probability` has never been validated on its own.
+
+---
+
+## 23. The season simulation — the model beats FPL on DECISIONS too (2026-08-05)
+
+The first measurement of what the product actually does. Every prior number is a ranking metric
+over players; this buys fifteen, picks eleven, chooses a captain and decides whether a transfer
+clears −4, under FPL's rules, and counts the points. `make simulate-season`.
+
+### The result
+
+Eighteen starting gameweeks (GW9–GW26), each played to GW38, four policies through the identical
+simulator so that every simplification cancels:
+
+| policy | goals engine | xG engine |
+|---|---|---|
+| **ours** | **56.66/gw** | **57.80/gw** |
+| ours, quantile-recalibrated | 56.54 | 56.94 |
+| FPL's pre-deadline `ep_next` | 54.58 | 54.58 |
+| template (ownership) | 53.85 | 53.85 |
+| random noise | 13.63 | 13.63 |
+
+**ours − FPL: +2.08/gw on the goals engine (12/18 starts), +3.22/gw on the xG engine (13/18).**
+Over a 30-gameweek run that is roughly +60 to +95 points.
+
+Three things worth keeping:
+
+- **The ranking edge survives contact with decisions.** §16 established we out-rank FPL; there was
+  no guarantee that converted, because the optimiser consumes magnitudes and Spearman does not
+  see them. It converts.
+- **The xG engine is worth more to decisions than to ranking.** +0.0088 Spearman (§19) becomes
+  +1.14/gw here, about +34 points a season. Small ranking gains amplify through selection.
+- **Everything beats the template, and the template barely beats nothing.** Ownership-following
+  scores 53.85; the machinery on pure noise scores 13.63. The projection is doing the work.
+
+### The methodological warning, which matters more than the number
+
+**A single season simulation is nearly worthless as a comparison, and the first run of this one
+proved it.** Started at GW9 only, it reported that our model LOSES to FPL by 4.13 points a
+gameweek. Started at eighteen different gameweeks, the same code on the same data says we WIN by
+2.08. Nothing changed but where the season began.
+
+The reason is structural: the opening squad is a single decision whose consequences persist for
+the entire run, so a season total is one draw from a very wide distribution. Our per-gameweek
+score ranges 48.07–62.15 across starts — a fourteen-point swing from nothing but the start date.
+
+**Caveat on the eighteen, kept because it cuts against the headline:** those windows overlap
+heavily (GW9 and GW10 share 28 of 29 gameweeks), so they are not eighteen independent trials and
+the spread across them understates the true uncertainty. This is one season's evidence with a
+consistent direction, not a significance test. A second season is the cheap way to firm it up.
+
+Absolute levels are plausible: 54–58 points per gameweek against a real FPL average around 50–55.
+
+### §22's dispersion idea is now closed — it was a null
+
+§22 listed "dispersion judged by decisions rather than Spearman" as a promising untested lead, on
+the reasoning that a monotone rescale cannot move Spearman by construction yet moves every
+threshold that matters. Tested properly and it does nothing: **−0.11/gw on the goals engine
+(6/18 starts), −0.86/gw on the xG engine (7/18).**
+
+**The first attempt at this test was vacuous and is worth recording as a trap.** An affine
+rescale (`a·x + b`) cannot change the optimiser's answer at all: the XI always contains exactly
+eleven players, so the objective becomes `a·Σx + 11b` and the same squad is optimal. The results
+were identical by construction and would have been reported as "recalibration does not help"
+without ever having tested it. The real test needs a monotone but NON-affine map — quantile
+mapping onto the realised points distribution, which preserves Spearman exactly while changing
+every magnitude.
+
+### Two bugs the tests caught
+
+Blank gameweeks — a squad member whose club is not playing — were treated as missing data and the
+whole gameweek was **skipped**, silently deleting three of thirty from the season total. And a
+mistyped projection key scored every player zero and simulated a season of arbitrary picks that
+still returned a plausible-looking number; it now raises.
+
+### Backlog — what remains from §22, with item 3 closed
+
+1. ~~Simulate a season~~ — **done, this section.**
+2. **Expected-rank objective instead of raw xP.** `models/xpoints.py` states outright that raw-xP
+   maximisation is not rank maximisation and that captaincy and differentials should optimise
+   expected rank against effective ownership. `models/rank.py` exists; the optimiser still
+   maximises raw xP. The simulator built here is exactly the rig to test it on — and now that a
+   decision-level measurement exists, this is the top remaining modelling idea.
+3. ~~Dispersion~~ — **closed above. Null.**
+4. **Auto-subs and bench order.** The simulator now implements auto-subs; the OPTIMISER still has
+   no bench ordering, and bench points are visible in the output (92–146 a season left behind).
+5. **Chip timing** (wildcard, bench boost, triple captain, free hit) as a Monte Carlo over the
+   fixture calendar. The simulator models no chips at all, which handicaps it against a real
+   manager and is the largest single gap between it and a real season.
+6. **Price-change model.** Team value compounds across a season and is entirely unmodelled.
+7. **Defensive Contribution calibration.** New 2025/26 scoring, a meaningful share of DEF/MID
+   points, and `dc_point_probability` has never been validated on its own.
+
+Plus the two data captures now running — snapshots (§17) and props (§22) — which are the only
+items on any list with a deadline attached.
