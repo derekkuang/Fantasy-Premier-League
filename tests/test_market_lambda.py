@@ -28,3 +28,39 @@ def test_solve_mu_monotone_and_round_trips():
 def test_lambdas_are_positive_and_sane():
     lh, la = market_lambdas(1.9, 3.6, 4.2, 1.8, 2.0)
     assert 0.05 <= lh <= 6.0 and 0.05 <= la <= 6.0
+
+
+# --- historical closing O/U, without which market lambdas cannot be backtested ------------ #
+def test_parse_csv_carries_closing_over_under():
+    """`market_lambdas` needs 1X2 AND over/under 2.5 — the 1X2 prices fix supremacy, the O/U
+    fixes total goals, and neither alone determines a pair of lambdas. parse_csv carried only
+    the 1X2 triple, so the market-lambda path shipped to production while being impossible to
+    score against the engine on any historical season. These two fields are what make
+    `validate_xp(fixture_lambdas=...)` measurable."""
+    from fpledge.ingest.footballdata import parse_csv
+
+    csv_text = (
+        "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,PSCH,PSCD,PSCA,PC>2.5,PC<2.5\n"
+        "E0,16/08/2024,Man United,Fulham,1,0,1.65,4.23,5.28,1.63,2.38\n"
+    )
+    rows = parse_csv(csv_text, "2024-25")
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["close_h"] == 1.65 and r["close_a"] == 5.28
+    assert r["close_over25"] == 1.63
+    assert r["close_under25"] == 2.38
+
+
+def test_a_row_without_over_under_still_parses():
+    """Older seasons and some divisions carry no O/U column. The match must still load for the
+    engine fit — it simply cannot contribute a market lambda."""
+    from fpledge.ingest.footballdata import parse_csv
+
+    csv_text = (
+        "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,PSCH,PSCD,PSCA\n"
+        "E0,16/08/2024,Man United,Fulham,1,0,1.65,4.23,5.28\n"
+    )
+    rows = parse_csv(csv_text, "2024-25")
+    assert len(rows) == 1
+    assert rows[0]["close_over25"] is None
+    assert rows[0]["home_goals"] == 1

@@ -99,6 +99,7 @@ def parse_csv(text: str, label: str) -> list[dict]:
         except (ValueError, KeyError):
             continue
         ch, cd, ca = _closing_odds(row)
+        oo, uu = _ou_odds(row)
         matches.append(
             {
                 "season": label,
@@ -111,6 +112,13 @@ def parse_csv(text: str, label: str) -> list[dict]:
                 "close_h": ch,
                 "close_d": cd,
                 "close_a": ca,
+                # Closing over/under 2.5. `fetch_upcoming` has always carried these for the
+                # live market-lambda path; parse_csv did not, which is why the market-lambda
+                # option in `eval.fpl_backtest.validate_xp(fixture_lambdas=)` shipped to
+                # production without ever being scored against the engine's own lambdas.
+                # `market_lambdas` needs 1X2 AND O/U to separate total goals from supremacy.
+                "close_over25": oo,
+                "close_under25": uu,
             }
         )
     return matches
