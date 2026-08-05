@@ -17,6 +17,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 
+from ..models import saves as saves_model
 from ..models.dixon_coles import DixonColesModel
 from ..models.minutes import MinutesModel
 from ..models.shares import rate_shares
@@ -38,6 +39,28 @@ def _per90(total: float, minutes: float, min_minutes: int) -> float:
     return total / (minutes / 90.0) if minutes >= min_minutes else 0.0
 
 
+def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes):  # noqa: ANN001
+    """Expected saves under the selected model.
+
+    "lambda" is the shipped behaviour: saves proportional to expected goals conceded, which
+    puts save points and clean-sheet points in direct opposition. "shots" uses observed saves
+    faced (see `models.saves`). Falls back to "lambda" when there is no history yet, so the
+    opening gameweeks of a walk-forward behave identically under both modes rather than
+    scoring a keeper at zero.
+    """
+    if pos != "GK":
+        return 0.0
+    if rates is not None:
+        if mode == "shots":
+            return rates.expected_saves(team_id, opp_id, x_minutes)
+        if mode == "hybrid":
+            # The team's own tendency to keep its keeper busy (empirical, absent from
+            # "lambda") times THIS fixture's opponent strength from the engine (absent from
+            # "shots", which only knows the opponent's season-long average).
+            return rates.expected_saves_vs_lambda(team_id, opp_lambda, x_minutes)
+    return opp_lambda * 3.0 * (x_minutes / 90.0)
+
+
 def validate_xp(
     player_rows: Sequence[dict],
     fixtures: Sequence[dict],
@@ -48,6 +71,8 @@ def validate_xp(
     minutes_mode: str = "recent",
     xg_mode: str = "season",
     bonus_mode: str = "rate",
+    saves_mode: str = "lambda",
+    match_saves: Sequence[dict] | None = None,
     return_records: bool = False,
     fixture_lambdas: dict | None = None,
 ):
@@ -99,7 +124,18 @@ def validate_xp(
     acc: dict = {}  # element -> rolling totals (from GWs strictly before the current one)
     records = []    # (gw, element, my_xp, fpl_xp, actual, position, minutes)
 
+    # Saves-from-shots-faced (saves_mode="shots"). Accumulated under the SAME point-in-time
+    # rule as everything else: a gameweek's matches are folded in only after that gameweek has
+    # been scored, so the rates predicting GW N are built from GWs < N.
+    saves_by_gw: dict = defaultdict(list)
+    for m in match_saves or []:
+        saves_by_gw[m["gw"]].append(m)
+    save_counts: dict = {}
+    saves_rates = None
+
     for n in sorted(by_gw):
+        if saves_mode in ("shots", "hybrid"):
+            saves_rates = saves_model.SavesRates.build(save_counts) if save_counts else None
         if n > burn_in and acc:
             engine = DixonColesModel(half_life_days).fit([f for f in fixtures if f["gw"] < n])
             xmins = {el: _mp(a).x_minutes for el, a in acc.items()}
@@ -150,7 +186,9 @@ def validate_xp(
                         position=pos, p_play=mp.p_play, p_60=mp.p_60, team_lambda=lam,
                         goal_share=sh["goal_share"], assist_share=sh["assist_share"],
                         p_clean_sheet=p_cs,
-                        x_saves=(opp_lam * 3.0 * (mp.x_minutes / 90.0) if pos == "GK" else 0.0),
+                        x_saves=_x_saves(
+                            pos, saves_mode, saves_rates, tid, opp, opp_lam, mp.x_minutes
+                        ),
                         p_dc_point=p_dc, x_bonus=x_bonus,
                         opp_lambda=opp_lam,
                         x_conceded_penalty=(
@@ -185,6 +223,11 @@ def validate_xp(
                     )
 
         # accumulate GW N AFTER scoring it (point-in-time)
+        for m in saves_by_gw.get(n, []):
+            saves_model.accumulate(
+                save_counts, m["home"], m["away"],
+                m["home_keeper_saves"], m["away_keeper_saves"],
+            )
         for el, rows in by_gw[n].items():
             a = acc.setdefault(
                 el,

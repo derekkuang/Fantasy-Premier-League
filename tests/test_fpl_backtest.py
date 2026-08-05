@@ -127,3 +127,61 @@ def test_a_players_first_gameweek_has_no_baseline_and_is_skipped():
     ]
     _add_clean_baseline(rows)
     assert [r["fpl_xp_prev"] for r in rows] == [None, 3.0, 5.0]
+
+
+def _match_saves(values):
+    """One match per gameweek between the two synthetic teams. `values` is per-gameweek
+    (home_keeper_saves, away_keeper_saves)."""
+    out = []
+    for g in range(1, 7):
+        home, away = (1, 2) if g % 2 == 1 else (2, 1)
+        h, a = values[g - 1]
+        out.append({"gw": g, "home": home, "away": away,
+                    "home_keeper_saves": h, "away_keeper_saves": a})
+    return out
+
+
+def test_saves_mode_shots_changes_only_goalkeepers():
+    """The saves term is GK-only, so switching its model must leave every outfield
+    projection untouched. A change there would mean the term had leaked into the wrong
+    position and any measured 'improvement' would be unattributable."""
+    rows, fixtures, teams = _synthetic()
+    ms = _match_saves([(6, 1)] * 6)
+    _, base = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                          return_records=True)
+    _, shot = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                          saves_mode="shots", match_saves=ms, return_records=True)
+    b = {(g, el): (my, pos) for (g, el, my, _f, _a, pos, _m) in base}
+    s = {(g, el): (my, pos) for (g, el, my, _f, _a, pos, _m) in shot}
+    outfield_changed = [k for k in b if b[k][1] != "GK" and b[k][0] != s[k][0]]
+    gk_changed = [k for k in b if b[k][1] == "GK" and b[k][0] != s[k][0]]
+    assert not outfield_changed
+    assert gk_changed, "saves_mode='shots' changed nothing at all — the mode is not wired up"
+
+
+def test_saves_rates_are_point_in_time():
+    """The flagship check, for the saves feed specifically. Corrupting the LAST gameweek's
+    save counts must not move any earlier prediction. Saves arrive per completed match, so
+    it would be easy to fold a gameweek in before scoring it and never notice — the effect
+    is a modest accuracy gain that looks exactly like the model working."""
+    rows, fixtures, teams = _synthetic()
+    clean = _match_saves([(4, 4)] * 6)
+    dirty = _match_saves([(4, 4)] * 5 + [(500, 500)])   # absurd values, final GW only
+
+    _, a = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                       saves_mode="shots", match_saves=clean, return_records=True)
+    _, b = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                       saves_mode="shots", match_saves=dirty, return_records=True)
+    past_a = {(g, el): my for (g, el, my, *_) in a if g < 6}
+    past_b = {(g, el): my for (g, el, my, *_) in b if g < 6}
+    assert past_a == past_b
+
+
+def test_saves_mode_falls_back_when_no_data_is_supplied():
+    """A dropped Understat fetch must degrade to the shipped behaviour, not to zero saves."""
+    rows, fixtures, teams = _synthetic()
+    _, base = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                          return_records=True)
+    _, none = validate_xp(rows, fixtures, teams, burn_in=2, min_rate_minutes=90,
+                          saves_mode="shots", match_saves=None, return_records=True)
+    assert {(g, el): my for (g, el, my, *_) in base} == {(g, el): my for (g, el, my, *_) in none}
