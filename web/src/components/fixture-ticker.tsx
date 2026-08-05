@@ -27,10 +27,10 @@ const CELL_W: Record<Win, string> = {
 };
 const TEAM_W = "w-[132px] min-w-[132px] lg:w-[150px] lg:min-w-[150px]";
 
-const PILL = "press cursor-pointer rounded-full border px-[11px] py-[5px] text-xs font-semibold";
+const PILL = "press min-h-8 cursor-pointer rounded-full border px-3 py-1.5 text-xs font-semibold";
 const PILL_ON = "border-emerald-600 bg-emerald-600 text-white";
 const PILL_OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55";
-const GROUP_LABEL = "text-[10px] font-semibold uppercase tracking-[.07em] text-black/40 dark:text-white/40";
+const GROUP_LABEL = "t-label text-[10px] text-black/40 dark:text-white/40";
 
 const LENS_HINT: Record<TickerLens, string> = {
   overall: "left half attack · right half defence — ranked by combined difficulty",
@@ -161,7 +161,7 @@ function FixtureCell({
           className="flex h-11 flex-col items-center justify-center rounded-lg border border-dashed border-black/10 text-black/35 dark:border-white/10 dark:text-white/35"
         >
           <span className="text-[9px] font-semibold">pending</span>
-          <span className="text-[8px] text-black/20 dark:text-white/20">horizon {horizon}</span>
+          <span className="text-[10px] text-black/20 dark:text-white/20">horizon {horizon}</span>
         </span>
       </td>
     );
@@ -288,14 +288,14 @@ function TickerGrid({
           <tr>
             {/* corner: sticky on BOTH axes, so it outranks the other two */}
             <th
-              className={`sticky left-0 top-0 z-30 ${TEAM_W} border-b border-r border-black/10 bg-[var(--background)] px-2.5 py-[7px] text-left text-[10px] font-semibold uppercase tracking-[.06em] text-black/40 dark:border-white/10 dark:text-white/40`}
+              className={`sticky left-0 top-0 z-30 ${TEAM_W} border-b border-r border-black/10 bg-[var(--background)] px-2.5 py-[7px] t-label text-left text-[10px] text-black/40 dark:border-white/10 dark:text-white/40`}
             >
               Team
             </th>
             {gws.map((g) => (
               <th
                 key={g}
-                className={`sticky top-0 z-20 ${cellW} border-b border-black/10 bg-[var(--background)] px-1 py-[7px] text-center text-[10px] font-semibold uppercase tracking-[.05em] dark:border-white/10 ${
+                className={`sticky top-0 z-20 ${cellW} border-b border-black/10 bg-[var(--background)] px-1 py-[7px] t-label text-center text-[10px] dark:border-white/10 ${
                   g <= lastServed
                     ? "text-black/40 dark:text-white/40"
                     : "text-black/20 dark:text-white/20"

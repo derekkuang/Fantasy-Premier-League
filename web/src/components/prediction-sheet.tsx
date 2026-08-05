@@ -3,18 +3,17 @@
 // true FDR, and the exact per-term xP breakdown (terms sum to xP). Bottom sheet on mobile,
 // centred dialog on desktop. Closes on backdrop / ✕ / Escape.
 
-import { useEffect } from "react";
 import type { Prediction } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { BAND_BLURB, BAND_RANGE, bandStyle } from "@/lib/risk";
 import { Jersey } from "@/components/jersey";
-import { useDismissable } from "@/lib/use-dismissable";
+import { Sheet, SheetClose } from "@/components/sheet";
 
 function Tile({ label, value, emerald = false }: { label: string; value: string; emerald?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-[10px] border border-black/[.06] px-2 py-[7px] dark:border-white/[.06]">
       <span className={`text-base font-bold leading-none tabular-nums ${emerald ? "text-emerald-600" : ""}`}>{value}</span>
-      <span className="text-[9px] text-black/40 dark:text-white/40">{label}</span>
+      <span className="text-[10px] text-black/40 dark:text-white/40">{label}</span>
     </div>
   );
 }
@@ -38,13 +37,6 @@ function Row({ label, value, negative = false, strong = false }: { label: string
 }
 
 export function PredictionSheet({ player, onClose }: { player: Prediction; onClose: () => void }) {
-  const { closing, dismiss } = useDismissable(onClose);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && dismiss();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dismiss]);
-
   const club = getClub(player.team);
   const fixtures = player.fixtures ?? [];
   const gw = fixtures[0]?.gw;
@@ -83,31 +75,25 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
     : `£${player.price_moves.change_start.toFixed(1)}m since the season began · net transfers ${player.price_moves.net_transfers.toLocaleString()}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-center lg:p-6">
-      <div className="sheet-backdrop absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-        data-closing={closing}
-        onClick={dismiss} />
-      <div
-        data-closing={closing}
-        className="sheet-panel relative flex max-h-[88vh] w-full max-w-[430px] flex-col gap-3.5 overflow-y-auto rounded-t-[20px] border border-black/10 bg-white px-4 pb-6 pt-3.5 shadow-[0_-8px_30px_rgba(0,0,0,.25)] dark:border-white/10 dark:bg-[#0a0a0a] lg:max-w-[560px] lg:rounded-[20px]">
+    <Sheet
+      onClose={onClose}
+      label={`${player.web_name} — projection detail`}
+      className="lg:max-w-[560px] lg:rounded-[20px]"
+    >
+      {(dismiss) => (
+      <>
         {/* header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={34} height={32} className="block flex-none" />
             <div className="flex flex-col gap-px">
-              <span className="text-[17px] font-semibold tracking-[-.01em]">{player.web_name}</span>
+              <span className="t-title text-[17px] font-semibold">{player.web_name}</span>
               <span className="text-[11px] text-black/40 dark:text-white/40">
                 {player.position} · {player.team} · £{player.price.toFixed(1)} · {player.ownership.toFixed(1)}% owned
               </span>
             </div>
           </div>
-          <button
-            onClick={dismiss}
-            aria-label="Close"
-            className="grid h-7 w-7 flex-none place-items-center rounded-full border border-black/10 text-black/50 hover:text-black dark:border-white/10 dark:text-white/50 dark:hover:text-white"
-          >
-            ✕
-          </button>
+          <SheetClose onClick={dismiss} />
         </div>
 
         {/* availability — the explanation for a number that would otherwise look broken.
@@ -152,7 +138,7 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
 
         {/* against the average manager — the raw points-vs-field numbers, in words */}
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+          <span className="t-label text-[10px] text-black/55 dark:text-white/60">
             Against the average manager
           </span>
           <span className="text-[13px] font-semibold">
@@ -177,7 +163,7 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
 
         {/* set-piece duty */}
         <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+          <span className="t-label text-[10px] text-black/55 dark:text-white/60">
             Set-piece duty
           </span>
           <div className="flex flex-wrap gap-1.5">
@@ -196,7 +182,7 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
         {/* next 5 fixtures */}
         {fixtures.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/40 dark:text-white/40">
+            <span className="t-label text-[10px] text-black/40 dark:text-white/40">
               Next {Math.min(fixtures.length, 5)} fixtures · true FDR
             </span>
             <div className="grid grid-cols-5 gap-1.5">
@@ -208,10 +194,10 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
                     className="flex flex-col items-center gap-0.5 rounded-[9px] border border-black/[.06] px-0.5 py-1.5 dark:border-white/[.06]"
                     style={{ background: `color-mix(in oklab, ${c} 14%, transparent)` }}
                   >
-                    <span className="text-[9px] tabular-nums text-black/40 dark:text-white/40">GW{f.gw}</span>
+                    <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">GW{f.gw}</span>
                     <span className="font-mono text-[11px] font-semibold">{getClub(f.opp).shortCode}</span>
-                    <span className="text-[9px] text-black/40 dark:text-white/40">({f.home ? "H" : "A"})</span>
-                    <span className="w-full rounded-[4px] py-px text-center text-[9px] font-bold" style={{ background: c, color: fdrGlyph(f.fdr) }}>
+                    <span className="text-[10px] text-black/40 dark:text-white/40">({f.home ? "H" : "A"})</span>
+                    <span className="w-full rounded-[4px] py-px text-center text-[10px] font-bold" style={{ background: c, color: fdrGlyph(f.fdr) }}>
                       {f.fdr}
                     </span>
                     <span className="text-xs font-bold tabular-nums">{f.xp.toFixed(1)}</span>
@@ -226,7 +212,7 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
         <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
           {[["Recent form", formNote], ["Price momentum", priceNote]].map(([title, note]) => (
             <div key={title} className="flex flex-col gap-0.5 rounded-[12px] border border-black/[.06] px-2.5 py-2 dark:border-white/[.06]">
-              <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+              <span className="t-label text-[10px] text-black/55 dark:text-white/60">
                 {title}
               </span>
               <span className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">{note}</span>
@@ -237,7 +223,7 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
         {/* why this xP */}
         {b && (
           <div className="flex flex-col">
-            <span className="mb-1 text-[10px] font-semibold uppercase tracking-[.07em] text-black/40 dark:text-white/40">
+            <span className="mb-1 t-label text-[10px] text-black/40 dark:text-white/40">
               Why this xP
             </span>
             <Row label={`appearance · P(60′) ${b.p_60.toFixed(2)}`} value={f2(b.appearance)} />
@@ -254,7 +240,8 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
             </p>
           </div>
         )}
-      </div>
-    </div>
+      </>
+      )}
+    </Sheet>
   );
 }

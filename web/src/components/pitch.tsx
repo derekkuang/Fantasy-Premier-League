@@ -48,7 +48,7 @@ export function SquadBoard({
     <section className="flex flex-col gap-2">
       <JerseyDefs />
       <div className="flex items-center justify-between px-0.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40 dark:text-white/40">
+        <h2 className="t-label text-[11px] text-black/40 dark:text-white/40">
           Your squad · tap a player
         </h2>
         <div className="flex items-center gap-1.5">
@@ -59,7 +59,7 @@ export function SquadBoard({
             <button
               type="button"
               onClick={onReset}
-              className="rounded-full border border-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/55 hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10 dark:text-white/55"
+              className="press min-h-8 rounded-full border border-black/10 px-3 py-1.5 text-[11px] font-semibold text-black/55 hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10 dark:text-white/55"
             >
               Auto-pick
             </button>
@@ -114,7 +114,7 @@ function PlayerToken({ player, pip, isCaptain, onOpen }: { player: SquadPlayer; 
       type="button"
       onClick={onOpen}
       title={`${player.web_name} — tap for detail`}
-      className="relative flex w-[74px] flex-col items-center gap-1 rounded-[10px] pt-0.5 text-inherit hover:bg-white/[.09] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+      className="press relative flex w-[74px] flex-col items-center gap-1 rounded-[10px] pt-0.5 text-inherit hover:bg-white/[.09] focus-visible:ring-2 focus-visible:ring-white/60"
     >
       <div className="relative h-11 w-[46px]">
         <Jersey
@@ -126,7 +126,7 @@ function PlayerToken({ player, pip, isCaptain, onOpen }: { player: SquadPlayer; 
           className="block [filter:drop-shadow(0_2px_3px_rgba(0,0,0,.3))]"
         />
         <span
-          className="absolute -left-1 -top-[3px] rounded border border-black/25 px-[3px] font-mono text-[8px] font-bold tracking-wide"
+          className="absolute -left-1 -top-[3px] rounded border border-black/25 px-[3px] font-mono text-[10px] font-bold"
           style={{ background: club.primary, color: club.text }}
         >
           {club.shortCode}
@@ -156,12 +156,12 @@ function PlayerToken({ player, pip, isCaptain, onOpen }: { player: SquadPlayer; 
 
 function FixturePip({ pip }: { pip: Pip }) {
   return (
-    <div className="flex items-center gap-[3px] pb-0.5">
-      <span className="font-mono text-[9px] font-semibold tracking-wide text-white/70">
+    <div className="flex items-center gap-[3px] pb-0.5 leading-none">
+      <span className="font-mono text-[10px] font-semibold text-white/70">
         {pip.oppCode} ({pip.venue})
       </span>
       <span
-        className="grid h-[11px] min-w-[11px] place-items-center rounded-[3px] text-[8px] font-bold tabular-nums"
+        className="grid h-[14px] min-w-[14px] place-items-center rounded-[3.5px] text-[10px] font-bold leading-none tabular-nums"
         style={{ background: fdrColour(pip.fdr), color: fdrGlyph(pip.fdr) }}
       >
         {pip.fdr}
@@ -179,7 +179,7 @@ function BenchStrip({ bench, fixtures, onOpen }: { bench: SquadPlayer[]; fixture
   return (
     <div className="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-sm dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/40 dark:text-white/40">Bench</span>
+        <span className="t-label text-[11px] text-black/40 dark:text-white/40">Bench</span>
         <span className="text-[11px] tabular-nums text-black/40 dark:text-white/40">
           £{benchSpend.toFixed(1)}m · {benchXp.toFixed(1)} xP
         </span>
@@ -193,25 +193,25 @@ function BenchStrip({ bench, fixtures, onOpen }: { bench: SquadPlayer[]; fixture
               type="button"
               key={p.element_id}
               onClick={() => onOpen(p.element_id)}
-              className="flex flex-col items-center gap-0.5 rounded-[10px] border border-black/[.06] px-0.5 py-1.5 text-inherit opacity-90 hover:border-emerald-500 hover:opacity-100 dark:border-white/[.06]"
+              className="press flex min-h-11 flex-col items-center gap-0.5 rounded-[10px] border border-black/[.06] px-0.5 py-1.5 text-inherit opacity-90 hover:border-emerald-500 hover:opacity-100 dark:border-white/[.06]"
             >
               <div className="flex items-center gap-[3px]">
-                <span className="text-[9px] tabular-nums text-black/40 dark:text-white/40">{i + 1}</span>
+                <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">{i + 1}</span>
                 <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={26} height={25} className="block" />
               </div>
               <span className="max-w-[90%] truncate text-[11px] font-semibold">{p.web_name}</span>
               <div className="flex items-center gap-[3px]">
-                <span className="text-[9px] tabular-nums text-black/40 dark:text-white/40">{p.position}</span>
-                <span className="text-[9px] tabular-nums text-black/55 dark:text-white/55">£{p.price.toFixed(1)}</span>
+                <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">{p.position}</span>
+                <span className="text-[10px] tabular-nums text-black/55 dark:text-white/55">£{p.price.toFixed(1)}</span>
                 <span className="text-[10px] font-bold tabular-nums text-emerald-600">{p.xp.toFixed(1)}</span>
               </div>
               {pip && (
                 <div className="flex items-center gap-[3px]">
-                  <span className="font-mono text-[9px] text-black/40 dark:text-white/40">
+                  <span className="font-mono text-[10px] text-black/40 dark:text-white/40">
                     {pip.oppCode} ({pip.venue})
                   </span>
                   <span
-                    className="grid h-[11px] min-w-[11px] place-items-center rounded-[3px] text-[8px] font-bold tabular-nums"
+                    className="grid h-[14px] min-w-[14px] place-items-center rounded-[3.5px] text-[10px] font-bold leading-none tabular-nums"
                     style={{ background: fdrColour(pip.fdr), color: fdrGlyph(pip.fdr) }}
                   >
                     {pip.fdr}

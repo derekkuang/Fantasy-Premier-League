@@ -41,7 +41,7 @@ const POSITIONS: Pos[] = ["ALL", "GK", "DEF", "MID", "FWD"];
 const PILL = "press min-h-[30px] cursor-pointer rounded-full border px-2.5 py-[5px] text-xs font-semibold";
 const PILL_ON = "border-emerald-600 bg-emerald-600 text-white";
 const PILL_OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/60";
-const LABEL = "text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60";
+const LABEL = "t-label text-[10px] text-black/55 dark:text-white/60";
 const MUTED = "text-black/55 dark:text-white/60";
 
 const eo = (p: Prediction) => Math.max(0, Math.min(p.ownership / 100, 1));
@@ -286,12 +286,12 @@ function PlayerRow({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-semibold">{p.web_name}</span>
-          <span className="flex-none font-mono text-[9px] text-black/55 dark:text-white/60">{club.shortCode}</span>
+          <span className="flex-none font-mono text-[10px] text-black/55 dark:text-white/60">{club.shortCode}</span>
 
           {/* set-piece duty: solid emerald-800 + white = 7.0:1. Emerald-600 on a tint
               measured 3.34:1 — illegible for the badge this page most needs to land. */}
           {p.set_pieces.penalties === 1 && (
-            <span title="First-choice penalty taker" className="flex-none rounded bg-[var(--emerald-deep)] px-1.5 py-px text-[9px] font-bold tracking-[.02em] text-white">
+            <span title="First-choice penalty taker" className="flex-none rounded bg-[var(--emerald-deep)] px-1.5 py-px text-[10px] font-bold text-white">
               PEN 1st
             </span>
           )}
@@ -300,7 +300,7 @@ function PlayerRow({
           {flagged && (
             <span
               title={`${a.label ?? ""}${a.news ? ` — ${a.news}` : ""}`}
-              className="flex-none rounded bg-[var(--amber-bg)] px-1.5 py-px text-[9px] font-bold text-[var(--amber-fg)]"
+              className="flex-none rounded bg-[var(--amber-bg)] px-1.5 py-px text-[10px] font-bold text-[var(--amber-fg)]"
             >
               {a.factor > 0 && a.chance != null ? `${a.chance}%` : (a.label ?? "out")}
             </span>
@@ -322,15 +322,15 @@ function PlayerRow({
         style={{ background: bs.bg, color: bs.fg, borderColor: bs.border }}
       >
         <span className="text-[15px] font-bold leading-[1.1] tabular-nums">{p.risk_tier}</span>
-        <span className="text-center text-[9px] font-semibold leading-tight">{p.risk_label}</span>
+        <span className="text-center text-[10px] font-semibold leading-tight">{p.risk_label}</span>
       </span>
 
       <div className="flex w-11 flex-none flex-col items-end">
         {/* 19px/700 emerald-600 qualifies as large text at 3:1 — smaller emerald must not */}
-        <span className="text-[19px] font-bold leading-none tracking-[-.01em] tabular-nums text-emerald-600">
+        <span className="t-title text-[19px] font-bold leading-none tabular-nums text-emerald-600">
           {hzXp(p, horizon).toFixed(1)}
         </span>
-        <span className="text-[9px] uppercase tracking-[.05em] text-black/55 dark:text-white/60">{hzUnit}</span>
+        <span className="t-label text-[10px] text-black/55 dark:text-white/60">{hzUnit}</span>
       </div>
     </li>
   );

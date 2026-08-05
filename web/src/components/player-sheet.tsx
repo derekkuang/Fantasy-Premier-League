@@ -3,17 +3,16 @@
 // per-term split the backend now emits (breakdown), so the numbers add up to the player's
 // xP rather than being reconstructed. Next-5 fixtures come from the true-FDR ticker.
 
-import { useEffect } from "react";
 import { fdrFor, type SquadPlayer, type TickerFixture } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
-import { useDismissable } from "@/lib/use-dismissable";
+import { Sheet, SheetClose } from "@/components/sheet";
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-[10px] border border-black/[.06] px-2 py-[7px] dark:border-white/[.06]">
       <span className="text-base font-bold leading-none tabular-nums">{value}</span>
-      <span className="text-[9px] text-black/40 dark:text-white/40">{label}</span>
+      <span className="text-[10px] text-black/40 dark:text-white/40">{label}</span>
     </div>
   );
 }
@@ -38,44 +37,27 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
   swapOptions: SwapOption[];
   onClose: () => void;
 }) {
-  const { closing, dismiss } = useDismissable(onClose);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && dismiss();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dismiss]);
-
   const club = getClub(player.team);
   const b = player.breakdown;
   const role = player.is_captain ? "captain" : player.is_starter ? "starter" : "bench";
   const f2 = (n: number) => n.toFixed(2);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="sheet-backdrop absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-        data-closing={closing}
-        onClick={dismiss} />
-      <div
-        data-closing={closing}
-        className="sheet-panel relative flex max-h-[88vh] w-full max-w-[430px] flex-col gap-3.5 overflow-y-auto rounded-t-[20px] border border-b-0 border-black/10 bg-white px-4 pb-6 pt-3.5 shadow-[0_-8px_30px_rgba(0,0,0,.25)] dark:border-white/10 dark:bg-[#0a0a0a]">
+    <Sheet onClose={onClose} label={`${player.web_name} — squad detail`} className="border-b-0">
+      {(dismiss) => (
+      <>
         {/* header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={34} height={32} className="block flex-none" />
             <div className="flex flex-col gap-px">
-              <span className="text-[17px] font-semibold tracking-[-.01em]">{player.web_name}</span>
+              <span className="t-title text-[17px] font-semibold">{player.web_name}</span>
               <span className="text-[11px] text-black/40 dark:text-white/40">
                 {player.position} · {player.team} · £{player.price.toFixed(1)} · {role}
               </span>
             </div>
           </div>
-          <button
-            onClick={dismiss}
-            aria-label="Close"
-            className="grid h-7 w-7 flex-none place-items-center rounded-full border border-black/10 text-black/50 hover:text-black dark:border-white/10 dark:text-white/50 dark:hover:text-white"
-          >
-            ✕
-          </button>
+          <SheetClose onClick={dismiss} />
         </div>
 
         {/* stat tiles */}
@@ -89,7 +71,7 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
         {/* next 5 fixtures */}
         {fixtures.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-black/40 dark:text-white/40">
+            <span className="t-label text-[10px] text-black/40 dark:text-white/40">
               Next {Math.min(fixtures.length, 5)} fixtures · true FDR
             </span>
             <div className="grid grid-cols-5 gap-1.5">
@@ -97,13 +79,13 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
                 const fdr = fdrFor(player.position, fx);
                 return (
                   <div key={i} className="flex flex-col items-center gap-0.5 rounded-[9px] border border-black/[.06] px-0.5 py-1.5 dark:border-white/[.06]">
-                    <span className="text-[9px] tabular-nums text-black/40 dark:text-white/40">GW{fx.gw}</span>
+                    <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">GW{fx.gw}</span>
                     <span className="font-mono text-[11px] font-semibold">{getClub(fx.opp).shortCode}</span>
-                    <span className="text-[9px] text-black/40 dark:text-white/40">({fx.home ? "H" : "A"})</span>
-                    <span className="w-full rounded-[4px] py-px text-center text-[9px] font-bold tabular-nums" style={{ background: fdrColour(fdr), color: fdrGlyph(fdr) }}>
+                    <span className="text-[10px] text-black/40 dark:text-white/40">({fx.home ? "H" : "A"})</span>
+                    <span className="w-full rounded-[4px] py-px text-center text-[10px] font-bold tabular-nums" style={{ background: fdrColour(fdr), color: fdrGlyph(fdr) }}>
                       {fdr}
                     </span>
-                    <span className="text-[8px] tabular-nums text-black/40 dark:text-white/40">
+                    <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">
                       λ {fx.lam_for.toFixed(1)}/{fx.lam_against.toFixed(1)}
                     </span>
                   </div>
@@ -116,7 +98,7 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
         {/* why this xP */}
         {b && (
           <div className="flex flex-col">
-            <span className="mb-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-black/40 dark:text-white/40">
+            <span className="t-label mb-1 text-[10px] text-black/40 dark:text-white/40">
               Why this xP
             </span>
             <Row label={`appearance · P(60′) ${b.p_60.toFixed(2)}`} value={f2(b.appearance)} />
@@ -135,7 +117,7 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
 
         {/* legal swaps */}
         <div className="flex flex-col gap-1.5 border-t border-black/[.06] pt-3 dark:border-white/[.06]">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-black/40 dark:text-white/40">
+          <span className="t-label text-[10px] text-black/40 dark:text-white/40">
             {swapTitle}
           </span>
           {swapOptions.length > 0 ? (
@@ -143,10 +125,10 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
               <button
                 key={o.other.element_id}
                 onClick={o.apply}
-                className="flex items-center justify-between gap-2.5 rounded-[11px] border border-black/10 px-3 py-2 text-left hover:border-emerald-600 dark:border-white/10"
+                className="press flex min-h-11 items-center justify-between gap-2.5 rounded-[11px] border border-black/10 px-3 py-2 text-left hover:border-emerald-600 dark:border-white/10"
               >
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="rounded bg-black/5 px-1.5 py-px text-[9px] font-semibold text-black/50 dark:bg-white/10 dark:text-white/50">
+                  <span className="rounded bg-black/5 px-1.5 py-px text-[10px] font-semibold text-black/50 dark:bg-white/10 dark:text-white/50">
                     {o.other.position}
                   </span>
                   <span className="truncate text-[13px] font-semibold">{o.other.web_name}</span>
@@ -174,7 +156,8 @@ export function PlayerSheet({ player, fixtures, swapTitle, swapOptions, onClose 
           Every term is the mean points from that scoring category; they sum to the player&apos;s
           xP. Clean-sheet and appearance points are gated by expected minutes.
         </p>
-      </div>
-    </div>
+      </>
+      )}
+    </Sheet>
   );
 }

@@ -108,13 +108,23 @@ function Controls({
       active ? "border-emerald-600 bg-emerald-600 text-white" : "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55"
     }`;
   return (
-    <div className="sticky top-[43px] z-20 flex flex-col gap-2 border-b border-black/[.06] bg-[var(--background)] py-2 dark:border-white/[.06]">
+    // Its own block above the list, not a layer over it. Sticky chrome means the table
+    // necessarily runs underneath, and no amount of tint makes a bar that rows are sliding
+    // beneath stop reading as overlap — the fix is to stop stacking, not to stack more
+    // opaquely. So: a bordered card that scrolls away with everything else, with the list
+    // beginning cleanly below it.
+    <div className="flex flex-col gap-2 rounded-2xl border border-black/10 p-2.5 shadow-sm dark:border-white/10">
       <div className="flex items-center gap-2 overflow-x-auto">
-        <span className="flex-none text-[10px] font-semibold uppercase tracking-[.07em] text-black/40 dark:text-white/40">
+        <span className="t-label flex-none text-[10px] text-black/40 dark:text-white/40">
           Rank by
         </span>
         {METRICS.map(([m, label]) => (
-          <button key={m} onClick={() => setMetric(m)} className={`${pill(metric === m)} px-[11px] py-[5px] text-xs`}>
+          <button
+            key={m}
+            onClick={() => setMetric(m)}
+            aria-pressed={metric === m}
+            className={`${pill(metric === m)} min-h-8 px-3 py-1.5 text-xs`}
+          >
             {label}
           </button>
         ))}
@@ -122,7 +132,12 @@ function Controls({
       <div className="flex items-center gap-2">
         <div className="flex gap-1">
           {POSITIONS.map((p) => (
-            <button key={p} onClick={() => setPos(p)} className={`${pill(pos === p)} px-2.5 py-1 text-[11px]`}>
+            <button
+              key={p}
+              onClick={() => setPos(p)}
+              aria-pressed={pos === p}
+              className={`${pill(pos === p)} min-h-8 px-3 py-1.5 text-[11px]`}
+            >
               {p}
             </button>
           ))}
@@ -131,7 +146,10 @@ function Controls({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search player or club…"
-          className="min-w-[160px] flex-1 rounded-full border border-black/15 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
+          aria-label="Search player or club"
+          // `outline-none` with nothing replacing it left keyboard users with no focus
+          // indicator at all on the one control they have to type into.
+          className="min-h-9 min-w-[160px] flex-1 rounded-full border border-black/15 bg-transparent px-3 py-1.5 text-sm outline-none ring-[var(--focus)] focus:ring-2 dark:border-white/15"
         />
       </div>
     </div>
@@ -151,7 +169,9 @@ function PlayerRow({ p, rank, metric, onOpen }: { p: Prediction; rank: number; m
           onOpen(p.element_id);
         }
       }}
-      className="press flex min-h-11 cursor-pointer items-center gap-2 border-b border-black/[.06] px-2.5 py-[7px] hover:bg-black/[.02] focus:outline-none focus-visible:bg-black/[.03] dark:border-white/[.06] dark:hover:bg-white/[.03]"
+      // A background tint was the only focus indicator here — too low-contrast to locate a
+      // row by, and invisible to anyone who needs it most. The ring is the global default.
+      className="press flex min-h-11 cursor-pointer items-center gap-2 border-b border-black/[.06] px-2.5 py-[7px] hover:bg-black/[.02] focus-visible:bg-black/[.03] dark:border-white/[.06] dark:hover:bg-white/[.03]"
     >
       <span className="w-4 flex-none text-right font-mono text-[10px] tabular-nums text-black/35 dark:text-white/35">{rank}</span>
       <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={22} height={21} className="block flex-none" />
@@ -159,9 +179,9 @@ function PlayerRow({ p, rank, metric, onOpen }: { p: Prediction; rank: number; m
       <div className="flex min-w-0 flex-1 flex-col gap-px">
         <div className="flex min-w-0 items-center gap-1">
           <span className="truncate text-[13px] font-semibold">{p.web_name}</span>
-          <span className="flex-none font-mono text-[9px] text-black/35 dark:text-white/35">{club.shortCode}</span>
+          <span className="flex-none font-mono text-[10px] text-black/35 dark:text-white/35">{club.shortCode}</span>
         </div>
-        <span className="whitespace-nowrap text-[9px] tabular-nums text-black/40 dark:text-white/40">
+        <span className="whitespace-nowrap text-[10px] tabular-nums text-black/40 dark:text-white/40">
           {p.position} ·{" "}
           <span className={metric === "price" ? "font-bold text-emerald-600" : ""}>£{p.price.toFixed(1)}</span> ·{" "}
           <span className={metric === "ownership" ? "font-bold text-emerald-600" : ""}>{p.ownership.toFixed(1)}%</span>
@@ -171,10 +191,10 @@ function PlayerRow({ p, rank, metric, onOpen }: { p: Prediction; rank: number; m
       <Next3Strip fixtures={p.fixtures} position={p.position} variant="chip" />
 
       <div className="flex w-9 flex-none flex-col items-end">
-        <span className={`text-[17px] font-bold leading-none tracking-[-.01em] tabular-nums ${metric === "xp" ? "text-emerald-600" : ""}`}>
+        <span className={`t-title text-[17px] font-bold leading-none tabular-nums ${metric === "xp" ? "text-emerald-600" : ""}`}>
           {p.xp.toFixed(1)}
         </span>
-        <span className={`text-[8px] tabular-nums ${metric === "xp_next3" ? "text-emerald-600" : "text-black/40 dark:text-white/40"}`}>
+        <span className={`text-[10px] tabular-nums ${metric === "xp_next3" ? "text-emerald-600" : "text-black/40 dark:text-white/40"}`}>
           n3 {p.xp_next3.toFixed(1)}
         </span>
       </div>
@@ -197,7 +217,7 @@ function PredictionsTable({
   gw: number | undefined;
   onOpen: (id: number) => void;
 }) {
-  const headCls = "px-2 py-2 text-[11px] font-semibold uppercase tracking-[.05em] text-black/40 dark:text-white/40";
+  const headCls = "px-2 py-2 t-label text-[11px] text-black/40 dark:text-white/40";
   const SortTh = ({ label, m }: { label: string; m: Metric }) => (
     <th className={`${headCls} text-right`}>
       <button onClick={() => setMetric(m)} className={metric === m ? "text-emerald-600" : "text-black/40 hover:text-emerald-600 dark:text-white/40"}>

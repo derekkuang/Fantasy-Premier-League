@@ -23,6 +23,7 @@
   --amber-bg: rgba(245, 158, 11, .10);
   --amber-br: rgba(245, 158, 11, .35);
   --rose: #be123c;
+  --focus: #047857;
 }
 
 :root[data-theme="dark"] {
@@ -39,6 +40,7 @@
   --amber-bg: rgba(245, 158, 11, .12);
   --amber-br: rgba(245, 158, 11, .30);
   --rose: #fb7185;
+  --focus: #34d399;
 }
 
 /* No-JS fallback: honour the OS preference only when no explicit theme is set. */
@@ -56,6 +58,7 @@
     --amber-bg: rgba(245, 158, 11, .12);
     --amber-br: rgba(245, 158, 11, .30);
     --rose: #fb7185;
+    --focus: #34d399;
   }
 }
 
@@ -71,6 +74,102 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================================
+   TYPE
+
+   Tracking is size-specific. Letters read too far apart as type grows, and too
+   tightly packed as it shrinks, so a single letter-spacing value is wrong
+   somewhere by definition. Three roles, three values — replacing eleven
+   ad-hoc ones (`.07em` and `0.07em` were both in the source, which is the tell
+   that they were being chosen per-site rather than from a scale).
+   ========================================================================= */
+:root {
+  --track-display: -0.021em;   /* 28px and up — headlines, hero numbers */
+  --track-title: -0.011em;     /* 15–24px — page and card titles */
+  --track-label: 0.055em;      /* 10–11px uppercase — section labels */
+  --nav-h: 48px;               /* real height, so sticky offsets stop guessing */
+}
+
+.t-display { letter-spacing: var(--track-display); line-height: 1.05; }
+.t-title { letter-spacing: var(--track-title); }
+.t-label {
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* ============================================================================
+   TOUCH TARGETS
+
+   A 28px close button is a 28px close button no matter how much padding sits
+   around it visually. `.tap` grows the HIT area without moving a pixel of
+   layout, which is the only way to fix this in a dense UI that has no room to
+   grow the control itself. Use it where a control has clearance around it —
+   not in a tight row, where expanded targets would overlap each other.
+   ========================================================================= */
+.tap { position: relative; }
+.tap::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: inherit;
+}
+
+/* ============================================================================
+   FOCUS
+
+   Zero-specificity so any component can still opt out, but the default is now
+   a visible ring rather than whatever the browser does over a dark surface.
+   The prior state was a background tint on one row type and nothing anywhere
+   else — a keyboard user could not tell where they were.
+   ========================================================================= */
+:where(a, button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* ============================================================================
+   MATERIALS
+
+   Floating chrome is a translucent layer with content passing underneath, not
+   an opaque strip that owns its band of the screen. The soft edge below it
+   replaces a 1px divider: a hard rule reads as a seam between two documents,
+   a short fade reads as one surface floating above another.
+   ========================================================================= */
+.chrome {
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* A second bar stacked under the nav is a different job and needs a different weight.
+   72% over open page is a material; 72% over a dense ranked table is a legibility
+   problem — rows read THROUGH the controls and the bar looks like it is overlapping
+   the list rather than floating above it. Heavier tint, stronger blur: bigger and
+   lower surfaces read as thicker, and two light translucent layers must never stack. */
+.chrome-strong {
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+}
+
+.chrome-edge { position: relative; }
+.chrome-edge::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 14px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--background) 65%, transparent),
+    transparent
+  );
 }
 
 /* ============================================================================
@@ -136,6 +235,39 @@ body {
 }
 .sheet-panel[data-closing="true"] { transform: translateY(100%); }
 
+/* While a finger is on it the sheet is not animating — it IS the finger. Any
+   transition here would put a lag between the two, which is the one thing
+   direct manipulation cannot have. The drag sets transform inline; releasing
+   drops the attribute and the transition above takes the sheet home. */
+.sheet-panel[data-dragging="true"] {
+  transition: none;
+  will-change: transform;
+}
+
+/* The grab handle. Reads as "this can be pulled" before anyone pulls it, and sits at the
+   top edge where the thumb already is.
+
+   `touch-action: none` is the load-bearing part, not the styling. The panel scrolls, so
+   the browser is entitled to claim a vertical drag for scrolling before a single
+   pointermove reaches us — and a gesture the browser has claimed cannot be taken back.
+   Opting this band out of native panning guarantees at least one region where the pull
+   always belongs to the sheet. Dragging the panel body still works, but only from the
+   top of its scroll, where there is nothing for the browser to want. */
+.sheet-grip-area {
+  touch-action: none;
+  padding: 6px 0 10px;
+  display: flex;
+  justify-content: center;
+  cursor: grab;
+}
+.sheet-grip-area:active { cursor: grabbing; }
+.sheet-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
 /* Desktop: it is a centred dialog, not a drawer — it has no edge to come from,
    so it scales up in place instead. Never from scale(0). */
 @media (min-width: 64rem) {
@@ -184,4 +316,36 @@ body {
     .sheet-panel { transform: none; opacity: 0; }
     .enter { transform: none; opacity: 0; }
   }
+}
+
+/* --- reduced transparency -------------------------------------------------
+   Translucency is a hierarchy signal, not a decoration, so it degrades to a
+   solid surface with a defined edge rather than disappearing. Blur is the
+   expensive part and the part that hurts legibility, so it goes first. */
+@media (prefers-reduced-transparency: reduce) {
+  .chrome,
+  .chrome-strong {
+    background: var(--background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 1px solid var(--b10);
+  }
+  .chrome-edge::after { content: none; }
+  .sheet-backdrop { backdrop-filter: none; }
+}
+
+/* --- increased contrast ---------------------------------------------------
+   Near-solid surfaces and a real border, since a hairline at 10% alpha is not
+   a boundary to someone who asked for more contrast. */
+@media (prefers-contrast: more) {
+  :root { --b10: rgba(0, 0, 0, .45); }
+  :root[data-theme="dark"] { --b10: rgba(255, 255, 255, .45); }
+  .chrome,
+  .chrome-strong {
+    background: var(--background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 1px solid var(--b10);
+  }
+  .chrome-edge::after { content: none; }
 }

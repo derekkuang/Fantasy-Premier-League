@@ -54,7 +54,7 @@ export function Pagination({
           Showing {from + 1}–{to} of {total} {unit}
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[.07em] text-black/55 dark:text-white/60">
+          <span className="t-label text-[10px] text-black/55 dark:text-white/60">
             per page
           </span>
           {SIZES.map((s) => (

@@ -19,7 +19,7 @@ export function Footer() {
     <footer className="mt-8 border-t border-black/10 dark:border-white/10">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-6">
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="text-sm font-bold tracking-tight">
+          <span className="t-title text-sm font-bold">
             FPL<span className="text-emerald-600">Edge</span>
           </span>
           {LINKS.map(([href, label]) => (

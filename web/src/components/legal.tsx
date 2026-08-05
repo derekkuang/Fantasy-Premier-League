@@ -11,7 +11,7 @@ export function LegalPage({ title, updated, children }: {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5 px-4 py-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-bold tracking-tight">{title}</h1>
+        <h1 className="t-title text-xl font-bold">{title}</h1>
         <p className="text-[11px] text-black/55 dark:text-white/60">Last updated {updated}</p>
       </div>
       <div className="flex flex-col gap-5">{children}</div>
@@ -22,7 +22,7 @@ export function LegalPage({ title, updated, children }: {
 export function S({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-[13px] font-semibold uppercase tracking-[.06em] text-black/55 dark:text-white/60">
+      <h2 className="t-label text-[13px] text-black/55 dark:text-white/60">
         {title}
       </h2>
       {children}

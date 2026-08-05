@@ -12,7 +12,7 @@ export function PageShell({ title, subtitle, meta, children }: {
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">{title}</h1>
+          <h1 className="t-title text-xl font-bold">{title}</h1>
           {subtitle && <p className="mt-0.5 text-sm text-black/50 dark:text-white/50">{subtitle}</p>}
         </div>
         {meta}
