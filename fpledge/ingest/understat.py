@@ -21,6 +21,7 @@ Join policy (why it refuses more than it could):
 
 from __future__ import annotations
 
+import html
 import re
 import unicodedata
 from collections import defaultdict
@@ -41,10 +42,16 @@ _TRANSLITERATE = str.maketrans({
 
 
 def normalise_name(name: str) -> str:
-    """Casefold, strip accents and punctuation: "Son Heung-min" -> "son heung min"."""
+    """Casefold, strip accents and punctuation: "Son Heung-min" -> "son heung min".
+
+    HTML entities are decoded first. Understat serves names straight from its templates, so
+    "Dara O'Shea" arrives as "Dara O&#039;Shea"; left encoded, the digits survive `NFKD` and
+    are then stripped as punctuation, leaving "dara oshea" — which happens to be right, and
+    "&amp;" would not be. Decoding is one call and removes the whole class.
+    """
     if not name:
         return ""
-    decomposed = unicodedata.normalize("NFKD", name)
+    decomposed = unicodedata.normalize("NFKD", html.unescape(name))
     ascii_only = "".join(c for c in decomposed if not unicodedata.combining(c))
     lowered = ascii_only.lower().translate(_TRANSLITERATE).replace("-", " ").replace("'", "")
     return _SPACES.sub(" ", _PUNCT.sub(" ", lowered)).strip()
@@ -54,6 +61,51 @@ def surname(name: str) -> str:
     """The last token of a normalised name — how FPL's `web_name` usually renders a player."""
     parts = normalise_name(name).split()
     return parts[-1] if parts else ""
+
+
+def _prefix_candidates(by_team_tokens: dict, team: str, name: str) -> list[dict]:
+    """Players at `team` whose full name STARTS WITH every token of `name`, in order.
+
+    This exists because FPL stores a player's full legal name while Understat uses the name
+    he is known by, and under Spanish, Portuguese and Brazilian convention the extra tokens
+    come LAST — the paternal surname is followed by the maternal one. So FPL has "David Raya
+    Martin" and "Moisés Caicedo Corozo" where Understat has "David Raya" and "Moisés Caicedo",
+    and `surname()` — which takes the last token — compares "martin" against "raya" and finds
+    nothing. Before this rule the join silently dropped 93 of 562 players, among them full-
+    season regulars (Raya, Caicedo, Cucurella, Dalot, Bruno Guimarães, Murillo), and the
+    failure was concentrated by nationality: exactly the players whose names have that shape.
+
+    It is not fuzzy matching, and it does not violate the join policy above. The comparison is
+    exact on every token it uses, it stays scoped to one club, and a name that prefixes two
+    players at the same club is reported ambiguous rather than guessed. It only ever ADDS
+    tokens on the FPL side, never drops or transposes them: "Gabriel" prefixes both Arsenal
+    Gabriels and is refused, as it should be.
+
+    Two further shapes are accepted on the same terms, both observed in the same season:
+
+      * the extra tokens are on the UNDERSTAT side ("Amad Diallo Traore" against FPL's "Amad
+        Diallo"), which is the identical rule with the arguments swapped; and
+      * the same tokens in a different ORDER ("Mitoma Kaoru" against "Kaoru Mitoma"), where
+        the sources disagree about whether the family name comes first. Multiset equality is
+        still exact on every token — nothing is dropped, added or approximated.
+
+    What is deliberately NOT accepted is a name appearing in the MIDDLE of a longer one (FPL's
+    "Francisco Evanilson de Lima Barbosa" for Understat's "Evanilson"). That is a substring
+    test, it admits genuine coincidences, and the join's whole posture is that a missing player
+    is a visible gap while a wrong one is an invisible lie.
+    """
+    want = normalise_name(name).split()
+    if not want:
+        return []
+    out = []
+    for p, tokens in by_team_tokens.get(team, ()):
+        if len(tokens) > len(want) and tokens[: len(want)] == want:
+            out.append(p)                                    # FPL name is longer
+        elif len(want) > len(tokens) and want[: len(tokens)] == tokens:
+            out.append(p)                                    # Understat name is longer
+        elif len(want) == len(tokens) and sorted(want) == sorted(tokens) and want != tokens:
+            out.append(p)                                    # same tokens, reordered
+    return out
 
 
 def _distinct(candidates: Sequence[dict]) -> list[dict]:
@@ -83,6 +135,7 @@ def build_fpl_id_map(
 
     by_team_full: dict[tuple[str, str], list[dict]] = defaultdict(list)
     by_team_surname: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    by_team_tokens: dict[str, list[tuple[dict, list[str]]]] = defaultdict(list)
     for p in fpl_players:
         team = normalise_name(p.get("team") or "")
         # Index EVERY name FPL knows the player by. Single-name Brazilians are the reason:
@@ -96,6 +149,7 @@ def build_fpl_id_map(
         for alias in aliases:
             by_team_full[(team, alias)].append(p)
             by_team_surname[(team, surname(alias))].append(p)
+            by_team_tokens[team].append((p, alias.split()))
 
     out: dict = {}
     matched_by: dict = {}
@@ -128,6 +182,15 @@ def build_fpl_id_map(
             continue
         if len(by_last) > 1:
             ambiguous.append({**u, "reason": "several players share this surname at the club"})
+            continue
+
+        by_prefix = _distinct(_prefix_candidates(by_team_tokens, team, name))
+        if len(by_prefix) == 1:
+            out[uid] = by_prefix[0]["element_id"]
+            matched_by[uid] = "prefix"
+            continue
+        if len(by_prefix) > 1:
+            ambiguous.append({**u, "reason": "several players at the club start with this name"})
             continue
 
         unmatched.append(u)

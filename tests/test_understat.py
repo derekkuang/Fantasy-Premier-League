@@ -350,3 +350,70 @@ def test_shots_against_attributes_to_the_defending_team_not_the_shooter():
     assert faced["Arsenal"]["shots_against"] == 3               # 2 in m100 + 1 in m101
     assert faced["Arsenal"]["matches"] == 2
     assert faced["Liverpool"]["per_match"] == 3.5
+
+
+# --- names the sources spell differently -------------------------------------------------- #
+def test_html_entities_in_source_names_are_decoded():
+    """Understat serves names from its templates, so apostrophes arrive as `&#039;`."""
+    assert normalise_name("Dara O&#039;Shea") == normalise_name("Dara O'Shea") == "dara oshea"
+    assert normalise_name("Aaron &amp; Bob") == "aaron bob"
+
+
+def test_fpl_full_legal_name_matches_the_name_the_player_is_known_by():
+    """The bug this rule fixes. FPL stores "David Raya Martin"; Understat says "David Raya".
+    Under Iberian and Brazilian convention the extra token is the MATERNAL surname, so the
+    last-token rule compares "martin" to "raya" and fails. It silently dropped 93 of 562
+    players in 2024-25 — concentrated, by construction, on one group of nationalities."""
+    fpl = [
+        {"element_id": 1, "full_name": "David Raya Martin", "team": "Arsenal"},
+        {"element_id": 2, "full_name": "Moisés Caicedo Corozo", "team": "Chelsea"},
+        {"element_id": 3, "full_name": "Bruno Guimarães Rodriguez Moura", "team": "Newcastle"},
+    ]
+    us = [_u("u1", "David Raya", "Arsenal"), _u("u2", "Moisés Caicedo", "Chelsea"),
+          _u("u3", "Bruno Guimarães", "Newcastle")]
+    rep = build_fpl_id_map(fpl, us)
+    assert rep["map"] == {"u1": 1, "u2": 2, "u3": 3}
+    assert set(rep["matched_by"].values()) == {"prefix"}
+
+
+def test_the_longer_name_may_be_on_either_side():
+    """Understat sometimes carries the fuller name: "Amad Diallo Traore" for FPL's "Amad
+    Diallo". Same rule, arguments swapped."""
+    fpl = [{"element_id": 1, "full_name": "Amad Diallo", "team": "Man Utd"}]
+    rep = build_fpl_id_map(fpl, [_u("u1", "Amad Diallo Traore", "Man Utd")])
+    assert rep["map"] == {"u1": 1}
+
+
+def test_the_sources_may_disagree_on_name_order():
+    """"Mitoma Kaoru" and "Kaoru Mitoma" are one player; the sources differ on whether the
+    family name leads. Multiset equality is still exact on every token."""
+    fpl = [{"element_id": 1, "full_name": "Kaoru Mitoma", "team": "Brighton"}]
+    rep = build_fpl_id_map(fpl, [_u("u1", "Mitoma Kaoru", "Brighton")])
+    assert rep["map"] == {"u1": 1}
+
+
+def test_a_name_in_the_middle_of_a_longer_one_is_still_refused():
+    """FPL's "Francisco Evanilson de Lima Barbosa" for Understat's "Evanilson" is a SUBSTRING
+    match, not a prefix. Accepting it would open the door to coincidences, and a wrong join is
+    invisible where a missing one is not. This is a deliberate miss."""
+    fpl = [{"element_id": 1, "full_name": "Francisco Evanilson de Lima Barbosa",
+            "team": "Bournemouth"}]
+    rep = build_fpl_id_map(fpl, [_u("u1", "Evanilson", "Bournemouth")])
+    assert rep["map"] == {}
+    assert rep["unmatched"][0]["understat_id"] == "u1"
+
+
+def test_a_prefix_shared_by_two_clubmates_is_ambiguous_not_guessed():
+    fpl = [
+        {"element_id": 1, "full_name": "Gabriel Martinelli Silva", "team": "Arsenal"},
+        {"element_id": 2, "full_name": "Gabriel Magalhaes Dias", "team": "Arsenal"},
+    ]
+    rep = build_fpl_id_map(fpl, [_u("u1", "Gabriel", "Arsenal")])
+    assert rep["map"] == {}
+    assert rep["ambiguous"][0]["reason"].startswith("several players at the club start with")
+
+
+def test_prefix_matching_still_never_crosses_teams():
+    fpl = [{"element_id": 1, "full_name": "David Raya Martin", "team": "Arsenal"}]
+    rep = build_fpl_id_map(fpl, [_u("u1", "David Raya", "Chelsea")])
+    assert rep["map"] == {}
