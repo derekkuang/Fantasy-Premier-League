@@ -39,6 +39,13 @@ def _per90(total: float, minutes: float, min_minutes: int) -> float:
     return total / (minutes / 90.0) if minutes >= min_minutes else 0.0
 
 
+# Empirical minute distributions conditional on starting, 2024-25 (27,605 player-gameweeks).
+# These are what a STARTING-XI feed actually tells you: it names the eleven, it does not say who
+# gets 90 and who comes off at 60, and it does not say which substitutes get on.
+STARTER_MINUTES, STARTER_P60 = 82.5, 0.931
+BENCH_MINUTES, BENCH_P_PLAY, BENCH_P60 = 3.0, 0.167, 0.002
+
+
 class _OracleMinutes:
     """A minutes prediction that already knows the answer. CHEATING, on purpose.
 
@@ -60,7 +67,25 @@ class _OracleMinutes:
 
     __slots__ = ("p_60", "p_play", "x_minutes")
 
-    def __init__(self, minutes: float):
+    def __init__(self, minutes: float, started: bool = False, mode: str = "exact"):
+        if mode == "starter":
+            # A starting-XI feed: you know the eleven and nothing finer. Everyone who starts
+            # gets the league-average starter profile, everyone who does not gets the bench
+            # profile — including the 17% of non-starters who come on.
+            if started:
+                self.x_minutes, self.p_play, self.p_60 = STARTER_MINUTES, 1.0, STARTER_P60
+            else:
+                self.x_minutes, self.p_play, self.p_60 = (
+                    BENCH_MINUTES, BENCH_P_PLAY, BENCH_P60
+                )
+            return
+        if mode == "appears":
+            # The weakest useful feed: did he get on the pitch at all, nothing about how long.
+            if minutes > 0:
+                self.x_minutes, self.p_play, self.p_60 = STARTER_MINUTES, 1.0, STARTER_P60
+            else:
+                self.x_minutes, self.p_play, self.p_60 = 0.0, 0.0, 0.0
+            return
         self.x_minutes = float(minutes)
         self.p_play = 1.0 if minutes > 0 else 0.0
         self.p_60 = 1.0 if minutes >= 60 else 0.0
@@ -100,7 +125,8 @@ def validate_xp(
     bonus_mode: str = "rate",
     saves_mode: str = "lambda",
     match_saves: Sequence[dict] | None = None,
-    oracle_minutes: bool = False,
+    sharpen_minutes: bool = False,
+    oracle_minutes=False,  # False | "exact" | "starter" | "appears" — see _OracleMinutes
     return_records: bool = False,
     fixture_lambdas: dict | None = None,
 ):
@@ -167,6 +193,26 @@ def validate_xp(
         if n > burn_in and acc:
             engine = DixonColesModel(half_life_days).fit([f for f in fixtures if f["gw"] < n])
             xmins = {el: _mp(a).x_minutes for el, a in acc.items()}
+
+            # Sharpening: commit to a starting XI instead of hedging across the squad.
+            # Our minutes model outputs a continuous expectation, so a nailed-on starter and a
+            # rotation risk both land in the 60-75 minute band and the projections that follow
+            # are dragged toward each other. This ranks each club's players by expected minutes,
+            # takes the top eleven, and gives them the empirical starter profile. It is NOT new
+            # information — it is the same prediction, discretised. Point-in-time is untouched.
+            predicted_xi: set = set()
+            if sharpen_minutes:
+                # Rank only players listed THIS gameweek. Ranking over everyone ever seen for
+                # the club lets a departed or long-injured player hold a top-eleven slot and
+                # push a real starter onto the bench.
+                by_team: dict = defaultdict(list)
+                for el in by_gw[n]:
+                    a = acc.get(el)
+                    if a is not None:
+                        by_team[a["team_id"]].append((xmins.get(el, 0.0), el))
+                for squad in by_team.values():
+                    squad.sort(reverse=True)
+                    predicted_xi.update(el for _x, el in squad[:11])
             players = [
                 {"code": el, "team_id": a["team_id"], "xg90": _rate(a, "xg"), "xa90": _rate(a, "xa")}
                 for el, a in acc.items()
@@ -178,8 +224,15 @@ def validate_xp(
                 if not a or a["games"] == 0:
                     continue
                 mp = _mp(a)
+                if sharpen_minutes:
+                    mp = _OracleMinutes(0.0, started=el in predicted_xi, mode="starter")
                 if oracle_minutes:
-                    mp = _OracleMinutes(sum(r["minutes"] for r in rows))
+                    mode = "exact" if oracle_minutes is True else str(oracle_minutes)
+                    mp = _OracleMinutes(
+                        sum(r["minutes"] for r in rows),
+                        started=sum(r["starts"] for r in rows) > 0,
+                        mode=mode,
+                    )
                 sh = shares.get(el, {"goal_share": 0.0, "assist_share": 0.0})
                 dc90 = _per90(a["dc"], a["minutes"], min_rate_minutes)
                 bon90 = _per90(a["bonus"], a["minutes"], min_rate_minutes)
