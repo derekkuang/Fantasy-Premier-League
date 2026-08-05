@@ -451,3 +451,111 @@ def team_shots_against(shots: Sequence[dict], fixtures: Sequence[dict]) -> dict:
         }
         for team, n in sorted(faced.items())
     }
+
+
+# --- fitting the match engine on xG rather than goals ------------------------------------ #
+# Goals are a noisy realisation of team strength; xG estimates the same thing with less
+# variance. Measured on this project's walk-forward (docs/HANDOFF.md §19): fitting the engine on
+# xG lifts played-only per-GW Spearman by +0.0088 pooled over 2023-24 and 2024-25, 95% CI
+# [+0.0042, +0.0135], 38/60 gameweeks improved.
+#
+# TWO THINGS TO KNOW BEFORE USING IT.
+#
+# 1. It switches OFF the Dixon-Coles tau correction. Those masks test for exact integer
+#    scorelines (0-0, 1-0, 0-1, 1-1) and continuous xG matches none of them, so what you are
+#    fitting is Poisson-on-xG rather than Dixon-Coles-on-xG. Measured separately, tau is worth
+#    -0.0002 to player ranking, so this costs nothing here — but it is not nothing for a model
+#    predicting exact scorelines, which is what tau exists for.
+# 2. A PARTIAL substitution is a different model on different seasons. Understat covers the
+#    top five leagues from 2014-15; anything older, or any match that fails to join, keeps its
+#    real goals. That is a defensible fallback and a terrible silent default, so the report is
+#    returned rather than logged and the caller is expected to look at it.
+_XG_NAME_OVERRIDES = {
+    # Football-Data name -> Understat title, for the pairs fuzzy matching gets wrong.
+    "Man United": "Manchester United",
+    "Man City": "Manchester City",
+    "Nott'm Forest": "Nottingham Forest",
+    "Wolves": "Wolverhampton Wanderers",
+    "Newcastle": "Newcastle United",
+    "Sheffield United": "Sheffield United",
+}
+
+
+def build_xg_name_map(engine_names: Sequence[str], understat_titles: Sequence[str]) -> dict:
+    """Map the engine's team names onto Understat titles, exactly or not at all."""
+    from .idmap import name_similarity
+
+    titles = set(understat_titles)
+    out: dict = {}
+    for name in engine_names:
+        override = _XG_NAME_OVERRIDES.get(name)
+        if override and override in titles:
+            out[name] = override
+            continue
+        best, score = None, 0.0
+        for t in understat_titles:
+            s = name_similarity(name, t)
+            if s > score:
+                best, score = t, s
+        out[name] = best if score >= 0.6 else None
+    return out
+
+
+def substitute_xg(
+    matches: Sequence[dict],
+    understat_fixtures: Sequence[dict],
+    name_map: dict | None = None,
+    max_day_gap: int = 1,
+) -> tuple[list[dict], dict]:
+    """Replace each match's goals with its Understat xG where the two can be joined.
+
+    Joins on (home, away, date) with a day of slack, because Understat timestamps kickoffs in
+    UTC while Football-Data records local dates and the two disagree either side of midnight.
+    Never joins on teams alone: a season contains each pairing twice.
+
+    Returns `(matches, report)`. **Read the report.** `substituted` below `total` means the fit
+    is part xG and part goals, which is a different model on different seasons — supportable,
+    but only if it is stated.
+    """
+    from datetime import UTC, datetime
+
+    titles = sorted({f["h"]["title"] for f in understat_fixtures}
+                    | {f["a"]["title"] for f in understat_fixtures})
+    engine_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
+    name_map = name_map or build_xg_name_map(engine_names, titles)
+
+    def _ord(s: str) -> int:
+        return datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=UTC).date().toordinal()
+
+    index: dict = {}
+    for f in understat_fixtures:
+        if not f.get("isResult"):
+            continue
+        key = (f["h"]["title"], f["a"]["title"])
+        index.setdefault(key, []).append((_ord(f["datetime"]), f))
+
+    out, substituted, unmatched = [], 0, []
+    for m in matches:
+        h, a = name_map.get(m["home"]), name_map.get(m["away"])
+        hit = None
+        if h and a:
+            day = _ord(m["date"])
+            for cand_day, f in index.get((h, a), []):
+                if abs(cand_day - day) <= max_day_gap:
+                    hit = f
+                    break
+        if hit is None:
+            out.append(dict(m))
+            unmatched.append((m.get("season"), m["home"], m["away"], m["date"]))
+            continue
+        out.append({**m, "home_goals": float(hit["xG"]["h"]), "away_goals": float(hit["xG"]["a"])})
+        substituted += 1
+
+    return out, {
+        "total": len(matches),
+        "substituted": substituted,
+        "share": round(substituted / len(matches), 3) if matches else 0.0,
+        "unmapped_teams": sorted(n for n, t in name_map.items() if t is None),
+        "unmatched_sample": unmatched[:10],
+        "n_unmatched": len(unmatched),
+    }

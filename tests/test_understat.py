@@ -417,3 +417,90 @@ def test_prefix_matching_still_never_crosses_teams():
     fpl = [{"element_id": 1, "full_name": "David Raya Martin", "team": "Arsenal"}]
     rep = build_fpl_id_map(fpl, [_u("u1", "David Raya", "Chelsea")])
     assert rep["map"] == {}
+
+
+# --- fitting the engine on xG ------------------------------------------------------------- #
+def _usfx(mid, home, away, dt, xh, xa, is_result=True):
+    return {"id": str(mid), "isResult": is_result, "datetime": dt,
+            "h": {"title": home}, "a": {"title": away}, "xG": {"h": xh, "a": xa}}
+
+
+def _fd(home, away, date, hg, ag, season="2024-25"):
+    return {"season": season, "date": date, "home": home, "away": away,
+            "home_goals": hg, "away_goals": ag}
+
+
+def test_engine_names_map_onto_understat_titles():
+    from fpledge.ingest.understat import build_xg_name_map
+    titles = ["Manchester United", "Wolverhampton Wanderers", "Arsenal", "Nottingham Forest"]
+    m = build_xg_name_map(["Man United", "Wolves", "Arsenal", "Nott'm Forest"], titles)
+    assert m["Man United"] == "Manchester United"
+    assert m["Wolves"] == "Wolverhampton Wanderers"      # no shared token; needs the override
+    assert m["Arsenal"] == "Arsenal"
+    assert m["Nott'm Forest"] == "Nottingham Forest"
+
+
+def test_an_unmappable_team_is_reported_not_guessed():
+    from fpledge.ingest.understat import substitute_xg
+    matches = [_fd("Real Madrid", "Arsenal", "2024-08-16", 1, 0)]
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-08-16 19:00:00", 2.0, 0.5)]
+    out, rep = substitute_xg(matches, us)
+    assert out[0]["home_goals"] == 1                      # untouched
+    assert rep["substituted"] == 0
+    assert "Real Madrid" in rep["unmapped_teams"]
+
+
+def test_the_join_needs_the_date_because_a_pairing_happens_twice():
+    """Arsenal host Chelsea once and visit once. Joining on teams alone would attach the wrong
+    fixture's xG to half the season and every number downstream would stay plausible."""
+    from fpledge.ingest.understat import substitute_xg
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-08-16 19:00:00", 2.0, 0.5),
+          _usfx(2, "Arsenal", "Chelsea", "2025-01-11 15:00:00", 0.9, 1.7)]
+    out, rep = substitute_xg([_fd("Arsenal", "Chelsea", "2025-01-11", 1, 2)], us)
+    assert rep["substituted"] == 1
+    assert out[0]["home_goals"] == 0.9                    # the January fixture, not August
+
+
+def test_a_kickoff_either_side_of_midnight_still_joins():
+    """Understat stamps kickoffs UTC, Football-Data records local dates; a late kickoff can
+    land on different calendar days in the two sources."""
+    from fpledge.ingest.understat import substitute_xg
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-08-17 00:15:00", 2.0, 0.5)]
+    _out, rep = substitute_xg([_fd("Arsenal", "Chelsea", "2024-08-16", 1, 0)], us)
+    assert rep["substituted"] == 1
+
+
+def test_a_distant_date_does_not_join():
+    from fpledge.ingest.understat import substitute_xg
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-09-16 19:00:00", 2.0, 0.5)]
+    out, rep = substitute_xg([_fd("Arsenal", "Chelsea", "2024-08-16", 1, 0)], us)
+    assert rep["substituted"] == 0
+    assert out[0]["home_goals"] == 1
+
+
+def test_unplayed_understat_fixtures_are_ignored():
+    from fpledge.ingest.understat import substitute_xg
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-08-16 19:00:00", 0, 0, is_result=False)]
+    _out, rep = substitute_xg([_fd("Arsenal", "Chelsea", "2024-08-16", 1, 0)], us)
+    assert rep["substituted"] == 0
+
+
+def test_a_partial_substitution_announces_itself():
+    """Half xG and half goals is a different model on different seasons. Supportable, but only
+    if the caller is told — this is exactly the shape of the §13 coverage bug."""
+    from fpledge.ingest.understat import substitute_xg
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-08-16 19:00:00", 2.0, 0.5)]
+    matches = [_fd("Arsenal", "Chelsea", "2024-08-16", 1, 0),
+               _fd("Arsenal", "Chelsea", "2022-08-16", 3, 1, season="2022-23")]
+    out, rep = substitute_xg(matches, us)
+    assert rep["substituted"] == 1 and rep["total"] == 2 and rep["share"] == 0.5
+    assert out[1]["home_goals"] == 3                      # older season keeps real goals
+    assert rep["n_unmatched"] == 1
+
+
+def test_substituted_values_are_the_xg_not_the_goals():
+    from fpledge.ingest.understat import substitute_xg
+    us = [_usfx(1, "Arsenal", "Chelsea", "2024-08-16 19:00:00", 2.04268, 0.418711)]
+    out, _rep = substitute_xg([_fd("Arsenal", "Chelsea", "2024-08-16", 1, 0)], us)
+    assert out[0]["home_goals"] == 2.04268
+    assert out[0]["away_goals"] == 0.418711
