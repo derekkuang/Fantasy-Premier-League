@@ -27,10 +27,17 @@ import re
 from typing import Any
 
 MODEL = "claude-opus-5"
+EFFORT = "low"
 MAX_ATTEMPTS = 2
 
 # Numbers as a reader would write them: 83, 83%, 2.7, -0.3, 1,200
 _NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?%?")
+
+
+def numbers_in(text: str) -> list[str]:
+    """Every number token in `text`, as written. The tokens, not their values — callers
+    that need to rewrite a number in place need to know exactly what to replace."""
+    return _NUMBER.findall(text)
 
 BRIEF_SCHEMA = {
     "type": "object",
@@ -224,6 +231,25 @@ def verify(brief: dict, pack: dict) -> list[str]:
     return problems
 
 
+# The kinds of failure `verify` can report. A rejection RATE says the guard fired; the
+# kind says what to fix — uncited numbers are a prompting problem, headline numbers a
+# schema-description one. Derived from the messages above, so a test pins the pair.
+PROBLEM_KINDS = ("no_angles", "headline_number", "unknown_evidence_key", "uncited_number")
+
+
+def classify_problem(message: str) -> str:
+    """Bucket one `verify` message into PROBLEM_KINDS ("other" if it matches none)."""
+    if message.startswith("no angles"):
+        return "no_angles"
+    if message.startswith("headline"):
+        return "headline_number"
+    if "cited unknown fact keys" in message:
+        return "unknown_evidence_key"
+    if "absent from the facts it cites" in message:
+        return "uncited_number"
+    return "other"
+
+
 # --- the deterministic fallback ------------------------------------------------------- #
 def render_template(pack: dict) -> dict:
     """A correct briefing with no model involved — the floor the page never drops below."""
@@ -280,14 +306,38 @@ def _client():
     return anthropic.Anthropic()
 
 
-def narrate(pack: dict, client=None) -> dict:
-    """A verified briefing for one fixture. Falls back to the template on any failure."""
+def _usage(resp) -> dict:
+    """Token usage, tolerant of a client that doesn't report it (the test stub doesn't)."""
+    u = getattr(resp, "usage", None)
+    return {
+        "input_tokens": getattr(u, "input_tokens", 0) or 0,
+        "output_tokens": getattr(u, "output_tokens", 0) or 0,
+    }
+
+
+def narrate(pack: dict, client=None, trace: list | None = None,
+            model: str = MODEL, effort: str = EFFORT) -> dict:
+    """A verified briefing for one fixture. Falls back to the template on any failure.
+
+    `trace`, when given, collects one record per attempt: outcome, guard problems and
+    token usage. The returned briefing cannot express the difference between "the guard
+    rejected it" and "the API was down" — both are just a template — and telling those
+    apart is the whole job of `eval/brief_eval.py`. Production passes no trace.
+
+    `model`/`effort` are arguments rather than constants so the eval harness can sweep
+    them; nothing in the serving path overrides the defaults.
+    """
     client = client or _client()
     if client is None:
         return render_template(pack)
 
+    def record(attempt: int, outcome: str, **kw) -> None:
+        if trace is not None:
+            trace.append({"attempt": attempt, "model": model, "effort": effort,
+                          "outcome": outcome, **kw})
+
     last: list[str] = []
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
         note = ""
         if last:
             note = (
@@ -296,28 +346,46 @@ def narrate(pack: dict, client=None) -> dict:
             )
         try:
             resp = client.messages.create(
-                model=MODEL,
+                model=model,
                 max_tokens=4000,
                 system=SYSTEM,
                 output_config={
                     "format": {"type": "json_schema", "schema": BRIEF_SCHEMA},
-                    "effort": "low",
+                    "effort": effort,
                 },
                 messages=[{
                     "role": "user",
                     "content": f"FACT PACK:\n{json.dumps(pack, indent=2)}{note}",
                 }],
             )
+        except Exception as exc:  # noqa: BLE001 — any API failure falls through to the template
+            record(attempt, "api_error", detail=f"{type(exc).__name__}: {exc}")
+            break
+
+        usage = _usage(resp)
+        # A declined request is a SUCCESSFUL response with no text block. Check the stop
+        # reason before reading content, or the read raises and a refusal becomes
+        # indistinguishable from a network error.
+        if getattr(resp, "stop_reason", None) == "refusal":
+            details = getattr(resp, "stop_details", None)
+            record(attempt, "refusal", usage=usage,
+                   detail=getattr(details, "category", None))
+            break
+
+        try:
             text = next(b.text for b in resp.content if b.type == "text")
             brief = json.loads(text)
-        except Exception:  # noqa: BLE001 — any API/parse failure falls through to the template
+        except Exception as exc:  # noqa: BLE001 — malformed output falls through too
+            record(attempt, "parse_error", usage=usage, detail=f"{type(exc).__name__}: {exc}")
             break
 
         last = verify(brief, pack)
         if not last:
-            brief["generated_by"] = MODEL
-            brief["attempts"] = attempt + 1
+            brief["generated_by"] = model
+            brief["attempts"] = attempt
+            record(attempt, "ok", usage=usage)
             return brief
+        record(attempt, "guard_rejected", usage=usage, problems=last)
 
     out = render_template(pack)
     if last:
