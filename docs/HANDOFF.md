@@ -77,6 +77,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | 23 | the season simulation rig — *headline corrected by §24* |
 | **24** | **it does not replicate: we rank better, we do not decide better** |
 | **25** | **how much of an FPL season is skill — and what `/model` should say** |
+| **26** | **"luck" corrected: three seasons, independent windows, and the ~30-season answer** |
 
 ---
 
@@ -1732,3 +1733,89 @@ Two mechanics worth knowing:
 So from 2026-08-21 the season simulator can finally be scored the way a manager thinks: not
 "more points than FPL's projection", but **what rank this would have finished**. That is the
 comparison worth putting on `/model`, and it needs a season of snapshots and no new code.
+
+---
+
+## 26. "Luck" was the wrong word. Here is the right one, on three seasons (2026-08-06)
+
+Prompted by an objection that deserved the work: *short-term yes, but long-term it shouldn't be
+luck.* Correct. Per-window variance is not luck in the fatalistic sense — it averages out, and
+noise on a mean falls as 1/√N while a real edge stays put. So "we cannot detect it" is a claim
+about sample size, and I had been sliding from that into "it is not there". Those are different.
+
+Chasing it properly took two design fixes and produced a near-reversal that turned out to be an
+artifact. The whole sequence is recorded because the lesson is entirely about sampling design.
+
+| design | seasons | result | verdict |
+|---|---|---|---|
+| §23 — 18 starts, all played to GW38 | 1 | +2.08/gw | one season, retracted |
+| §24 — same design | 2 | −1.47, +2.08 | right conclusion, flawed design |
+| fixed 12-GW windows | 2 | **+4.47, +2.76** | looked like a reversal — **also flawed** |
+| **9 NON-OVERLAPPING 10-GW windows** | **3** | **−0.80/gw, CI [−7.33, +5.73]** | **the answer** |
+
+**Two defects, both of which inflate apparent signal.** In §23/§24 every run of a season ends at
+GW38, so all 18 share GW27–38 and differ only in run-up — eighteen samples of one late-season
+result, not eighteen samples of a season. Fixed-length windows cured the unequal lengths (a
+12-gameweek mean is arithmetically noisier than a 30-gameweek one) but adjacent windows still
+share 11 of 12 gameweeks, so nineteen "samples" a season are really two or three, and the mean
+follows whichever stretch happened to go well. That is what produced the apparent reversal.
+
+### The answer, on genuinely independent windows
+
+Three seasons that carry both the model's inputs and a usable FPL baseline — 2022-23, 2023-24,
+2024-25 — tiled into non-overlapping 10-gameweek windows, nine in total:
+
+| season | ours − FPL | Spearman ours | Spearman FPL |
+|---|---|---|---|
+| 2022-23 | −6.47 | **0.361** | 0.313 |
+| 2023-24 | +5.50 | **0.371** | 0.293 |
+| 2024-25 | −1.43 | **0.374** | 0.299 |
+| **pooled, 9 windows** | **−0.80/gw**, sd 10.00, **CI [−7.33, +5.73]**, wins 5/9 | | |
+
+Individual windows run from **−14.90 to +16.80**. §24 stands: the decision-level difference is
+not established.
+
+**And the contrast is now overwhelming rather than suggestive.** Ranking is stable to the third
+decimal across three seasons — ours 0.361 / 0.371 / 0.374 against FPL's 0.313 / 0.293 / 0.299,
+an edge of +0.05 to +0.08 every single season. The same model's *decision* outcome swings by
+thirty points a gameweek between windows.
+
+### How many seasons would settle it — the number the objection asks for
+
+From the independent windows: sd 10.00 per 10-gameweek window.
+
+| edge to resolve | independent windows needed | ≈ seasons |
+|---|---|---|
+| 2.0 pts/gw | 96 | **~32** |
+| 0.8 pts/gw (the observed mean) | 600 | ~200 |
+
+**So it is not luck-forever — it is roughly thirty seasons.** And the data ceiling is four
+(2022-23 through 2025-26), because FPL only began publishing `expected_goals`/`expected_assists`
+in 2022-23 and the model's shares are built on them. Earlier seasons cannot run the model at all.
+
+That is the honest end of this line of enquiry: **the decision-level question is not answerable
+with the data that exists, and will not become answerable at one season a year within any
+useful horizon.** Not "we measured it and it is zero" — "it cannot be measured, and here is the
+arithmetic showing why."
+
+### What survives, and is now stronger
+
+- **The ranking edge is real and remarkably stable.** Three seasons, +0.05 to +0.08, every one.
+- **Having a model at all is worth enormously more than which model.** Random scores 11–26
+  pts/gw against 41–70 for any real projection, in every window of every season.
+- **`/model` should say all of this.** "We rank better, consistently. Whether that converts into
+  points cannot be established with fewer than about thirty seasons, and we have four." No FPL
+  tool says that, and it is the strongest version of this project's position.
+
+### Data ceiling, for anyone tempted to just add seasons
+
+| season | model inputs | `xP` baseline | usable |
+|---|---|---|---|
+| 2019-20 → 2021-22 | **no** `expected_goals`/`xA`, no `starts` | — | no |
+| 2022-23 | yes | 35/37 GWs | yes |
+| 2023-24 | yes | 37/38 | yes |
+| 2024-25 | yes | 35/38 | yes |
+| 2025-26 | yes | **11/38** | our policy only — too thin to compare against |
+
+2025-26 is a complete, unused season and worth adding for anything not needing FPL's number.
+Comparing against it would recreate §13 exactly: two averages over different gameweek sets.
