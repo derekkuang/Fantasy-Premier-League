@@ -78,6 +78,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **24** | **it does not replicate: we rank better, we do not decide better** |
 | **25** | **how much of an FPL season is skill — and what `/model` should say** |
 | **26** | **"luck" corrected: three seasons, independent windows, and the ~30-season answer** |
+| **27** | **the edge sits among the most-owned players; four-season stability; the four claims** |
 
 ---
 
@@ -1819,3 +1820,76 @@ arithmetic showing why."
 
 2025-26 is a complete, unused season and worth adding for anything not needing FPL's number.
 Comparing against it would recreate §13 exactly: two averages over different gameweek sets.
+
+---
+
+## 27. The edge is where decisions are made — and it holds on four seasons (2026-08-07)
+
+§26 left one mechanism unresolved, and it decides how everything above should be read. Our
+projection out-ranks FPL's, and that does not show up in season outcomes. Two explanations with
+opposite implications:
+
+- **A — real but unresolvable.** The edge sits among players managers actually own, so it does
+  raise expected points, by less than a season's noise can detect. Then §26 is a sample-size
+  statement and nothing more.
+- **B — in the wrong place.** The edge is concentrated among fringe players nobody picks.
+  Ordering the 400th-best asset better than FPL is worth precisely nothing. Then no number of
+  seasons would ever help, and the ranking claim is close to decorative.
+
+### A is right. B is refuted.
+
+Restricting to the most-owned players each gameweek — a selector that depends on **neither**
+projection — the edge holds everywhere and is **largest in the smallest pool**:
+
+| candidate pool | 2022-23 | 2023-24 | 2024-25 |
+|---|---|---|---|
+| everyone who played (~293/gw) | +0.049 | +0.078 | +0.076 |
+| the 150 most-owned | +0.050 | +0.088 | +0.073 |
+| the 75 most-owned | +0.040 | +0.085 | +0.064 |
+| **the 40 most-owned** (≈ a squad's real consideration pool) | **+0.059** | **+0.100** | **+0.088** |
+
+**Nine of nine positive**, and the three largest edges in the table are the three smallest pools.
+Whatever our model knows that FPL's does not, it knows it about the players people actually pick.
+
+**A method note that matters.** Selecting by "top N by our own xP" gives an erratic picture —
+2022-23 reads −0.036 at the top 100 and −0.033 at the top 50 — because that conditions the subset
+on the very predictor under test. It is not a neutral filter and should not carry a conclusion.
+Ownership rank is neutral, needs no denominator, and behaves cleanly. (An earlier version of this
+used "ownership ≥ X% of the most-owned player's count" and called it a share of the field, which
+it is not — if the top player is in 60% of squads then "10%" of him is 6% of managers.)
+
+### Our own ranking, on four seasons
+
+2025-26 is a complete season nobody had touched. It cannot carry a head-to-head — `xP` covers 11
+of its 38 gameweeks — but it can answer whether our own quality is stable:
+
+| season | played-only Spearman | all-players | MAE |
+|---|---|---|---|
+| 2022-23 | 0.361 | 0.712 | 2.089 |
+| 2023-24 | 0.371 | 0.711 | 2.114 |
+| 2024-25 | 0.374 | 0.685 | 2.011 |
+| **2025-26** | **0.378** | 0.753 | 2.148 |
+
+**0.361 to 0.378 over four consecutive seasons**, a range of 0.017. About as replicated as
+anything in this domain gets, and the most recent season is the best of them.
+
+### Where that leaves the claims
+
+Four statements, each measured, in the order of how much weight they carry:
+
+1. **Our projection ranks players better than FPL's own** — +0.05 to +0.10, three seasons with a
+   clean baseline, and the edge is concentrated among the most-owned players rather than the
+   tail (this section).
+2. **Our ranking quality is stable** — 0.361–0.378 across four seasons.
+3. **Whether that converts into points cannot be established** — nine independent windows give
+   −0.80/gw, CI [−7.33, +5.73]; resolving a 2 pts/gw edge needs ~30 seasons and four exist (§26).
+4. **Having a model at all is worth 30–40 pts/gw over guessing** (§25), in every window of every
+   season.
+
+Claims 1 and 2 are the technical position and are now strong. Claim 4 is the sales pitch. Claim 3
+is the one nobody else states, and stating it is the whole point of `/model`.
+
+**What NOT to say, since it is now easy to overreach:** "we rank better in the pool that matters,
+therefore we win you points." §26's arithmetic still applies — the conversion is unmeasurable,
+and the honest sentence is *"the edge is real, sits where it should, and is smaller than a
+season's noise."*
