@@ -79,6 +79,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **25** | **how much of an FPL season is skill — and what `/model` should say** |
 | **26** | **"luck" corrected: three seasons, independent windows, and the ~30-season answer** |
 | **27** | **the edge sits among the most-owned players; four-season stability; the four claims** |
+| **28** | **real managers: FPL is 56% skill, and ~30 seasons confirmed without a simulator** |
 
 ---
 
@@ -1893,3 +1894,63 @@ is the one nobody else states, and stating it is the whole point of `/model`.
 therefore we win you points." §26's arithmetic still applies — the conversion is unmeasurable,
 and the honest sentence is *"the edge is real, sits where it should, and is smaller than a
 season's noise."*
+
+---
+
+## 28. Measuring a season's noise on real managers — and I was wrong about "mostly luck" (2026-08-07)
+
+Every variance number in §23–§27 came from our own simulator, which has known simplifications:
+no chips, myopic one-week transfers, an artificial GW9 start. Any of those could inflate its
+variance and make "~30 seasons" more pessimistic than reality. So: measure it on humans instead.
+
+FPL publishes it. `/entry/{id}/history/` returns `past` — every season a manager has played, with
+total points and final rank percentile. 700 random entry ids sampled politely, 247 live, **115
+managers with four or more seasons, 819 manager-season pairs.**
+
+### The result
+
+| | |
+|---|---|
+| consecutive-season correlation of the same manager's rank percentile | **r = 0.574** (Spearman 0.563) |
+| within-manager sd of rank percentile | 15.9 percentile points |
+| between-manager sd of career average | 18.1 |
+| **skill share of total variance** | **56.4%** |
+| luck share | 43.6% |
+| within-manager sd of season total points | **211 pts ≈ 5.55/gameweek** |
+
+### Two things follow, and they point in opposite directions
+
+**1. I was wrong to call FPL mostly luck.** A manager's rank percentile correlates 0.574 with
+their own next season. Skill is the *majority* of season-outcome variance, not the minority. And
+**56% is a floor**, twice over: managers with four-plus seasons are self-selected toward engaged
+players, which strips out the low-skill tail and shrinks the between-manager spread; and a
+manager's skill genuinely drifts over ten seasons, which inflates the within-manager term. §25's
+framing — "almost all of what looks like skill is the gap between modelling and not modelling" —
+was measured on our simulator's policies and does not describe the human population. Corrected.
+
+**2. It independently confirms the ~30-season figure.** Season-to-season sd for a fixed manager
+is 5.55 pts/gw. To resolve a 2 pts/gw edge at 95% confidence needs (1.96 × 5.55 / 2)² ≈ **30
+seasons** — arrived at from real manager histories, with no simulator involved, and landing on
+the same number §26 got from nine independent windows. Two unrelated routes, one answer.
+
+**These are consistent, not contradictory.** Skill dominates the gap between an engaged manager
+and a casual one — between-manager sd is 18.1 percentile points, an enormous range. Our
+projection's edge over FPL's is a far smaller increment sitting inside that range, and *that* is
+what needs thirty seasons. Being much better than the average manager is easy to demonstrate;
+being slightly better than FPL's own projection is not.
+
+### What this changes
+
+- **§25's skill-vs-luck framing is superseded for the human population.** It remains correct
+  about our simulator's policies, which is a different question, and the +40 pts/gw
+  model-vs-noise gap is unaffected.
+- **The `/model` copy gets better, not worse.** "FPL rewards skill — a manager's rank correlates
+  0.57 with their own next season" is a *more* attractive and equally honest opening than "much
+  of it is luck", and it sits comfortably beside "our edge over FPL's own projection is real,
+  sits among the players you actually own, and is smaller than one season can prove."
+- **The simulator is validated rather than replaced.** Its variance is the same order as
+  reality's once scaled for window length, which is the check it had never had.
+
+Sampling caveats, stated rather than corrected: random ids over 1–9M, so managers with long
+histories skew engaged; rank percentile handles the changing field size; 115 managers is enough
+for a correlation and not enough to slice by skill band.
