@@ -44,6 +44,10 @@ odds. Same logic as the snapshot — cannot be back-filled without paying for it
 
 ## Where things are
 
+**Scheduling anything? `docs/OPERATIONS.md` is the runbook** — cron lines, what each capture
+needs before its first run, and what failure looks like for each. This document explains *why*
+they exist; that one says what to run.
+
 ```bash
 make precompute     # data/serving/gw1.json (engine fit, ~2 min)
 make serve          # FastAPI :8000
