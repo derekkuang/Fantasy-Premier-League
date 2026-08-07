@@ -80,6 +80,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **26** | **"luck" corrected: three seasons, independent windows, and the ~30-season answer** |
 | **27** | **the edge sits among the most-owned players; four-season stability; the four claims** |
 | **28** | **real managers: FPL is 56% skill, and ~30 seasons confirmed without a simulator** |
+| **29** | **the team-news feed: what exists, what is built, and the extraction design** |
 
 ---
 
@@ -1954,3 +1955,85 @@ being slightly better than FPL's own projection is not.
 Sampling caveats, stated rather than corrected: random ids over 1–9M, so managers with long
 histories skew engaged; rank percentile handles the changing field size; 115 managers is enough
 for a correlation and not enough to slice by skill band.
+
+---
+
+## 29. A team-news feed: what exists, and how to extract from it (2026-08-07)
+
+§28 left the biggest lever unexploited. Perfect team news is worth **+0.168** (§19); FPL's own
+`chance_of_playing_next_round` covers **injury** and is captured free from 2026-08-21; **rotation
+is not in that field at all** and is precisely the part of starting-XI uncertainty injury status
+cannot explain. Press conferences carry both. So: is there a feed?
+
+### What was tested, not read about
+
+| source | result |
+|---|---|
+| **BBC per-club RSS** | **200 for all 20 clubs**, carries manager quotes. The one that works |
+| BBC / Sky general football RSS | 200, but skews transfers and features, not team news |
+| Premier League official `/rss` | **404** |
+| Club official sites (Arsenal) | 307 redirect, no public feed |
+| Reddit `r/FantasyPL` `.rss` | works intermittently, **429 without auth** — cannot back a cron |
+| Sportmonks News API (`prematchNews`) | purpose-built, **paid add-on**; free tier excludes the EPL |
+| API-Football injuries | free 100 req/day; overlaps FPL's own field, so mostly redundant |
+
+**Two BBC slugs do not follow the obvious pattern** — `afc-bournemouth` and
+`brighton-and-hove-albion` — and 404 on the naive guess. Undetected, those two clubs would
+silently never contribute team news all season, which is the exact shape of failure this project
+keeps finding.
+
+### What is built — `make capture-news`
+
+`ingest/newsfeed.py` + `scripts/capture_news.py`. Verified live: 212 items, 20/20 clubs.
+
+**RSS only, no article bodies.** A feed is published for machine consumption; an article body is
+a different posture. This caps the material honestly: an item gives a headline and one line of
+summary, **not** the paragraph where a manager says who is fit. The module says so rather than
+implying more.
+
+**Daily, not weekly** — the one operational difference from the other two captures. Snapshot and
+props want a single reading near the deadline. Feeds are a rolling window of ~4–24 items and older
+ones fall off **permanently**, so a weekly run misses the Tuesday presser. Items dedupe by guid,
+so running it often is free.
+
+**A deterministic first pass, no API key**: club-scoped whole-word matching against the live FPL
+player list, plus over-inclusive intent cues (`injury` / `return` / `rotation` / `suspension`)
+that route items for a closer look rather than classifying them. Club-scoping is the Understat
+join's rule for the same reason — two players share a surname and only one is at the club. Live
+run found *"Saliba to miss extended period with back injury"* → Saliba, `injury`+`return`, with
+no model involved.
+
+### The extraction design, for when there is an API key
+
+This is `brief.py`'s architecture pointed at a different problem, and it inherits its discipline:
+**the model never asserts a fact the source does not contain.**
+
+1. **Land immutably**, as now. Extraction is re-runnable against the archive; the capture is not.
+2. **Structured output per item**: `{element_id, signal ∈ injury|return|rotation|suspension,
+   direction, confidence, quote}` — where `quote` is a **verbatim span from the item**, not a
+   paraphrase.
+3. **Three mechanical guards, in order of strength:**
+   - **the quote must appear verbatim in the source text.** This is `brief.py`'s numeric guard
+     generalised from numbers to spans, and it is the same lesson: a value-based check cannot
+     separate an invented claim from a misattributed one, so scope every claim to the text it
+     cites.
+   - **the player must resolve to an FPL `element_id`** through the identity join, which now
+     handles the naming conventions that were silently dropping players (§18).
+   - **cross-check against FPL's own `chance_of_playing_next_round`.** This guard does not exist
+     for briefings and is the strongest one available here. Agreement teaches nothing — FPL's
+     editors watched the same presser. **Disagreement is either our error or our edge**, and it
+     is the only place worth looking. Route conflicts to review; never overwrite FPL's field.
+4. **Fall back to "no signal"**, never to a guess. A wrong "X is out" is worse than silence,
+   because the projection acts on it.
+
+### The honest limits, stated up front
+
+- **Headline + summary may not be enough.** The substance often lives in the article body, which
+  this deliberately does not fetch. If the corpus proves too thin, the answer is Sportmonks'
+  News API — purpose-built and licensed — not a scraper.
+- **No historical archive**, so like props this builds forward and cannot be backtested yet.
+- **Timing.** Pressers land Thursday/Friday for a Saturday deadline, which works. The most
+  valuable news is often Saturday morning and appears in no press conference.
+- **Measure the residual before investing further.** From 2026-08-21 the snapshot gives FPL's
+  availability free and the backtest hook to score it is built (§22). That tells you how much of
+  the +0.168 FPL's own field already captures. Build against that number, not against a hunch.
