@@ -2037,3 +2037,64 @@ This is `brief.py`'s architecture pointed at a different problem, and it inherit
 - **Measure the residual before investing further.** From 2026-08-21 the snapshot gives FPL's
   availability free and the backtest hook to score it is built (§22). That tells you how much of
   the +0.168 FPL's own field already captures. Build against that number, not against a hunch.
+
+### Deep research on the paid options, and the decision it produces (2026-08-07)
+
+§29 found a free feed. This prices the alternatives properly, because "buy a team-news feed" was
+about to become a €100–260/month commitment on a project with no users and no revenue.
+
+**The decisive free check came first.** FPL's own `news` field, read live from the bootstrap: 60
+of 572 players flagged, and the strings are *rich* on injury —
+
+> `Groin injury - Expected back 21 Aug` · `Back injury - Unknown return date` ·
+> `Knee injury - 75% chance of playing` · `Suspended until 29 Aug` · `Lack of match fitness`
+
+— with **exact return dates**, which is more than the numeric `chance_of_playing` carries. And
+**4 of 60 strings contain any rest/rotation language at all.**
+
+So the hypothesis in §29 is confirmed with data rather than argued: **FPL gives away the injury
+half in usable detail, and none of the rotation half.** Everything a paid feed could add is
+concentrated in rotation.
+
+#### What rotation costs
+
+| product | what it gives | price |
+|---|---|---|
+| Sportmonks **Starter** | EPL data, 5 leagues | €29/mo |
+| Sportmonks **News API** add-on | scout-written pre-match previews, **every** EPL match, with "tactical formations, injury updates, expected lineups" | **€99/mo** |
+| Sportmonks **Expected Lineups** add-on | predicted XI + formation + bench candidates | **€159/mo yearly, €199 monthly** — and requires **Growth (€99)**, not Starter, so **≈ €258/mo floor** |
+| API-Football | all endpoints incl. lineups on every tier | free 100 req/day; $19–50/mo for real volume |
+| Opta / Stats Perform | the source everyone else licenses | enterprise, four figures a year (§ earlier) |
+
+**Against a measured benefit of +0.067 played-only Spearman** for an 84%-accurate lineup feed
+(§20) — which was also *negative* on all-player ranking unless blended rather than substituted.
+
+#### The legal position changed this year, and it matters for the roadmap
+
+The UK TDM exception (s29A CDPA) covers **non-commercial research only**, and the government
+confirmed in **March 2026** that it will *not* introduce a broad commercial exception. So:
+
+- while this is a portfolio/research project, the research exception plausibly covers analysis of
+  lawfully accessed content;
+- **the moment it charges for anything** — and the roadmap has a paid tier — that changes, and
+  the safe posture becomes licensed data or nothing.
+
+Consuming a published RSS feed is a different act from scraping article bodies, and extracting
+facts for internal modelling is different again from republishing text. `capture_news.py` sits on
+the safe side of all three lines deliberately, and that is worth keeping even when it is
+inconvenient.
+
+#### The decision
+
+**Do not buy anything yet, and the reason is a number that does not exist yet.**
+
+1. From **2026-08-21** the snapshot captures FPL's availability free, and the backtest hook to
+   score it is already built (§22). That measures how much of the starting-XI error is *injury* —
+   the part we get for nothing.
+2. **The residual is the rotation half**, and it is the only thing €258/month would buy.
+3. `make capture-news` accumulates the free corpus meanwhile at zero cost, so if the answer is
+   "buy", there is a free baseline to price it against rather than a vendor's own accuracy claim.
+
+Buying before step 1 means paying €3,000 a year for an unmeasured fraction of +0.067 Spearman, on
+a model whose *whole* edge over FPL takes thirty seasons to demonstrate (§26, §28). Buying after
+step 1 means paying for a known quantity. The wait costs one half-season and nothing else.
