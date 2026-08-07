@@ -1,4 +1,4 @@
-.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props simulate-season model-card clean
+.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props capture-news simulate-season model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -41,6 +41,11 @@ snapshot:
 # Run `capture-props ARGS=--list-markets` ONCE first to confirm the market key.
 capture-props:
 	.venv/bin/python scripts/capture_props.py --if-near-deadline $(if $(WINDOW),--window $(WINDOW)) $(ARGS)
+
+# Capture club news feeds. DAILY (or more often) — unlike snapshot/props these are a rolling
+# window and older items fall off permanently, so a weekly run misses midweek press conferences.
+capture-news:
+	.venv/bin/python scripts/capture_news.py $(ARGS)
 
 # Play a whole season on each projection and count the points — the first measurement of
 # DECISIONS rather than ranking. Slow (a walk-forward plus a simulation per policy).
