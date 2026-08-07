@@ -67,6 +67,9 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
             "n_matches": len(out["matches"]),
             "n_briefs": n_briefs,
             "fallback_fixtures": len(out["fallback"]),
+            # Everything the caller needs to decide whether this artifact is fit to publish.
+            # A dropped source season used to be invisible from here.
+            "source": out.get("source_report", {}),
         },
         # JSON object keys must be strings; the API normalises team ids back to int on read.
         "fpl_teams": {str(tid): name for tid, name in out["fpl_teams"].items()},
@@ -74,6 +77,54 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
         "fixture_ticker": {str(tid): rows for tid, rows in out["fixture_ticker"].items()},
         "matches": out["matches"],
     }
+
+
+# Health thresholds for a SCHEDULED run. These are refusal points, not warnings: the failure
+# this guards against is not a crash, it is every number getting quietly worse while the job
+# keeps exiting 0. docs/HANDOFF.md §4 called it the one thing that will silently rot a deployed
+# site, and it had been true since 2026-08-03.
+MAX_FALLBACK_FIXTURES = 3   # 2 is healthy (promoted sides the engine has no history for)
+MIN_RECORDS = 400           # a real gameweek carries ~550
+# Exactly three clubs are promoted each season and a promoted club has no top-flight history, so
+# it CANNOT be mapped to the engine's teams and correctly falls back to the promoted-side prior.
+# Up to three unmapped teams is therefore the normal state, not a fault. More than three means
+# the name mapping itself has broken — a rename the fuzzy matcher no longer resolves — which is
+# a different thing and worth stopping for.
+MAX_UNMAPPED_TEAMS = 3
+
+
+def health_check(meta: dict) -> list[str]:
+    """Reasons this artifact should NOT be published. Empty means healthy.
+
+    Pure and separately tested, because the whole point is that it fires on a machine nobody is
+    watching and a threshold that is wrong in the lenient direction is worse than none at all.
+    """
+    problems = []
+    source = meta.get("source") or {}
+    failed = source.get("failed") or []
+    if failed:
+        seasons = ", ".join(f.get("season") or f.get("code", "?") for f in failed)
+        problems.append(
+            f"{len(failed)} source season(s) failed to download ({seasons}) — the engine fitted "
+            "on less history than intended"
+        )
+    unmapped = source.get("unmapped_teams") or []
+    if len(unmapped) > MAX_UNMAPPED_TEAMS:
+        problems.append(
+            f"{len(unmapped)} unmapped teams ({', '.join(unmapped)}) — more than the three "
+            "promoted clubs, so the name mapping has probably broken rather than this being "
+            "the usual promoted-side fallback"
+        )
+    fb = meta.get("fallback_fixtures")
+    if isinstance(fb, int) and fb > MAX_FALLBACK_FIXTURES:
+        problems.append(
+            f"fallback_fixtures={fb} exceeds {MAX_FALLBACK_FIXTURES} — more fixtures than "
+            "expected are being priced without engine history"
+        )
+    n = meta.get("n_records")
+    if isinstance(n, int) and n < MIN_RECORDS:
+        problems.append(f"only {n} player records (expected >= {MIN_RECORDS})")
+    return problems
 
 
 def run(gw: int, horizon: int = 8, run_ts: str | None = None,

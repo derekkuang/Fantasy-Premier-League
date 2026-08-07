@@ -76,7 +76,7 @@ def season_label(code: str) -> str:
 
 def download_season(code: str, division: str = "E0") -> str:
     """Download one season's CSV text and land it immutably; return the text."""
-    import requests  # noqa: PLC0415
+    import requests
 
     url = f"{FD_BASE}/{code}/{division}.csv"
     resp = requests.get(url, timeout=config.HTTP_TIMEOUT)
@@ -131,7 +131,7 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
     Each match: {home, away, o_h, o_d, o_a, o_over, o_under}. Used to derive market-implied
     lambdas for the near gameweek(s); the engine is the fallback for fixtures without odds.
     """
-    import requests  # noqa: PLC0415
+    import requests
 
     resp = requests.get(FD_FIXTURES_URL, timeout=config.HTTP_TIMEOUT)
     resp.raise_for_status()
@@ -151,16 +151,44 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
     return out
 
 
-def load_seasons(codes: list[str], division: str = "E0") -> list[dict]:
-    """Download + parse several seasons, resiliently (skip any that fail)."""
+def load_seasons_report(codes: list[str], division: str = "E0") -> tuple[list[dict], dict]:
+    """Download + parse several seasons. Returns (matches, report).
+
+    THE REPORT IS THE POINT. A dropped season used to print `warn:` and vanish — the caller got
+    a shorter list with no way to tell it was short, the engine fitted on less history, and
+    `fallback_fixtures` crept up while the run still exited 0. That is the single failure mode
+    most likely to rot a scheduled deployment, because every symptom is a number getting quietly
+    worse rather than anything breaking.
+
+    Callers that cannot tolerate a partial fit should check `report["failed"]` and stop.
+    """
     out: list[dict] = []
+    per_season, failed = {}, []
     for code in codes:
+        label = season_label(code)
         try:
             text = download_season(code, division)
         except Exception as e:  # noqa: BLE001
             print(f"  warn: could not fetch season {code}: {e}")
+            failed.append({"code": code, "season": label, "error": str(e)})
             continue
-        got = parse_csv(text, season_label(code))
-        print(f"  {season_label(code)}: {len(got)} matches")
+        got = parse_csv(text, label)
+        print(f"  {label}: {len(got)} matches")
+        per_season[label] = len(got)
         out.extend(got)
-    return out
+    return out, {
+        "requested": list(codes),
+        "loaded": sorted(per_season),
+        "failed": failed,
+        "matches_per_season": per_season,
+        "n_matches": len(out),
+    }
+
+
+def load_seasons(codes: list[str], division: str = "E0") -> list[dict]:
+    """Download + parse several seasons, resiliently (skip any that fail).
+
+    Kept for callers that genuinely do not care. Anything scheduled should use
+    `load_seasons_report` and inspect `failed` — see its docstring.
+    """
+    return load_seasons_report(codes, division)[0]

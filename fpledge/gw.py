@@ -96,15 +96,18 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     # duties) attached to each record. Changes no projection — it explains them.
     meta = playermeta.player_meta(boot)
 
-    matches = footballdata.load_seasons(seasons or SEASONS)
+    matches, source_report = footballdata.load_seasons_report(seasons or SEASONS)
     engine = DixonColesModel(half_life_days=180).fit(matches)
     fd_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
     tmap = build_team_map(list(fpl_teams.values()), fd_names)
+    # Carried so the precompute can refuse to publish a degraded fit. A dropped season used to
+    # be invisible past this point.
+    source_report["unmapped_teams"] = sorted(n for n, v in tmap.items() if not v)
 
     return {
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
         "prices": prices, "availability": availability, "meta": meta,
-        "engine": engine, "tmap": tmap,
+        "engine": engine, "tmap": tmap, "source_report": source_report,
     }
 
 
@@ -120,7 +123,7 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
     )
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
-        "fpl_teams": inp["fpl_teams"],
+        "fpl_teams": inp["fpl_teams"], "source_report": inp["source_report"],
     }
 
 
@@ -184,5 +187,5 @@ def assemble_for_serving(
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
         "fpl_teams": inp["fpl_teams"], "fixture_ticker": ticker, "horizon": horizon,
-        "matches": previews,
+        "matches": previews, "source_report": inp["source_report"],
     }
