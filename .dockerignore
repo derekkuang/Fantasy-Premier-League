@@ -1,0 +1,17 @@
+.git
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+*.egg-info
+web/node_modules
+web/.next
+mlruns
+mlartifacts
+# data/ is a VOLUME, never an image layer — see the Dockerfile. Baking it in would ship a
+# stale artifact and quietly discard captured history on the next deploy.
+data
+docs
+tests
