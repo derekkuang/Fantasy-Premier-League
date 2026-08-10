@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ from datetime import UTC, datetime
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from fpledge import config
+from fpledge.eval.news_eval import build_digest, fpl_labels, load_corpus
 from fpledge.ingest import landing
 from fpledge.ingest.fpl_api import FPLClient
 from fpledge.ingest.newsfeed import (
@@ -105,8 +107,21 @@ def main() -> None:
     with INDEX.open("a") as fh:
         fh.write(json.dumps(row) + "\n")
 
+    # Serving digest, written by the CAPTURE rather than the weekly precompute: news is daily,
+    # and folding it into the gameweek artifact would make it up to seven days stale on a page
+    # whose whole value is being current. The API stays a pure reader either way.
+    corpus = load_corpus() or items
+    digest = build_digest(corpus, fpl_labels(boot), now.isoformat())
+    serving = config.DATA_DIR / "serving"
+    serving.mkdir(parents=True, exist_ok=True)
+    tmp = serving / "news.json.tmp"
+    tmp.write_text(json.dumps(digest, separators=(",", ":")))
+    os.replace(tmp, serving / "news.json")   # atomic; a reader never sees a half-written file
+
     print(f"captured {len(items)} items from {row['clubs_ok']}/{len(clubs)} clubs — "
           f"{len(with_mentions)} name a player, {len(with_cues)} carry an intent cue")
+    print(f"digest -> {serving / 'news.json'} "
+          f"({digest['n_clubs']} clubs, {digest['n_items']} items in corpus)")
     for it in with_mentions[:8]:
         who = ", ".join(m["name"] for m in it["mentions"])
         print(f"  [{it['club']}] {it['title'][:60]}")

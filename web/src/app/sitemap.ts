@@ -8,6 +8,8 @@ const ROUTES: [string, number, MetadataRoute.Sitemap[number]["changeFrequency"]]
   ["/predictions", 0.9, "weekly"],
   ["/fixtures", 0.8, "weekly"],
   ["/differentials", 0.8, "weekly"],
+  // Daily, because the capture is daily and stale team news is worse than none.
+  ["/news", 0.6, "daily"],
   ["/model", 0.7, "monthly"],
   ["/privacy", 0.2, "yearly"],
   ["/terms", 0.2, "yearly"],

@@ -127,3 +127,63 @@ def evaluate(items: list[dict], labels: dict) -> dict:
             "players": named(additive),
         },
     }
+
+
+# --- the serving digest ------------------------------------------------------------------- #
+# Written by `capture_news.py` so the API stays a pure reader, and written by the CAPTURE rather
+# than the weekly precompute because news is daily — folding it into the gameweek artifact would
+# make it up to seven days stale on a page whose entire value is being current.
+DIGEST_ITEM_CAP = 6          # per club, newest first
+
+
+def build_digest(items: list[dict], labels: dict, generated_at: str) -> dict:
+    """A club-keyed digest for the beta page.
+
+    Carries FPL's own status alongside every mention, so the page can show what FPL says next to
+    what a feed said. That pairing IS the honesty: where they agree we have added nothing, and
+    where they differ the reader can see both rather than being told which to believe.
+    """
+    by_club: dict = {}
+    for it in items:
+        club = it.get("club") or "?"
+        by_club.setdefault(club, []).append(it)
+
+    clubs = {}
+    for club, rows in by_club.items():
+        rows = sorted(rows, key=lambda r: r.get("published") or "", reverse=True)
+        out = []
+        for r in rows[:DIGEST_ITEM_CAP]:
+            out.append({
+                "title": r.get("title"),
+                "summary": r.get("summary"),
+                "link": r.get("link"),
+                "published": r.get("published"),
+                "cues": r.get("cues") or [],
+                "mentions": [
+                    {
+                        "element_id": m["element_id"],
+                        "name": (labels.get(m["element_id"]) or {}).get("name") or m.get("name"),
+                        # FPL's own line, verbatim. Never our paraphrase of it.
+                        "fpl_status": (labels.get(m["element_id"]) or {}).get("status"),
+                        "fpl_news": (labels.get(m["element_id"]) or {}).get("news") or "",
+                    }
+                    for m in (r.get("mentions") or [])
+                ],
+            })
+        if out:
+            clubs[club] = out
+
+    scored = evaluate(items, labels)
+    return {
+        "generated_at": generated_at,
+        "n_items": len(items),
+        "n_clubs": len(clubs),
+        "clubs": dict(sorted(clubs.items())),
+        # The page prints these so a reader can judge the feed rather than trust it.
+        "quality": {
+            "precision": scored["precision"]["rate"],
+            "recall": scored["recall"]["rate"],
+            "additive": scored["additive"]["count"],
+            "fpl_flagged": scored["n_fpl_flagged"],
+        },
+    }

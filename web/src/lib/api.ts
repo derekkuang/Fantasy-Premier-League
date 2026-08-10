@@ -367,3 +367,49 @@ export async function getTeam(entryId: string, gw = 1): Promise<TeamResponse> {
   }
   return res.json();
 }
+
+// --- team news (BETA) ---------------------------------------------------------------------- //
+export type NewsMention = {
+  element_id: number;
+  name: string | null;
+  /** FPL's OWN status code: a=available, d=doubtful, i=injured, s=suspended, u=unavailable. */
+  fpl_status: string | null;
+  /** FPL's OWN news line, verbatim. Never our paraphrase. */
+  fpl_news: string;
+};
+
+export type NewsItem = {
+  title: string | null;
+  summary: string | null;
+  link: string | null;
+  published: string | null;
+  /** Keyword ROUTING hints, deliberately over-inclusive. Not classifications. */
+  cues: string[];
+  mentions: NewsMention[];
+};
+
+export type NewsResponse = {
+  generated_at: string;
+  n_items: number;
+  n_clubs: number;
+  clubs: Record<string, NewsItem[]>;
+  quality: {
+    precision: number | null;
+    recall: number | null;
+    additive: number;
+    fpl_flagged: number;
+  };
+  beta: boolean;
+  disclaimer: string;
+};
+
+/** Automated team-news digest. 404s until `make capture-news` has run — a team-news page with
+ *  nothing captured must say so rather than render an empty state that reads as a quiet week. */
+export async function getNews(): Promise<NewsResponse> {
+  const res = await fetch(`${API_URL}/news`, { next: { revalidate: 900 } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `news request failed (${res.status})`);
+  }
+  return res.json();
+}

@@ -218,6 +218,42 @@ def health() -> dict:
     return {"status": "ok", "available_gws": store.available_gws()}
 
 
+@app.get("/news")
+def team_news(response: Response) -> dict:
+    """Automated team-news digest. BETA, and the payload says so.
+
+    Served from an artifact `scripts/capture_news.py` writes, so this endpoint stays a pure
+    reader like every other. Written by the CAPTURE rather than the weekly precompute because
+    news is daily and a seven-day-stale team-news page is worse than none.
+
+    Every mention carries FPL's OWN status and news line beside it. That pairing is the whole
+    design: where they agree we have added nothing, and where they differ a reader can see both
+    rather than being told which to believe. The `cues` are keyword routing, deliberately
+    over-inclusive, and are NOT classifications — the payload labels them as such so a caller
+    cannot mistake them for a verdict.
+
+    404 rather than an empty page when nothing has been captured: a team-news page with no news
+    should say it has none, not imply a quiet week.
+    """
+    path = config.DATA_DIR / "serving" / "news.json"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="No news captured yet — run `make capture-news`.",
+        )
+    payload = json.loads(path.read_text())
+    response.headers["Cache-Control"] = "public, max-age=900"   # daily capture; 15 min is ample
+    return {
+        **payload,
+        "beta": True,
+        "disclaimer": (
+            "Automated from public club news feeds. Keyword cues are routing hints, not "
+            "classifications, and nothing here changes any projection on this site. FPL's own "
+            "status is shown beside every player and is the authority on availability."
+        ),
+    }
+
+
 @app.get("/model")
 def model_card(response: Response) -> dict:
     """How well the model actually does, measured rather than asserted.

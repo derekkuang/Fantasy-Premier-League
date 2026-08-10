@@ -11,6 +11,9 @@ const LINKS: [string, string][] = [
   ["/predictions", "Predictions"],
   ["/fixtures", "Fixtures"],
   ["/differentials", "Differentials"],
+  // Beta. Placed before "The model" because it is content a visitor might want, and after the
+  // planning tools because it does not feed them — nothing on /news changes a projection.
+  ["/news", "Team news"],
   ["/model", "The model"],
 ];
 
