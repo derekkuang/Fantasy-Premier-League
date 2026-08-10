@@ -101,10 +101,12 @@ def test_an_unknown_club_raises_rather_than_guessing_a_slug():
         c.club("Real Madrid")
 
 
-def test_every_premier_league_club_has_a_slug():
-    """Two clubs do not follow BBC's obvious pattern and 404 on the naive guess. A missing slug
-    means that club never contributes team news."""
-    assert len(BBC_SLUGS) == 20
+def test_the_slug_table_is_a_lookup_not_a_league():
+    """It used to assert exactly twenty entries, which is what encoded "this list IS the Premier
+    League" and let three relegated clubs sit in it while three promoted ones were missing. The
+    table should hold MORE clubs than any one season needs; the bootstrap decides who is up."""
+    assert len(BBC_SLUGS) > 20
+    # Two do not follow BBC's obvious pattern and 404 on the naive guess.
     assert BBC_SLUGS["Bournemouth"] == "afc-bournemouth"
     assert BBC_SLUGS["Brighton"] == "brighton-and-hove-albion"
 
@@ -148,3 +150,48 @@ def test_cues_flag_injury_and_return_and_rotation():
 
 def test_cues_are_empty_when_nothing_matches():
     assert cue_tags({"title": "Club announces new kit", "summary": "sponsor deal"}) == []
+
+
+# --- the league is not a constant ---------------------------------------------------------- #
+def _boot(names):
+    return {"teams": [{"id": i, "name": n} for i, n in enumerate(names, 1)]}
+
+
+def test_the_league_comes_from_the_bootstrap_not_from_the_slug_table():
+    """THE BUG THIS EXISTS TO PREVENT. The first version hardcoded twenty clubs and called that
+    the Premier League. Three had been relegated and three promoted ones were missing, so three
+    clubs contributed NO team news all season while the run reported "20/20 clubs" — it was
+    counting its own wrong list. League composition changes every year; it is never a constant."""
+    from fpledge.ingest.newsfeed import clubs_in_play
+
+    known, unknown = clubs_in_play(_boot(["Arsenal", "Coventry City", "Hull City"]))
+    assert known == ["Arsenal", "Coventry City", "Hull City"]
+    assert unknown == []
+
+
+def test_a_club_with_no_slug_is_returned_rather_than_silently_dropped():
+    """A promoted club with no slug is silent for a whole season and every other signal looks
+    healthy. The caller has to be able to stop, so it must not be filtered away here."""
+    from fpledge.ingest.newsfeed import clubs_in_play
+
+    known, unknown = clubs_in_play(_boot(["Arsenal", "Some New Club"]))
+    assert known == ["Arsenal"]
+    assert unknown == ["Some New Club"]
+
+
+def test_relegated_clubs_stay_in_the_lookup_but_are_not_in_the_league():
+    """Keeping them costs nothing and means a promotion needs no code change — but they must
+    only appear when the bootstrap says they are up."""
+    from fpledge.ingest.newsfeed import BBC_SLUGS, clubs_in_play
+
+    assert "Wolves" in BBC_SLUGS and "West Ham" in BBC_SLUGS
+    known, _ = clubs_in_play(_boot(["Arsenal", "Leeds"]))
+    assert "Wolves" not in known and "West Ham" not in known
+
+
+def test_every_club_the_bootstrap_might_name_has_a_slug():
+    """Both short and full forms, because FPL has used each ('Ipswich' and 'Ipswich Town')."""
+    from fpledge.ingest.newsfeed import BBC_SLUGS
+
+    for name in ("Ipswich", "Ipswich Town", "Coventry City", "Hull City", "Sunderland", "Leeds"):
+        assert name in BBC_SLUGS, name

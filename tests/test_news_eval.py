@@ -98,3 +98,29 @@ def test_an_empty_corpus_reports_none_rather_than_dividing_by_zero():
     assert res["precision"]["rate"] is None
     assert res["additive"]["count"] == 0
     assert res["recall"]["rate"] == 0.0
+
+
+def test_the_digest_drops_clubs_that_left_the_league():
+    """The corpus is cumulative and outlives a season. Without the current-league filter a
+    relegated club keeps appearing months after it went down — which is how the page came to
+    report 23 clubs in a 20-team league."""
+    from fpledge.eval.news_eval import build_digest
+
+    items = [
+        {"club": "Arsenal", "title": "a", "published": "x", "cues": [], "mentions": []},
+        {"club": "Wolves", "title": "b", "published": "x", "cues": [], "mentions": []},
+    ]
+    d = build_digest(items, _labels(), "now", clubs_allowed=["Arsenal"])
+    assert list(d["clubs"]) == ["Arsenal"]
+    assert d["n_clubs"] == 1
+
+
+def test_without_an_allowlist_every_club_is_kept():
+    """Analysis over a historical corpus should see relegated clubs; only the PAGE filters."""
+    from fpledge.eval.news_eval import build_digest
+
+    items = [
+        {"club": "Arsenal", "title": "a", "published": "x", "cues": [], "mentions": []},
+        {"club": "Wolves", "title": "b", "published": "x", "cues": [], "mentions": []},
+    ]
+    assert build_digest(items, _labels(), "now")["n_clubs"] == 2

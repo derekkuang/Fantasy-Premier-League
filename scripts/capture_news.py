@@ -36,9 +36,9 @@ from fpledge.eval.news_eval import build_digest, fpl_labels, load_corpus
 from fpledge.ingest import landing
 from fpledge.ingest.fpl_api import FPLClient
 from fpledge.ingest.newsfeed import (
-    BBC_SLUGS,
     NewsFeedClient,
     NewsFeedError,
+    clubs_in_play,
     cue_tags,
     mentions,
 )
@@ -73,8 +73,23 @@ def main() -> None:
     players = fpl_players(boot)
     print(f"{len(players)} FPL players loaded for name matching")
 
+    # The league comes from the BOOTSTRAP, never from a hardcoded list. Composition changes every
+    # season: the first version of this shipped with three relegated clubs and without three
+    # promoted ones, so three clubs contributed no team news at all while the run reported
+    # "20/20 clubs" — it was counting its own wrong list.
+    in_league, no_slug = clubs_in_play(boot)
+    if no_slug:
+        # Loud, and non-zero. A promoted club with no slug is silent for a whole season and every
+        # other signal looks healthy, so this must never be a warning you can scroll past.
+        print(f"ERROR: {len(no_slug)} club(s) in the league have no BBC slug: "
+              f"{', '.join(no_slug)}")
+        print("Add them to BBC_SLUGS in fpledge/ingest/newsfeed.py before capturing again —")
+        print("until then they contribute NO team news and nothing else would say so.")
+        raise SystemExit(1)
+
     client = NewsFeedClient()
-    clubs = args.clubs or list(BBC_SLUGS)
+    clubs = args.clubs or in_league
+    print(f"{len(in_league)} clubs in the league this season, all with feeds")
     items, failed = [], []
     for club in clubs:
         try:
@@ -111,7 +126,7 @@ def main() -> None:
     # and folding it into the gameweek artifact would make it up to seven days stale on a page
     # whose whole value is being current. The API stays a pure reader either way.
     corpus = load_corpus() or items
-    digest = build_digest(corpus, fpl_labels(boot), now.isoformat())
+    digest = build_digest(corpus, fpl_labels(boot), now.isoformat(), clubs_allowed=in_league)
     serving = config.DATA_DIR / "serving"
     serving.mkdir(parents=True, exist_ok=True)
     tmp = serving / "news.json.tmp"

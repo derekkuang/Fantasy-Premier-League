@@ -34,9 +34,17 @@ from .. import config
 
 BBC_TEAM_FEED = "https://feeds.bbci.co.uk/sport/football/teams/{slug}/rss.xml"
 
-# BBC's slug per club. Two do not follow the obvious pattern and 404 on the naive guess —
-# checked individually rather than derived, because a silently 404ing club is a club whose team
-# news simply never appears and nothing in the output would say so.
+# BBC's slug per club. This is a LOOKUP, not the league — see `clubs_in_play` below.
+#
+# THE BUG THIS SHAPE EXISTS TO PREVENT. The first version hardcoded twenty clubs and called that
+# the Premier League. Three of them (Burnley, West Ham, Wolves) had been relegated and three that
+# had come up (Coventry, Hull, Ipswich) were absent, so three clubs contributed NO team news all
+# season while three dead feeds were polled — and the run cheerfully reported "20/20 clubs",
+# because it was counting its own wrong list rather than the league.
+#
+# League composition changes every single year. It is never a constant, and the FPL bootstrap
+# already publishes the current twenty, so that is the authority. Keeping relegated clubs in this
+# table costs nothing and means a promotion needs no code change.
 BBC_SLUGS = {
     "Arsenal": "arsenal",
     "Aston Villa": "aston-villa",
@@ -45,20 +53,45 @@ BBC_SLUGS = {
     "Brighton": "brighton-and-hove-albion",            # NOT "brighton"
     "Burnley": "burnley",
     "Chelsea": "chelsea",
+    "Coventry City": "coventry-city",
     "Crystal Palace": "crystal-palace",
     "Everton": "everton",
     "Fulham": "fulham",
+    "Hull City": "hull-city",
+    "Ipswich": "ipswich-town",
+    "Ipswich Town": "ipswich-town",                    # FPL has used both short and full forms
     "Leeds": "leeds-united",
+    "Leicester": "leicester-city",
     "Liverpool": "liverpool",
+    "Luton": "luton-town",
     "Man City": "manchester-city",
     "Man Utd": "manchester-united",
     "Newcastle": "newcastle-united",
     "Nott'm Forest": "nottingham-forest",
+    "Sheffield Utd": "sheffield-united",
+    "Southampton": "southampton",
     "Sunderland": "sunderland",
     "Spurs": "tottenham-hotspur",
     "West Ham": "west-ham-united",
     "Wolves": "wolverhampton-wanderers",
 }
+
+
+def clubs_in_play(bootstrap: dict) -> tuple[list[str], list[str]]:
+    """The clubs actually in the league this season, from the FPL bootstrap. (known, unknown).
+
+    ALWAYS derive the league from here rather than from `BBC_SLUGS`. The bootstrap is the
+    authority on who is in the division; the slug table is only a name-to-URL lookup and may
+    contain clubs who are not currently up, or lack one who is.
+
+    `unknown` is returned rather than skipped so the caller can fail loudly. A promoted club with
+    no slug contributes no team news for a whole season and every other signal looks normal.
+    """
+    names = sorted(t["name"] for t in bootstrap.get("teams", []))
+    known = [n for n in names if n in BBC_SLUGS]
+    unknown = [n for n in names if n not in BBC_SLUGS]
+    return known, unknown
+
 
 MIN_INTERVAL_S = 1.0
 

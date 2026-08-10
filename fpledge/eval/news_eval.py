@@ -136,16 +136,24 @@ def evaluate(items: list[dict], labels: dict) -> dict:
 DIGEST_ITEM_CAP = 6          # per club, newest first
 
 
-def build_digest(items: list[dict], labels: dict, generated_at: str) -> dict:
+def build_digest(items: list[dict], labels: dict, generated_at: str,
+                 clubs_allowed: list[str] | None = None) -> dict:
     """A club-keyed digest for the beta page.
 
     Carries FPL's own status alongside every mention, so the page can show what FPL says next to
     what a feed said. That pairing IS the honesty: where they agree we have added nothing, and
     where they differ the reader can see both rather than being told which to believe.
+
+    `clubs_allowed` is the CURRENT league, from the bootstrap. The corpus is cumulative and
+    outlives a season, so without it a relegated club keeps appearing on the page months after
+    it left the division — which is how the page came to report 23 clubs in a 20-team league.
     """
+    allowed = set(clubs_allowed) if clubs_allowed else None
     by_club: dict = {}
     for it in items:
         club = it.get("club") or "?"
+        if allowed is not None and club not in allowed:
+            continue
         by_club.setdefault(club, []).append(it)
 
     clubs = {}
