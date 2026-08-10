@@ -1,4 +1,4 @@
-.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props capture-news simulate-season model-card clean
+.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props capture-news eval-news simulate-season model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -46,6 +46,10 @@ capture-props:
 # window and older items fall off permanently, so a weekly run misses midweek press conferences.
 capture-news:
 	.venv/bin/python scripts/capture_news.py $(ARGS)
+
+# Score the news extractor against FPL's own availability field. No API key needed.
+eval-news:
+	.venv/bin/python scripts/eval_news.py $(ARGS)
 
 # Play a whole season on each projection and count the points — the first measurement of
 # DECISIONS rather than ranking. Slow (a walk-forward plus a simulation per policy).

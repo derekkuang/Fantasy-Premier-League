@@ -53,6 +53,20 @@ conference entirely. Items dedupe by guid, so running it often costs nothing.
 season and a promoted club has no top-flight history to map. The check fires above three, which
 means the name mapping broke rather than that four teams came up.
 
+## Is the news feed worth anything? — `make eval-news`
+
+Scores what the extractor claims against FPL's own `status`/`news` field, which is a **free
+labelled set that exists today**. Needs no API key and no snapshot history.
+
+| number | means | read it as |
+|---|---|---|
+| precision | of players we flag injured, how many FPL confirms | the dangerous direction — a false "X is out" is worse than silence |
+| recall | of players FPL flags, how many the feed mentions | a property of the SOURCE, not the extractor |
+| **additive** | rotation cues on players FPL does **not** flag | **the only category worth money** — injury is free, rotation is the whole commercial case |
+
+Two questions were being conflated. *How big is the prize* needs the snapshot residual and waits
+for 2026-08-21. *Can our feed claim any of it* needed neither and was answerable all along.
+
 ## Checking on it
 
 ```bash
