@@ -39,6 +39,7 @@ from fpledge.ingest.newsfeed import (
     NewsFeedClient,
     NewsFeedError,
     clubs_in_play,
+    coverage,
     cue_tags,
     mentions,
 )
@@ -77,23 +78,35 @@ def main() -> None:
     # season: the first version of this shipped with three relegated clubs and without three
     # promoted ones, so three clubs contributed no team news at all while the run reported
     # "20/20 clubs" — it was counting its own wrong list.
-    in_league, no_slug = clubs_in_play(boot)
-    if no_slug:
-        # Loud, and non-zero. A promoted club with no slug is silent for a whole season and every
+    in_league, no_feed = clubs_in_play(boot)
+    if no_feed:
+        # Loud, and non-zero. A club no source covers is silent for a whole season and every
         # other signal looks healthy, so this must never be a warning you can scroll past.
-        print(f"ERROR: {len(no_slug)} club(s) in the league have no BBC slug: "
-              f"{', '.join(no_slug)}")
-        print("Add them to BBC_SLUGS in fpledge/ingest/newsfeed.py before capturing again —")
-        print("until then they contribute NO team news and nothing else would say so.")
+        print(f"ERROR: {len(no_feed)} club(s) in the league have no feed on ANY source: "
+              f"{', '.join(no_feed)}")
+        print("Add them in fpledge/ingest/newsfeed.py before capturing again (run")
+        print("scripts/probe_news_feeds.py to find working slugs) — until then they contribute")
+        print("NO team news at all and nothing else would say so.")
         raise SystemExit(1)
 
     client = NewsFeedClient()
     clubs = args.clubs or in_league
-    print(f"{len(in_league)} clubs in the league this season, all with feeds")
-    items, failed = [], []
+    print(f"{len(in_league)} clubs in the league this season, all covered by at least one source")
+
+    # Per-source reach, printed every run. Sources are additive and none of them covers everyone
+    # — the Guardian has no Brighton tag, eleven clubs publish no feed of their own — so "how
+    # thin is each publisher today" is a number worth watching rather than assuming.
+    for name, covered in coverage(clubs).items():
+        gaps = [c for c in clubs if c not in covered]
+        note = f"  (no feed: {', '.join(gaps)})" if gaps else ""
+        print(f"  {name:<9} covers {len(covered)}/{len(clubs)} clubs{note}")
+
+    items, failed, partial = [], [], []
     for club in clubs:
         try:
-            got = client.club(club)
+            # Partial failures land in `partial` and cost coverage; only a club whose every
+            # source failed raises and lands in `failed`.
+            got = client.club(club, failures=partial)
         except NewsFeedError as exc:
             failed.append({"club": club, "error": str(exc)})
             continue
@@ -107,6 +120,11 @@ def main() -> None:
 
     with_mentions = [i for i in items if i["mentions"]]
     with_cues = [i for i in items if i["cues"]]
+    by_source: dict[str, int] = {}
+    chars_by_source: dict[str, int] = {}
+    for it in items:
+        by_source[it["source"]] = by_source.get(it["source"], 0) + 1
+        chars_by_source[it["source"]] = chars_by_source.get(it["source"], 0) + len(it["summary"])
     row = {
         "ingest_ts": ts,
         "captured_at": now.isoformat(),
@@ -115,7 +133,15 @@ def main() -> None:
         "n_items": len(items),
         "n_items_naming_a_player": len(with_mentions),
         "n_items_with_cues": len(with_cues),
+        "items_by_source": by_source,
+        # Mean summary length per source. The whole reason for more than one source is that this
+        # number varies ~20x between publishers, and it is what decides whether an item is
+        # extractable prose or just a headline. Tracking it makes a feed going thin visible.
+        "mean_summary_chars_by_source": {
+            k: round(chars_by_source[k] / v) for k, v in by_source.items() if v
+        },
         "failed": failed,
+        "partial": partial,
         "path": str(path),
     }
     INDEX.parent.mkdir(parents=True, exist_ok=True)
@@ -135,15 +161,24 @@ def main() -> None:
 
     print(f"captured {len(items)} items from {row['clubs_ok']}/{len(clubs)} clubs — "
           f"{len(with_mentions)} name a player, {len(with_cues)} carry an intent cue")
+    for name in sorted(by_source):
+        print(f"  {name:<9} {by_source[name]:>4} items, "
+              f"mean summary {row['mean_summary_chars_by_source'][name]:>5} chars")
     print(f"digest -> {serving / 'news.json'} "
           f"({digest['n_clubs']} clubs, {digest['n_items']} items in corpus)")
     for it in with_mentions[:8]:
         who = ", ".join(m["name"] for m in it["mentions"])
-        print(f"  [{it['club']}] {it['title'][:60]}")
+        print(f"  [{it['club']}/{it['source']}] {it['title'][:60]}")
         print(f"      -> {who}   cues={it['cues'] or '-'}")
+    if partial:
+        # Not fatal — the club still has its other sources — but a source that quietly stops
+        # working is how a corpus gets thinner every week without anyone noticing.
+        print(f"NOTE: {len(partial)} source(s) failed without costing a club its coverage:")
+        for p in partial[:10]:
+            print(f"  - {p['error']}")
     if failed:
-        # A club that 404s has no team news all season and nothing else would say so.
-        print(f"WARNING: {len(failed)} club feeds failed: "
+        # Every source for this club failed. It has no team news at all and nothing else says so.
+        print(f"WARNING: {len(failed)} club(s) lost EVERY source: "
               f"{', '.join(f['club'] for f in failed)}")
     print(f"indexed -> {INDEX}")
     if row["clubs_ok"] == 0:

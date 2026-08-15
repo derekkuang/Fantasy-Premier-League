@@ -40,6 +40,8 @@ import gzip
 import json
 import pathlib
 from collections import defaultdict
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 from .. import config
 
@@ -135,6 +137,53 @@ def evaluate(items: list[dict], labels: dict) -> dict:
 # make it up to seven days stale on a page whose entire value is being current.
 DIGEST_ITEM_CAP = 6          # per club, newest first
 
+# Display truncation for the PAGE only. The corpus keeps every summary in full — that is the
+# text an extraction pass reads, and the whole reason for adding richer sources — but a club's
+# own feed runs to 5,000 characters per item and six of those is not a digest, it is an article.
+DIGEST_SUMMARY_CHARS = 320
+
+
+def parse_published(value: str) -> datetime | None:
+    """RFC-822 or ISO-8601 -> datetime. None when absent or unparseable, never a guess.
+
+    Two formats because the sources disagree: RSS emits RFC-822 ("Mon, 10 Aug 2026 09:48:53 GMT")
+    and the Premier League's JSON emits ISO-8601 ("2026-08-10T18:05:00Z"). Parsing only the first
+    would not raise — it would return None for every PL item, which sorts them last, so the
+    richest source would silently never reach the page. A format this function cannot read has to
+    be a visible gap, not a quiet demotion.
+
+    THE BUG THIS REPLACES. The digest used to sort on the raw string, and every source emits
+    RFC-822 ("Fri, 07 Aug 2026 10:07:49 GMT"), so a reverse string sort ordered by WEEKDAY NAME:
+    a Friday in June outranked a Monday in August. It went unnoticed while BBC supplied four
+    items per club — with barely anything to choose between, an arbitrary order looks fine — and
+    became a real defect at sixty items per club, where "newest six" silently meant "six of the
+    sixty". Anything claiming to be newest-first has to parse the date.
+    """
+    if not value:
+        return None
+    parsed = None
+    if "," in value:                                  # RFC-822 always carries the weekday comma
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            parsed = None
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(value)   # handles the trailing "Z" on 3.11+
+        except ValueError:
+            return None
+    # Feeds are inconsistent about offsets; normalise so naive and aware never compare.
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
+def _shorten(text: str, limit: int = DIGEST_SUMMARY_CHARS) -> str:
+    """Cut on a word boundary. Never mid-word, which reads as corrupted data rather than a cut."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:.—-")
+    return f"{cut}…"
+
 
 def build_digest(items: list[dict], labels: dict, generated_at: str,
                  clubs_allowed: list[str] | None = None) -> dict:
@@ -157,13 +206,18 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
         by_club.setdefault(club, []).append(it)
 
     clubs = {}
+    # Undated items sort last rather than first: an item we cannot date is not evidence of
+    # freshness, and on a page whose entire value is being current that is the safe direction.
+    oldest = datetime.min.replace(tzinfo=UTC)
     for club, rows in by_club.items():
-        rows = sorted(rows, key=lambda r: r.get("published") or "", reverse=True)
+        rows = sorted(rows, key=lambda r: parse_published(r.get("published")) or oldest,
+                      reverse=True)
         out = []
         for r in rows[:DIGEST_ITEM_CAP]:
             out.append({
                 "title": r.get("title"),
-                "summary": r.get("summary"),
+                "summary": _shorten(r.get("summary")),
+                "source": r.get("source"),
                 "link": r.get("link"),
                 "published": r.get("published"),
                 "cues": r.get("cues") or [],

@@ -378,7 +378,12 @@ export type NewsMention = {
   fpl_news: string;
 };
 
+export type NewsSource = "bbc" | "guardian" | "official";
+
 export type NewsItem = {
+  /** Which publisher carried it. A club's own statement and a rumour column are not the same
+   *  evidence, and the page says which is which rather than blending them. */
+  source?: NewsSource;
   title: string | null;
   summary: string | null;
   link: string | null;

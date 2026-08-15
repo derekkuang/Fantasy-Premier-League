@@ -56,10 +56,29 @@ function Cue({ tag }: { tag: string }) {
   );
 }
 
+// Where an item came from. Shown because the three sources are not equivalent evidence: a club's
+// own site is the club speaking, the BBC and Guardian are reporting on it. The reader is told
+// which, rather than being handed a blended feed and asked to trust it.
+const SOURCE_LABEL: Record<string, string> = {
+  official: "club",
+  bbc: "BBC",
+  guardian: "Guardian",
+};
+
+function SourceTag({ source }: { source?: string }) {
+  if (!source) return null;
+  return (
+    <span className="t-label rounded-full bg-black/[0.05] px-1.5 py-0.5 text-[10px] text-black/45 dark:bg-white/[0.07] dark:text-white/45">
+      {SOURCE_LABEL[source] ?? source}
+    </span>
+  );
+}
+
 function Item({ item }: { item: NewsItem }) {
   return (
     <li className="border-t border-black/5 py-3 first:border-t-0 dark:border-white/10">
       <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+        <SourceTag source={item.source} />
         {item.link ? (
           <a
             href={item.link}
@@ -153,7 +172,12 @@ export default async function NewsPage() {
             "agrees with FPL",
             data.quality.precision === null ? "—" : `${Math.round(data.quality.precision * 100)}%`,
           ],
-          ["rotation hints", String(data.quality.additive)],
+          // NOT "rotation hints". These are keyword hits on players FPL has not flagged, and at
+          // the precision printed beside them most are noise rather than signal. Adding richer
+          // sources raised how many players get mentioned at all (good) and lowered how often a
+          // keyword means what it looks like (bad) — calling the raw count "hints" would claim
+          // the second number is fine because the first one improved.
+          ["unverified rotation flags", String(data.quality.additive)],
         ].map(([label, value]) => (
           <div
             key={label}
@@ -168,9 +192,13 @@ export default async function NewsPage() {
       </div>
 
       <p className="mb-5 text-[12px] leading-relaxed text-black/55 dark:text-white/55">
-        Headlines come from public club feeds. The coloured tags are <em>keyword routing</em>, not
-        judgements — they say a phrase appeared, not that a manager meant it. Where FPL has
-        published a status for a player it is printed beside them and is the authority.{" "}
+        Items come from three kinds of public feed — each club&rsquo;s own site, the BBC and the
+        Guardian — and each is labelled with which. The coloured tags are <em>keyword routing</em>,
+        not judgements: they say a phrase appeared, not that a manager meant it. That distinction
+        matters more than it used to. Richer feeds mean far more players get mentioned, and also
+        far more keywords that do not mean what they look like, which is why the agreement rate
+        above is low and printed anyway. Where FPL has published a status for a player it is
+        printed beside them and is the authority.{" "}
         <Link href="/model" className="press underline decoration-black/20 hover:text-emerald-600">
           How we measure things
         </Link>

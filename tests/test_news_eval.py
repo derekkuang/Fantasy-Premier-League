@@ -124,3 +124,109 @@ def test_without_an_allowlist_every_club_is_kept():
         {"club": "Wolves", "title": "b", "published": "x", "cues": [], "mentions": []},
     ]
     assert build_digest(items, _labels(), "now")["n_clubs"] == 2
+
+
+# --- ordering and length, once feeds carry real volume --------------------------------------- #
+def _row(club, title, published, summary="", source="bbc"):
+    return {"club": club, "title": title, "published": published, "summary": summary,
+            "source": source, "mentions": [], "cues": []}
+
+
+def test_published_dates_are_parsed_not_string_compared():
+    """THE BUG THIS EXISTS TO PREVENT. Every source emits RFC-822, so a reverse STRING sort
+    orders by weekday name — 'Fri, 05 Jun' beats 'Mon, 10 Aug'. It hid while BBC gave four items
+    per club and there was nothing to choose between; at sixty items per club it meant the
+    "newest six" on the page were six arbitrary ones, some of them months old."""
+    from fpledge.eval.news_eval import build_digest
+
+    items = [
+        _row("Arsenal", "june", "Fri, 05 Jun 2026 14:00:00 GMT"),
+        _row("Arsenal", "august", "Mon, 10 Aug 2026 09:00:00 GMT"),
+        _row("Arsenal", "july", "Sun, 05 Jul 2026 09:00:00 GMT"),
+    ]
+    got = build_digest(items, _labels(), "now")["clubs"]["Arsenal"]
+    assert [i["title"] for i in got] == ["august", "july", "june"]
+
+
+def test_an_undated_item_sorts_last_rather_than_first():
+    """A missing date is not evidence of freshness, and this page's whole value is currency."""
+    from fpledge.eval.news_eval import build_digest
+
+    items = [_row("Arsenal", "undated", ""),
+             _row("Arsenal", "dated", "Mon, 10 Aug 2026 09:00:00 GMT")]
+    got = build_digest(items, _labels(), "now")["clubs"]["Arsenal"]
+    assert [i["title"] for i in got] == ["dated", "undated"]
+
+
+def test_an_unparseable_date_does_not_crash_the_digest():
+    from fpledge.eval.news_eval import build_digest, parse_published
+
+    assert parse_published("not a date") is None
+    items = [_row("Arsenal", "junk", "not a date"),
+             _row("Arsenal", "good", "Mon, 10 Aug 2026 09:00:00 GMT")]
+    assert [i["title"] for i in build_digest(items, _labels(), "now")["clubs"]["Arsenal"]] == [
+        "good", "junk"]
+
+
+def test_long_summaries_are_shortened_for_the_page_on_a_word_boundary():
+    """A club's own feed runs to 5,000 chars per item; six of those is an article, not a digest."""
+    from fpledge.eval.news_eval import DIGEST_SUMMARY_CHARS, build_digest
+
+    long = "Arteta confirmed the squad is fit and available for selection " * 40
+    got = build_digest([_row("Arsenal", "t", "Mon, 10 Aug 2026 09:00:00 GMT", long)],
+                       _labels(), "now")["clubs"]["Arsenal"][0]["summary"]
+    assert len(got) <= DIGEST_SUMMARY_CHARS + 1        # +1 for the ellipsis
+    assert got.endswith("…") and not got.endswith(" …")
+    assert "availabl…" not in got                      # never mid-word
+
+
+def test_a_short_summary_is_left_exactly_as_it_is():
+    from fpledge.eval.news_eval import build_digest
+
+    got = build_digest([_row("Arsenal", "t", "Mon, 10 Aug 2026 09:00:00 GMT", "Saka is fit.")],
+                       _labels(), "now")["clubs"]["Arsenal"][0]["summary"]
+    assert got == "Saka is fit."
+
+
+def test_truncation_is_display_only_and_never_touches_the_corpus():
+    """The corpus is the extraction input. Shortening it there would throw away the very text
+    the richer sources were added to capture."""
+    from fpledge.eval.news_eval import build_digest
+
+    long = "x " * 500
+    items = [_row("Arsenal", "t", "Mon, 10 Aug 2026 09:00:00 GMT", long)]
+    build_digest(items, _labels(), "now")
+    assert items[0]["summary"] == long
+
+
+def test_the_digest_records_which_publisher_each_item_came_from():
+    """Three sources of very different quality now feed one page; a reader who cannot tell a
+    club's own statement from a rumour column cannot weigh either."""
+    from fpledge.eval.news_eval import build_digest
+
+    items = [_row("Arsenal", "t", "Mon, 10 Aug 2026 09:00:00 GMT", source="official")]
+    assert build_digest(items, _labels(), "now")["clubs"]["Arsenal"][0]["source"] == "official"
+
+
+def test_both_date_formats_parse_because_the_sources_disagree():
+    """RSS emits RFC-822, the Premier League's JSON emits ISO-8601. Reading only the first would
+    not raise — it would return None for every PL item, sorting the richest source permanently
+    last so it never reached the page."""
+    from fpledge.eval.news_eval import parse_published
+
+    rfc = parse_published("Mon, 10 Aug 2026 09:48:53 GMT")
+    iso = parse_published("2026-08-10T18:05:00Z")
+    offset = parse_published("2026-08-11T14:00:00+0100")
+    assert rfc is not None and iso is not None and offset is not None
+    assert iso > rfc                                    # same day, later hour, comparable
+    assert offset.utcoffset().total_seconds() == 0      # normalised to UTC, never naive
+
+
+def test_the_two_formats_interleave_correctly_in_the_digest():
+    from fpledge.eval.news_eval import build_digest
+
+    items = [_row("Arsenal", "rss-older", "Mon, 10 Aug 2026 09:00:00 GMT"),
+             _row("Arsenal", "json-newer", "2026-08-10T18:05:00Z", source="pl"),
+             _row("Arsenal", "rss-oldest", "Sun, 09 Aug 2026 09:00:00 GMT")]
+    got = build_digest(items, _labels(), "now")["clubs"]["Arsenal"]
+    assert [i["title"] for i in got] == ["json-newer", "rss-older", "rss-oldest"]

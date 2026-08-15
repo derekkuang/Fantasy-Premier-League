@@ -2102,3 +2102,240 @@ inconvenient.
 Buying before step 1 means paying €3,000 a year for an unmeasured fraction of +0.067 Spearman, on
 a model whose *whole* edge over FPL takes thirty seasons to demonstrate (§26, §28). Buying after
 step 1 means paying for a known quantity. The wait costs one half-season and nothing else.
+
+---
+
+## 30. Three feeds per club: the ceiling rose, the floor fell (2026-08-11)
+
+§29 built the team-news capture on BBC's per-club RSS and named its own ceiling: *"an RSS item
+carries a headline and a one-line description, not the paragraph where the manager says who is
+fit."* That was treated as a property of RSS. It is not. It is a property of **that publisher**,
+and how much text a feed carries varies about twenty-fold between them.
+
+So the capture now reads three sources per club, all of them publisher-emitted RSS — the posture
+in §29 is unchanged, the reach is not.
+
+#### What each source is worth
+
+Measured live 2026-08-11, one capture, mean description length after stripping HTML:
+
+| source | clubs covered | items/club | mean summary | what it is |
+|---|---|---|---|---|
+| BBC | **20/20** | ~4 | **112 chars** | a headline and a clause |
+| Guardian | 19/20 | 20 | **740 chars** | a standfirst paragraph |
+| club's own site | 9/20 | 20 | **1,579 chars** | the club speaking, in full |
+
+One capture went from **196 items to 756**, and from **22k to 587k characters** of prose — 27x
+the text, from feeds anyone may read.
+
+No source covers everyone and none of them needs to. Brighton have **no Guardian tag at all** and
+are carried by their own site; eleven clubs publish no feed of their own and are carried by the
+other two. **Coverage is a union**, so a publisher going down costs coverage rather than a club,
+and only a club that loses *every* source raises. That distinction is now the shape of the code.
+
+#### The measurement that matters, and it cuts both ways
+
+Scored against FPL's own `status`/`news` as a partial oracle (§29's method, unchanged):
+
+| corpus | items | players named | precision | recall | rotation flags |
+|---|---|---|---|---|---|
+| BBC only (the §29 baseline) | 259 | 50 | 0.50 *(1/2)* | 0.079 | 6 |
+| Guardian only | 284 | 116 | 0.308 *(8/26)* | 0.238 | 38 |
+| club sites only | 180 | **164** | **0.048** *(4/84)* | 0.143 | 139 |
+| **all three** | **723** | **261** | **0.102** *(11/108)* | **0.381** | 162 |
+
+**Recall rose 4.8x — 0.079 to 0.381.** Of the 63 players FPL flags, the corpus now mentions 24
+where it mentioned 5. Recall is *"the ceiling on what a headline-and-summary corpus can ever
+see, and it is a property of the SOURCE rather than of the extractor"* (§29). That ceiling was
+the binding constraint and it moved a long way.
+
+**Precision fell to 0.102**, and the club feeds are the worst of it: 84 injury/suspension flags
+for 4 confirmations. The mechanism is not mysterious — club PR is long and mentions everyone, so
+"out", "ban" and "rest" appear constantly in prose about ticketing, kit launches and academy
+fixtures. The naive keyword pass fires on all of it.
+
+Note the BBC baseline's 0.50 was **1 correct out of 2 attempts**. It was never a precision
+result; it was a denominator too small to mean anything, which is exactly how a thin corpus
+flatters a keyword rule.
+
+**So: more text raised the ceiling and destroyed the naive floor.** Both halves are real and the
+second is not a regression to fix by reverting — a source that mentions 164 players and misreads
+them beats one that mentions 50, *provided the reading improves*. What it does is move the
+extraction pass from optional polish to the thing that makes any of this usable. The keyword
+layer is now the bottleneck, and §29's insistence that cues are "routing, not classification" has
+gone from a caveat to the operative fact.
+
+The page was relabelled to match: **"unverified rotation flags"**, not "rotation hints". 162 hits
+at 10% precision is not 162 signals, and the rule on that page is never to claim more than was
+measured.
+
+#### Two defects the volume exposed
+
+**A 200 that lies.** An unrecognised Guardian slug does not 404. `/football/albion/rss` returns
+**HTTP 200 with twenty well-formed items — from the site-wide football feed.** A typo would file
+league-wide news as one club's team news and look *healthier* than a genuinely quiet club,
+because it produces more items rather than fewer. Status code, parse success and item count all
+report fine; only the channel title disagrees. Every Guardian and official feed now declares the
+title it must announce and a mismatch is an error. BBC announces "BBC Sport" on every club feed
+and so cannot be guarded this way — its protection is that a wrong slug genuinely 404s.
+
+**"Newest first" was sorting by weekday name.** The digest ordered on the raw `published` string,
+and every source emits RFC-822 (`'Fri, 07 Aug 2026 10:07:49 GMT'`), so a reverse string sort ranks
+`Fri, 05 Jun` above `Mon, 10 Aug`. It was invisible while BBC supplied four items per club —
+with nothing to choose between, an arbitrary order looks correct — and became a real defect at
+sixty items per club, where "the newest six" silently meant "six of the sixty", some months old.
+Dates are parsed now; undated items sort last, because an item that cannot be dated is not
+evidence of freshness.
+
+Both are the same family as §29's hardcoded-league bug: **a check that passes for the wrong
+reason, on a page where being wrong looks exactly like being fine.**
+
+#### `scripts/probe_news_feeds.py`
+
+The feed tables are hardcoded, and this project has now been bitten twice by hardcoded
+league-shaped constants. Publishers rename tags, drop RSS, and move behind bot protection.
+Re-verification is therefore a command rather than a research session:
+
+    python scripts/probe_news_feeds.py                # verify every configured feed
+    python scripts/probe_news_feeds.py --candidates   # hunt slugs for uncovered clubs
+
+It counts a feed as working only if it returns 200 **and** parses with items **and** announces
+the expected title, because any one of those alone lies. It exits non-zero **only** when a club
+has no working source at all — BBC's feeds time out under concurrency, and failing the command on
+a single flaky source would train you to ignore its exit code, which is the one thing it must
+never do given what it guards.
+
+#### Open, and deliberately not guessed
+
+**Crystal Palace** return CloudFront **403 to everything, homepage included**, with full browser
+headers. That is edge blocking rather than a missing feed, and it is known to trigger on
+datacenter and VPN addresses — the probe ran through a VPN. Re-probe from a residential
+connection before concluding they have none; if it answers, they are a one-line addition.
+
+**Eleven clubs publish no feed of their own** — checked at the usual paths *and* by looking for a
+declared `<link rel="alternate" type="application/rss+xml">` on their homepage. That is a
+boundary, not an oversight, and reaching their words means article bodies, which crosses the line
+§29 drew on purpose.
+
+---
+
+## 31. The press-conference route: the league already aggregates it (2026-08-11)
+
+§30 left a hole: **eleven clubs publish no feed of their own**, and their press-conference
+write-ups live on their websites as article bodies — which `capture_news.py` will not fetch, on
+purpose. The obvious next move was to hunt eleven bespoke routes. That was the wrong shape.
+
+#### What was checked, and what it ruled out
+
+| route | verdict |
+|---|---|
+| club RSS at conventional paths | **9/20 only.** Already in (§30). |
+| `<link rel="alternate">` autodiscovery on the other 11 | **None declared.** They publish no feed; this is a boundary, not an oversight. |
+| club JSON APIs (`/api/news`, `/api/v1/news`, …) | Nothing. Only Liverpool answered at all, with HTTP 500. |
+| club sitemaps | Declared by 8 of 11 — but a sitemap lists **URLs, not content**. Following them means article bodies. Same line, no closer. |
+| YouTube captions | Official Data API allows non-owners to *list* caption tracks, not download them. Every library that fetches transcripts uses an undocumented endpoint. Not taken. |
+
+#### What worked: `footballapi.pulselive.com`
+
+The Premier League runs its own content API, and it carries **club-produced content**:
+
+    https://footballapi.pulselive.com/content/PremierLeague/text/EN/
+        ?pageSize=40&page=0&tagNames=club-produced-content:manchester-united
+
+`tagNames` filters cleanly — asking for `manchester-united` returns 10/10 Manchester United
+items, `liverpool` returns 10/10 Liverpool. One pull across the league:
+
+| source | clubs | items | mean text | names an FPL player | carries a cue |
+|---|---|---|---|---|---|
+| BBC | 20/20 | 259 | 147 | 22.0% | 15.4% |
+| Guardian | 19/20 | 284 | 805 | 40.8% | 48.6% |
+| club's own site | 9/20 | 180 | 1,622 | 33.9% | 61.1% |
+| **PL content API** | **20/20** | **739** | 437 | **38.6%** | 24.6% |
+
+**It covers all twenty clubs, and in one pull returns more items than the other three combined.**
+Player-naming density (38.6%) is near the Guardian's and well above BBC's, and the headlines are
+exactly the material this whole exercise is about — *"Iraola provides injury update on Bajcetic,
+Bradley, Ekitike, Endo"*, *"Arsenal confirm Saliba out with injury for an 'extended period'"*.
+
+The answer to "how do we reach the eleven clubs' own words" is therefore **not** eleven scrapers.
+The league already aggregates its clubs' own content into one public, filterable endpoint.
+
+Its lower cue rate (24.6% against the club feeds' 61.1%) is probably a *virtue* given §30:
+club-site prose trips injury keywords on ticketing and kit copy at 4.8% precision, and a source
+that fires less often while naming more players is the better input, not the weaker one.
+
+#### Posture — the reason this is not merged yet
+
+`newsfeed.py` says **"RSS ONLY, AND DELIBERATELY SO."** This is JSON, so adding it is a stated
+posture being changed rather than extended, and that is a decision to take deliberately:
+
+- **In favour.** No authentication. **No header spoofing — an honest User-Agent returns 200**, so
+  it is the Understat situation (§18) rather than a pretence of being a browser. It is a
+  publisher's own machine-readable interface serving its own public site, which is the same class
+  of thing as RSS and a long way from scraping article bodies. `premierleague.com/robots.txt`
+  carries no blanket disallow (only tracking query parameters); the API host serves no robots.txt.
+- **Against.** It is undocumented and unversioned, so it can change without notice, and
+  "undocumented" is not "permitted" — the s29A research-exception caveat from §29 still applies,
+  and applies harder the moment anything here is charged for.
+
+**Recommendation: add it as a fourth source**, keeping the per-source title/shape guards from
+§30, and reword the module's "RSS ONLY" claim to what is actually meant — *publisher-emitted
+machine interfaces only, never article bodies*. That is the line that was always doing the work;
+"RSS" was a proxy for it.
+
+#### Still open
+
+Whether pressers are *labelled* as such anywhere. In the current corpus only 8 of 723 items match
+an explicit press-conference pattern, but **225 of 284 Guardian items and 108 of 180 club items
+carry quoted speech** — the pressers are there, written up as news rather than filed as
+transcripts. Extraction has to read for reported speech, not for a "press conference" tag. Note
+also that this corpus is entirely **pre-season**: the first competitive pressers land the week of
+2026-08-21, and the presser-shaped fraction should be re-measured then rather than assumed from
+an August baseline.
+
+#### Merged, and the measurement afterwards (2026-08-11)
+
+It is in as a fourth source, and it is the **best single source in the project**:
+
+| source | items | mean text | names a player | precision | recall | players seen |
+|---|---|---|---|---|---|---|
+| BBC | 284 | 145 | 22.5% | 0.50 *(1/2)* | 0.079 | 54 |
+| Guardian | 289 | 799 | 40.5% | 0.308 | 0.238 | 117 |
+| club's own site | 215 | 1,536 | 34.9% | 0.048 | 0.159 | 167 |
+| **PL content API** | **739** | 405 | **40.7%** | **0.176** | **0.349** | **248** |
+
+Highest recall of any single source, highest player-naming rate, and better precision than either
+the club feeds or the previous three-source blend. Adding it moved the corpus:
+
+| | 3 sources | **all 4** |
+|---|---|---|
+| items | 788 | **1,527** |
+| recall | 0.397 | **0.508** |
+| precision | 0.102 | **0.118** |
+| distinct players mentioned | 266 | **350** |
+
+**Recall over half the players FPL flags, and precision went UP.** That is the opposite of what
+the club feeds did in §30, and it is the point: the club sites bought recall by flooding the
+matcher with prose, while this source names more players in less text. Restricted to the eleven
+clubs with no feed of their own — the reason it was added — recall went **0.206 → 0.302** with
+precision flat (0.318 → 0.314).
+
+Three implementation notes worth keeping:
+
+- **The tag filter fails open.** An unknown `tagNames` value is not rejected; the API ignores the
+  filter and returns HTTP 200 with a valid page of *other clubs'* articles. Asking for
+  `not-a-club` returns ten items across five real clubs. The guard is therefore **per item** —
+  every article is checked for the club tag it was supposedly filtered by — and a response
+  containing only foreign items raises, because it is not evidence that the club is quiet.
+- **Brighton's slug is `brighton-&-hove-albion`, with an ampersand.** Every hyphenated variant
+  returns nothing, and unencoded the `&` terminates the query string, so the filter silently does
+  not apply and other clubs' items come back. It is percent-encoded on the way out.
+- **The dates are ISO-8601** where the RSS sources are RFC-822. `parse_published` reads both now.
+  Handling only RFC-822 would not have raised — it returns `None`, which sorts last, so the
+  richest source would have been silently demoted off the page. §30's sort bug in a new costume.
+
+Caveat on the volume figure: the PL summaries are rich for some clubs (Forest 1,656 chars, Fulham
+935) and near-empty for others (Leeds 1, Sunderland 2). Most of its signal is in **titles** —
+which is fine, because its titles are unusually dense (*"Iraola provides injury update on
+Bajcetic, Bradley, Ekitike, Endo"*), and a 40.7% player-naming rate on 405 mean characters is the
+proof. But do not expect paragraph prose from it for every club.
