@@ -22,8 +22,8 @@ from .. import config
 class FPLClient:
     """Polite, retrying-free client. Add retries/backoff before going to prod."""
 
-    def __init__(self, session=None, min_interval: float | None = None):  # noqa: ANN001
-        import requests  # noqa: PLC0415
+    def __init__(self, session=None, min_interval: float | None = None):
+        import requests
 
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": config.HTTP_USER_AGENT})

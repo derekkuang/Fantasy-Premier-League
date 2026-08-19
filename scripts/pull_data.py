@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge.ingest import landing  # noqa: E402
-from fpledge.ingest.fpl_api import FPLClient  # noqa: E402
+from fpledge.ingest import landing
+from fpledge.ingest.fpl_api import FPLClient
 
 
 def main() -> None:

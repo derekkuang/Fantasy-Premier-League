@@ -14,10 +14,10 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config  # noqa: E402
-from fpledge.balance import check_balance, format_report  # noqa: E402
-from fpledge.gw import records_for_gw  # noqa: E402
-from fpledge.models.optimizer import BUDGET, optimize_squad  # noqa: E402
+from fpledge import config
+from fpledge.balance import check_balance, format_report
+from fpledge.gw import records_for_gw
+from fpledge.models.optimizer import BUDGET, optimize_squad
 
 UPCOMING_GW = 1
 _POS_ORDER = {"GK": 0, "DEF": 1, "MID": 2, "FWD": 3}

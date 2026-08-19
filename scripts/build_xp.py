@@ -15,10 +15,10 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config  # noqa: E402
-from fpledge.differentials import find_differentials  # noqa: E402
-from fpledge.gw import records_for_gw  # noqa: E402
-from fpledge.models import rank  # noqa: E402
+from fpledge import config
+from fpledge.differentials import find_differentials
+from fpledge.gw import records_for_gw
+from fpledge.models import rank
 
 UPCOMING_GW = 1
 

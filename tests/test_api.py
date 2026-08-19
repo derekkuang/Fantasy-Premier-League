@@ -94,14 +94,14 @@ class _FakeClient:
     def __init__(self, summary):
         self._summary = summary
 
-    def picks_summary(self, entry_id, gw):  # noqa: ANN001
+    def picks_summary(self, entry_id, gw):
         return self._summary
 
 
 class _FakeHTTPError(Exception):
     """Mimics requests.HTTPError: carries a .response with a status_code."""
 
-    def __init__(self, status):  # noqa: ANN001
+    def __init__(self, status):
         super().__init__(f"HTTP {status}")
         self.response = type("R", (), {"status_code": status})()
 
@@ -109,14 +109,14 @@ class _FakeHTTPError(Exception):
 class _FailingClient:
     """A private/nonexistent entry -> the FPL API returns 404."""
 
-    def picks_summary(self, entry_id, gw):  # noqa: ANN001
+    def picks_summary(self, entry_id, gw):
         raise _FakeHTTPError(404)
 
 
 class _OutageClient:
     """A network error / FPL outage -> no HTTP response at all."""
 
-    def picks_summary(self, entry_id, gw):  # noqa: ANN001
+    def picks_summary(self, entry_id, gw):
         raise RuntimeError("connection reset")
 
 
@@ -225,7 +225,7 @@ def test_team_picks_cached_across_requests(client):
     calls = {"n": 0}
 
     class _Counting:
-        def picks_summary(self, entry_id, gw):  # noqa: ANN001
+        def picks_summary(self, entry_id, gw):
             calls["n"] += 1
             return summary
 

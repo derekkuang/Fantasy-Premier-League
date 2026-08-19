@@ -18,6 +18,42 @@ import { Jersey } from "@/components/jersey";
  *  and saying so in points anchors it against the xP column beside it. */
 const vsField = (p: SquadPlayer) => p.captain_score ?? 2 * p.xp * (1 - (p.ownership ?? 0) / 100);
 
+/** Declared at module scope, not inside `CaptainCompare`'s render.
+ *
+ *  A component created during render is a NEW component type on every parent render, so React
+ *  unmounts and remounts it rather than updating it — any state or focus inside is discarded.
+ *  These toggles hold no state today, so the visible symptom was only a lost focus ring, but
+ *  the bug is in the shape rather than in what it currently costs. */
+function Toggle({
+  id,
+  label,
+  hint,
+  basis,
+  onBasis,
+}: {
+  id: "rank" | "xp";
+  label: string;
+  hint: string;
+  basis: "rank" | "xp";
+  onBasis: (b: "rank" | "xp") => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onBasis(id)}
+      title={hint}
+      aria-pressed={basis === id}
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+        basis === id
+          ? "border-emerald-600 bg-emerald-600 text-white"
+          : "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function CaptainCompare({
   starters,
   basis,
@@ -35,21 +71,6 @@ export function CaptainCompare({
     .sort((a, b) => (basis === "xp" ? b.xp - a.xp : vsField(b) - vsField(a)))
     .slice(0, 5);
 
-  const Toggle = ({ id, label, hint }: { id: "rank" | "xp"; label: string; hint: string }) => (
-    <button
-      type="button"
-      onClick={() => onBasis(id)}
-      title={hint}
-      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-        basis === id
-          ? "border-emerald-600 bg-emerald-600 text-white"
-          : "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55"
-      }`}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between px-0.5">
@@ -57,8 +78,14 @@ export function CaptainCompare({
           Captain
         </h2>
         <div className="flex gap-1">
-          <Toggle id="rank" label="rank-adjusted" hint="2·xP·(1−EO), gated by an xP floor" />
-          <Toggle id="xp" label="raw xP" hint="highest raw xP" />
+          <Toggle
+            id="rank"
+            label="rank-adjusted"
+            hint="2·xP·(1−EO), gated by an xP floor"
+            basis={basis}
+            onBasis={onBasis}
+          />
+          <Toggle id="xp" label="raw xP" hint="highest raw xP" basis={basis} onBasis={onBasis} />
         </div>
       </div>
 

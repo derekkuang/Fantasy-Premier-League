@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-
 # FPL availability status codes that mean "won't feature": injured, suspended,
 # unavailable, not-in-squad. ('a' = available, 'd' = doubtful -> use chance_of_playing.)
 _OUT_STATUSES = {"i", "s", "u", "n", "o"}

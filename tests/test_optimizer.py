@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("pulp")
 
-from fpledge.models.optimizer import FORMATION, SQUAD_QUOTA, optimize_squad  # noqa: E402
+from fpledge.models.optimizer import FORMATION, SQUAD_QUOTA, optimize_squad
 
 
 def _pool():

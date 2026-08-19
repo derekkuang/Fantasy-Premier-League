@@ -202,6 +202,38 @@ function PlayerRow({ p, rank, metric, onOpen }: { p: Prediction; rank: number; m
   );
 }
 
+const headCls = "px-2 py-2 t-label text-[11px] text-black/40 dark:text-white/40";
+
+/** Module scope, not inside `PredictionsTable`'s render — see the note in captain-compare.tsx.
+ *  A sortable header remounting on every render is the version of this bug a user can feel:
+ *  clicking one moves focus, and a remount drops it, so keyboard sorting loses its place. */
+function SortTh({
+  label,
+  m,
+  metric,
+  setMetric,
+}: {
+  label: string;
+  m: Metric;
+  metric: Metric;
+  setMetric: (m: Metric) => void;
+}) {
+  const active = metric === m;
+  return (
+    <th className={`${headCls} text-right`} aria-sort={active ? "descending" : "none"}>
+      <button
+        onClick={() => setMetric(m)}
+        className={
+          active ? "text-emerald-600" : "text-black/40 hover:text-emerald-600 dark:text-white/40"
+        }
+      >
+        {label}
+        {active ? " ↓" : ""}
+      </button>
+    </th>
+  );
+}
+
 function PredictionsTable({
   rows,
   rankFrom,
@@ -217,15 +249,6 @@ function PredictionsTable({
   gw: number | undefined;
   onOpen: (id: number) => void;
 }) {
-  const headCls = "px-2 py-2 t-label text-[11px] text-black/40 dark:text-white/40";
-  const SortTh = ({ label, m }: { label: string; m: Metric }) => (
-    <th className={`${headCls} text-right`}>
-      <button onClick={() => setMetric(m)} className={metric === m ? "text-emerald-600" : "text-black/40 hover:text-emerald-600 dark:text-white/40"}>
-        {label}
-        {metric === m ? " ↓" : ""}
-      </button>
-    </th>
-  );
   const em = (on: boolean) => (on ? "text-emerald-600" : "");
 
   return (
@@ -236,11 +259,11 @@ function PredictionsTable({
             <th className={`${headCls} w-[34px] text-left`}>#</th>
             <th className={`${headCls} text-left`}>Player</th>
             <th className={`${headCls} text-left`}>Pos</th>
-            <SortTh label="£" m="price" />
-            <SortTh label="Own%" m="ownership" />
-            <SortTh label={`xP GW${gw ?? ""}`} m="xp" />
+            <SortTh label="£" m="price" metric={metric} setMetric={setMetric} />
+            <SortTh label="Own%" m="ownership" metric={metric} setMetric={setMetric} />
+            <SortTh label={`xP GW${gw ?? ""}`} m="xp" metric={metric} setMetric={setMetric} />
             <th className={`${headCls} w-[250px] text-left`}>Next 3 gameweeks</th>
-            <SortTh label="N3 total" m="xp_next3" />
+            <SortTh label="N3 total" m="xp_next3" metric={metric} setMetric={setMetric} />
           </tr>
         </thead>
         <tbody>

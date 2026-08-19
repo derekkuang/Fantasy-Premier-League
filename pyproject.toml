@@ -47,6 +47,30 @@ include = ["fpledge*"]
 line-length = 100
 target-version = "py311"
 
+# WHY THIS BLOCK EXISTS. The project inherits ruff's default rule selection, which had drifted:
+# the symptom was 97 stale `# noqa` comments for rules that no longer fired, i.e. suppressions
+# for a ruleset nobody had chosen. Those are gone. What remains below is the set of rules this
+# codebase deliberately declines, each with its reason — silent `# noqa` sprinkling is how the
+# first mess happened, so an exclusion lives here where it can be argued with, or not at all.
+#
+# The ruleset can still move under a ruff upgrade. CI pins the ruff version for that reason;
+# bumping it is a deliberate commit, not a surprise on an unrelated branch.
+[tool.ruff.lint]
+ignore = [
+    # Multi-line f-strings inside a list literal. Deliberate and idiomatic in `balance.py`'s
+    # report renderer — the adjacent strings are meant to join.
+    "ISC004",
+    # `strptime` without a timezone. Every use parses a DATE and immediately calls `.date()`;
+    # a timezone would be noise on a value that has no time component.
+    "DTZ007",
+    # `dict(a=1, b=2)` over `{"a": 1}`. The keyword form reads better for the wide test fixtures
+    # in `test_xpoints.py`, which is the only place it is used.
+    "C408",
+    # `try/except: continue`. Used once, on a malformed odds row, with a comment saying so —
+    # skipping one bad row is the intended behaviour, not a swallowed error.
+    "S112",
+]
+
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI resolves Depends()/Query() in argument defaults — that's the idiom, not a B008 bug.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]

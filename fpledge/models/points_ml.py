@@ -60,7 +60,7 @@ def extract_features(
     acc: dict = {}
     out: list[dict] = []
 
-    def rate(a, key):  # noqa: ANN001
+    def rate(a, key):
         return a[key] / (a["minutes"] / 90.0) if a["minutes"] >= min_rate_minutes else 0.0
 
     for n in sorted(by_gw):
@@ -150,8 +150,8 @@ def walk_forward_lgbm(
     gameweek, which optimises within-GW RANKING directly (what per-GW Spearman measures).
     Returns records in the harness's (gw, element, pred, fpl_xp, actual, pos, minutes) shape.
     """
-    import lightgbm as lgb  # noqa: PLC0415
-    import numpy as np  # noqa: PLC0415
+    import lightgbm as lgb
+    import numpy as np
 
     rows = sorted(feat_rows, key=lambda r: r["gw"])  # gw-sorted so rank groups align
     cat_idx = FEATURES.index(_CAT_FEATURE)

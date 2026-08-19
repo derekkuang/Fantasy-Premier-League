@@ -15,11 +15,11 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config  # noqa: E402
-from fpledge.ingest import landing  # noqa: E402
-from fpledge.ingest.fpl_api import FPLClient  # noqa: E402
-from fpledge.storage import duck  # noqa: E402
-from fpledge.storage import load as storeload  # noqa: E402
+from fpledge import config
+from fpledge.ingest import landing
+from fpledge.ingest.fpl_api import FPLClient
+from fpledge.storage import duck
+from fpledge.storage import load as storeload
 
 LAST_SEASON = "2025/26"  # most recent completed season (history_past season_name form)
 

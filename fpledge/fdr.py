@@ -33,12 +33,12 @@ def defence_fdr(lam_against: float) -> int:
     return 5
 
 
-def _label(team_id, fpl_teams, tmap):  # noqa: ANN001
+def _label(team_id, fpl_teams, tmap):
     return tmap.get(fpl_teams.get(team_id)) or f"__unknown__:{team_id}"
 
 
 def fixture_ticker(
-    engine,  # noqa: ANN001 — fitted DixonColesModel
+    engine,
     fixtures: Sequence[dict],
     fpl_teams: dict,
     tmap: dict,
@@ -76,6 +76,6 @@ def fixture_ticker(
             "attack_fdr": attack_fdr(lam_away), "defence_fdr": defence_fdr(lam_home),
             "source": source,
         })
-    for t in ticker:
-        ticker[t].sort(key=lambda x: x["gw"])
+    for rows in ticker.values():
+        rows.sort(key=lambda x: x["gw"])
     return dict(ticker)

@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("numpy")
 pytest.importorskip("scipy")
 
-from fpledge.eval.fpl_backtest import validate_multi_gw, validate_xp  # noqa: E402
+from fpledge.eval.fpl_backtest import validate_multi_gw, validate_xp
 
 
 def _synthetic():

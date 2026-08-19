@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config  # noqa: E402
-from fpledge.storage import load  # noqa: E402
+from fpledge import config
+from fpledge.storage import load
 
 
 def main() -> None:

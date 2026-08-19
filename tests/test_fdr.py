@@ -4,10 +4,10 @@ from fpledge.fdr import attack_fdr, defence_fdr, fixture_ticker
 
 
 class _FakeEngine:
-    def knows(self, name):  # noqa: ANN001
+    def knows(self, name):
         return True
 
-    def predict(self, home, away):  # noqa: ANN001
+    def predict(self, home, away):
         return type("P", (), {"lam_home": 1.0, "lam_away": 1.0,
                               "clean_sheet_home": 0.37, "clean_sheet_away": 0.37})()
 

@@ -28,7 +28,7 @@ class _FakeSession:
         self.requested_url = None
         self.requested_timeout = None
 
-    def get(self, url, timeout=None):  # noqa: ANN001
+    def get(self, url, timeout=None):
         self.requested_url = url
         self.requested_timeout = timeout
         return _FakeResponse(self._payload)

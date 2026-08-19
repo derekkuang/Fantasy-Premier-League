@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("numpy")
 pytest.importorskip("scipy")
 
-from fpledge.models.dixon_coles import DixonColesModel  # noqa: E402
+from fpledge.models.dixon_coles import DixonColesModel
 
 
 def _synthetic_matches():

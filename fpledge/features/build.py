@@ -41,7 +41,7 @@ ORDER BY f.kickoff_utc;
 """
 
 
-def build_team_features(season: str | None = None, con=None):  # noqa: ANN001
+def build_team_features(season: str | None = None, con=None):
     """Return a DataFrame of point-in-time team form features for the season."""
     season = season or config.SEASON
     owns = con is None

@@ -1,25 +1,47 @@
 "use client";
 // Manual light/dark toggle. The initial theme is set pre-paint by the script in layout.tsx;
-// this just flips data-theme on <html> and remembers the choice in localStorage.
+// this flips data-theme on <html> and remembers the choice in localStorage.
+//
+// WHY useSyncExternalStore RATHER THAN useState + useEffect. The theme genuinely lives on
+// `<html data-theme>`, written before React ever runs. Mirroring it into component state inside
+// an effect made React a second, lagging copy of a value something else owns: it cost an extra
+// render on every mount, and React 19 flags it because a setState in an effect can cascade.
+// Reading the DOM as an external store removes the copy — the observer re-renders us whenever
+// the attribute changes, including if anything other than this button changes it.
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+type Theme = "light" | "dark";
+
+function subscribe(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => observer.disconnect();
+}
+
+const getSnapshot = (): Theme =>
+  document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+
+// null on the server: there is no DOM to read, and rendering nothing until mounted is what keeps
+// the SSR and client markup identical.
+const getServerSnapshot = (): Theme | null => null;
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"light" | "dark" | null>(null);
-
-  useEffect(() => {
-    setTheme((document.documentElement.dataset.theme as "light" | "dark") ?? "light");
-  }, []);
+  const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   function toggle() {
-    const next = theme === "dark" ? "light" : "dark";
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    // Write to the DOM only — the MutationObserver above turns that into a re-render, so there
+    // is exactly one source of truth and no path where the two disagree.
     document.documentElement.dataset.theme = next;
     try {
       localStorage.setItem("theme", next);
     } catch {
-      /* ignore */
+      /* private mode / storage disabled — the toggle still works for this page view */
     }
-    setTheme(next);
   }
 
   return (

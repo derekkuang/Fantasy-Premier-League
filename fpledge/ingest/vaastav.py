@@ -26,7 +26,7 @@ _POS = {
 
 
 def _get(url: str) -> str:
-    import requests  # noqa: PLC0415
+    import requests
 
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()

@@ -146,15 +146,15 @@ CREATE TABLE IF NOT EXISTS player_xp (
 """
 
 
-def connect(read_only: bool = False):  # noqa: ANN201
+def connect(read_only: bool = False):
     """Open (and lazily create) the project DuckDB database."""
-    import duckdb  # noqa: PLC0415
+    import duckdb
 
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     return duckdb.connect(str(config.DUCKDB_PATH), read_only=read_only)
 
 
-def init_schema(con=None) -> None:  # noqa: ANN001
+def init_schema(con=None) -> None:
     """Create all tables if they do not exist."""
     owns = con is None
     con = con or connect()

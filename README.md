@@ -1,5 +1,7 @@
 # fpledge
 
+[![CI](https://github.com/derekkuang/Fantasy-Premier-League/actions/workflows/ci.yml/badge.svg)](https://github.com/derekkuang/Fantasy-Premier-League/actions/workflows/ci.yml)
+
 **A Fantasy Premier League prediction system, and an unusually complete record of what it can and cannot prove.**
 
 A from-scratch Dixon-Coles match engine produces per-fixture scoreline probabilities. Those feed a structured expected-points model, a squad optimiser, and a web app that turns both into decisions a manager can act on before a deadline.
@@ -114,6 +116,24 @@ make capture-props   # weekly, needs ODDS_API_KEY
 
 python scripts/probe_news_feeds.py   # re-verify every news source in one command
 ```
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push, in three parallel jobs:
+
+| job | what it runs |
+| --- | --- |
+| `python` | `ruff check` (version-pinned) + the full `pytest` suite |
+| `web` | `tsc --noEmit`, `eslint`, and a real `next build` |
+| `docker` | builds the image **and starts it**, failing unless `/health` answers |
+
+The container job builds *and boots*, deliberately: a missing runtime library — `libgomp`, which
+CBC needs for the squad optimiser — builds cleanly and only fails when a user asks for an optimal
+squad. A build-only check would pass and the failure would reach production.
+
+The captures are deliberately **not** in CI. They hit live third-party endpoints, and firing them
+on every push would be both rude to those publishers and pointless — the data would land on a
+runner that is deleted a minute later. They belong on a schedule, on a host that keeps its disk.
 
 Validation and analysis:
 

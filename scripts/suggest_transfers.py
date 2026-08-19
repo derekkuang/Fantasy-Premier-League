@@ -15,9 +15,9 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge.gw import records_for_gw  # noqa: E402
-from fpledge.models.optimizer import BUDGET, optimize_squad  # noqa: E402
-from fpledge.transfers import suggest_transfers  # noqa: E402
+from fpledge.gw import records_for_gw
+from fpledge.models.optimizer import BUDGET, optimize_squad
+from fpledge.transfers import suggest_transfers
 
 
 def main() -> None:

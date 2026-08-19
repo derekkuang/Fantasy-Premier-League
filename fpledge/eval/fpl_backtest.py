@@ -91,7 +91,7 @@ class _OracleMinutes:
         self.p_60 = 1.0 if minutes >= 60 else 0.0
 
 
-def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes):  # noqa: ANN001
+def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes):
     """Expected saves under the selected model.
 
     "lambda" is the shipped behaviour: saves proportional to expected goals conceded, which
@@ -142,7 +142,7 @@ def validate_xp(
     `ingest.vaastav._add_clean_baseline`. Rows predating that field fall back to `fpl_xp` and
     are flagged by `baseline_clean` in the result.
     """
-    import scipy.stats as st  # noqa: PLC0415
+    import scipy.stats as st
 
     for fx in fixtures:
         fx["date_ord"] = _ordinal(fx["kickoff"])
@@ -159,12 +159,12 @@ def validate_xp(
 
     minutes_model = MinutesModel()
 
-    def _mp(a):  # noqa: ANN001 — minutes prediction under the chosen mode
+    def _mp(a):
         if minutes_mode == "recent":
             return minutes_model.from_recent(a["recent"][-6:])
         return minutes_model.from_season(a["minutes"], a["starts"], max(a["games"], 1))
 
-    def _rate(a, key, half_life=4.0):  # noqa: ANN001 — per-90 xg/xa rate under the chosen mode
+    def _rate(a, key, half_life=4.0):
         if xg_mode == "recent":
             vals, mins = a[f"recent_{key}"], a["recent"]
             m = len(vals)
@@ -193,7 +193,7 @@ def validate_xp(
             saves_rates = saves_model.SavesRates.build(save_counts) if save_counts else None
         if n > burn_in and acc:
             engine = DixonColesModel(half_life_days).fit([f for f in fixtures if f["gw"] < n])
-            def _mp_avail(el, a, gw=n):  # noqa: ANN001
+            def _mp_avail(el, a, gw=n):
                 """Minutes prediction with live availability already folded in.
 
                 Availability MUST be applied before `rate_shares` runs, because production
@@ -356,7 +356,7 @@ def validate_xp(
     return (metrics, records) if return_records else metrics
 
 
-def validate_multi_gw(records, window: int = 3, min_players: int = 10) -> dict:  # noqa: ANN001
+def validate_multi_gw(records, window: int = 3, min_players: int = 10) -> dict:
     """Score a multi-GW outlook: sum each player's model xP and FPL xP over rolling `window`
     gameweeks and rank against their realized summed points (played players only).
 
@@ -365,7 +365,7 @@ def validate_multi_gw(records, window: int = 3, min_players: int = 10) -> dict: 
     pick on a `window`-week outlook, whose sum ranks the real `window`-week output better?".
     records: the (gw, element, my_xp, fpl_xp, actual, pos, minutes) tuples from validate_xp.
     """
-    import scipy.stats as st  # noqa: PLC0415
+    import scipy.stats as st
 
     by = {(r[0], r[1]): r for r in records}
     gws = sorted({r[0] for r in records})
@@ -384,15 +384,17 @@ def validate_multi_gw(records, window: int = 3, min_players: int = 10) -> dict: 
             continue
         m, f, a = [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
         sm, sf = st.spearmanr(m, a).correlation, st.spearmanr(f, a).correlation
-        if sm == sm:
+        # spearmanr returns NaN when a side has no variance (every value tied). Skip those
+        # gameweeks rather than letting a NaN poison the mean.
+        if not math.isnan(sm):
             sp_m.append(sm)
-        if sf == sf:
+        if not math.isnan(sf):
             sp_f.append(sf)
         mae_m.append(statistics.mean(abs(x - y) for x, y in zip(m, a, strict=True)))
         mae_f.append(statistics.mean(abs(x - y) for x, y in zip(f, a, strict=True)))
         n += len(rows)
 
-    mean = lambda xs: statistics.mean(xs) if xs else None  # noqa: E731
+    mean = lambda xs: statistics.mean(xs) if xs else None
     return {
         "window": window, "windows_scored": len(sp_m), "n": n,
         "gw_spearman_model": mean(sp_m), "gw_spearman_fpl": mean(sp_f),
@@ -400,7 +402,7 @@ def validate_multi_gw(records, window: int = 3, min_players: int = 10) -> dict: 
     }
 
 
-def _subset_metrics(recs, st) -> dict | None:  # noqa: ANN001
+def _subset_metrics(recs, st) -> dict | None:
     """MAE + per-GW Spearman for model and FPL over a record subset. record indices:
     (gw=0, element=1, my_xp=2, fpl_xp=3, actual=4, pos=5, minutes=6)."""
     if not recs:
@@ -430,7 +432,7 @@ def _subset_metrics(recs, st) -> dict | None:  # noqa: ANN001
             continue
         m, f, a = [r[2] for r in g], [r[3] for r in g], [r[4] for r in g]
         sm, sf = st.spearmanr(m, a).correlation, st.spearmanr(f, a).correlation
-        if not (sm == sm and sf == sf):   # either side undefined => not a comparison
+        if math.isnan(sm) or math.isnan(sf):   # either side undefined => not a comparison
             continue
         compared += 1
         common.extend(g)
@@ -455,7 +457,7 @@ def _subset_metrics(recs, st) -> dict | None:  # noqa: ANN001
     }
 
 
-def _score(records, st) -> dict:  # noqa: ANN001
+def _score(records, st) -> dict:
     if not records:
         return {"n": 0}
     played = [r for r in records if r[6] > 0]  # players who actually featured

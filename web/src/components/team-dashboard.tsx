@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { SquadPlayer, TeamResponse, TickerFixture, TransferMove } from "@/lib/api";
+import type { TeamResponse, TickerFixture, TransferMove } from "@/lib/api";
 import {
   chooseCaptainId,
   countByPos,

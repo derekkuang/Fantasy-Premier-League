@@ -1,0 +1,132 @@
+# CI: the checks that must pass before anything is merged.
+#
+# WHAT THIS GUARDS. The repo's whole claim is that its numbers are trustworthy, and the two
+# failure modes that would quietly break that are a leaked feature (a backtest that scores
+# itself on data it should not have seen) and a stale suppression (lint that passes because
+# someone silenced it). Both are caught by `pytest` and `ruff` respectively, so both run here on
+# every push rather than on whoever remembers.
+#
+# Deliberately NOT here: the captures. `snapshot.py`, `capture_news.py` and `capture_props.py`
+# hit live third-party endpoints, and a CI runner firing them on every push would be both rude
+# to those publishers and useless — the data lands on a runner that is deleted a minute later.
+# They belong on a schedule, on a host that keeps its disk.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first — the older run's verdict is already
+# irrelevant, and letting both finish just makes the queue lie about how long CI takes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: python — tests and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        # `[api]` adds fastapi/httpx for the TestClient. Note this still pulls the heavy base
+        # dependencies (duckdb, lightgbm, mlflow) because they sit in `[project.dependencies]`,
+        # so this step is the slow one. The tests themselves import only fastapi and stdlib —
+        # moving the heavy set into an extra would cut CI time substantially and enforce the
+        # stdlib-only claim the package docstrings make. Worth doing; not done here, because
+        # re-tiering dependencies is a change to the package contract, not to CI.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[api]"
+          pip install pytest "ruff==0.16.0"
+
+      - name: Lint
+        # Pinned above so the ruleset cannot move under an unrelated push. See pyproject.toml.
+        run: ruff check fpledge tests scripts
+
+      - name: Tests
+        run: pytest -q
+
+  web:
+    name: web — typecheck, lint, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        # `tsc --noEmit` is the real gate. `next build` type-checks too, but it is slower and its
+        # errors are harder to read, so failing fast here gives a better message for the same bug.
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        # Catches what typecheck cannot: a server component importing something client-only, a
+        # bad route export, a page that fails to prerender. The API is not reachable from CI, so
+        # pages that fetch at build time must degrade rather than hard-fail — this proves they do.
+        run: npm run build
+
+  docker:
+    name: docker — image builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: fpledge-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: It actually serves
+        # Building proves the Dockerfile parses. It does not prove the app starts — a missing
+        # runtime library (libgomp, which CBC needs for the optimiser) builds fine and fails on
+        # first request. So: start it, wait for /health, and fail loudly with logs if it never
+        # comes up.
+        run: |
+          docker run -d --name api -p 8000:8000 fpledge-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              echo "healthy after ${i}s"
+              curl -fsS http://127.0.0.1:8000/health
+              docker rm -f api >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::container never became healthy"
+          docker logs api
+          docker rm -f api >/dev/null
+          exit 1

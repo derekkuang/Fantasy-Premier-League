@@ -50,7 +50,7 @@ def test_risk_tier_direction_and_bounds():
 
 def test_risk_tier_is_monotonic_in_ownership():
     """More owned can never be MORE of a punt — a non-monotonic band would be nonsense."""
-    tiers = [rank.risk_tier(o) for o in range(0, 101)]
+    tiers = [rank.risk_tier(o) for o in range(101)]
     assert tiers == sorted(tiers, reverse=True)
 
 

@@ -13,11 +13,15 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import scipy.stats as st  # noqa: E402
+import scipy.stats as st
 
-from fpledge.eval.fpl_backtest import _score  # noqa: E402
-from fpledge.ingest import vaastav  # noqa: E402
-from fpledge.models.points_ml import extract_features, structured_records, walk_forward_lgbm  # noqa: E402
+from fpledge.eval.fpl_backtest import _score
+from fpledge.ingest import vaastav
+from fpledge.models.points_ml import (
+    extract_features,
+    structured_records,
+    walk_forward_lgbm,
+)
 
 SEASON = sys.argv[1] if len(sys.argv) > 1 else "2025-26"
 

@@ -15,8 +15,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge.eval.fpl_backtest import validate_multi_gw, validate_xp  # noqa: E402
-from fpledge.ingest import vaastav  # noqa: E402
+from fpledge.eval.fpl_backtest import validate_multi_gw, validate_xp
+from fpledge.ingest import vaastav
 
 SEASON = sys.argv[1] if len(sys.argv) > 1 else "2025-26"
 

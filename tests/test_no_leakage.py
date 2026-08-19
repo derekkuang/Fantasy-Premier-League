@@ -8,7 +8,6 @@ import pytest
 
 from fpledge.features import pointintime as pit
 
-
 # Synthetic history for one team: three past matches and one FUTURE match,
 # all with a `kickoff` epoch timestamp and a `goals` value.
 ROWS = [

@@ -36,7 +36,7 @@ def latest_raw(source: str, endpoint: str, season: str | None = None):
     return _read_gz(snapshots[-1])  # lexicographic sort == chronological (UTC stamps)
 
 
-def load_bootstrap(con, boot: dict, season: str | None = None) -> None:  # noqa: ANN001
+def load_bootstrap(con, boot: dict, season: str | None = None) -> None:
     season = season or config.SEASON
 
     teams = [(season, t["id"], t["name"]) for t in boot["teams"]]
@@ -58,7 +58,7 @@ def load_bootstrap(con, boot: dict, season: str | None = None) -> None:  # noqa:
     con.executemany("INSERT INTO players VALUES (?, ?, ?, ?, ?, ?)", players)
 
 
-def load_fixtures(con, fixtures: list, season: str | None = None) -> None:  # noqa: ANN001
+def load_fixtures(con, fixtures: list, season: str | None = None) -> None:
     season = season or config.SEASON
 
     def _ts(v):
@@ -86,7 +86,7 @@ def load_fixtures(con, fixtures: list, season: str | None = None) -> None:  # no
     )
 
 
-def load_player_season(con, records: list[dict], season: str | None = None) -> int:  # noqa: ANN001
+def load_player_season(con, records: list[dict], season: str | None = None) -> int:
     """Idempotently load last-season per-player aggregates for goal/assist shares."""
     season = season or config.SEASON
     con.execute("DELETE FROM player_season WHERE season = ?", [season])
@@ -104,7 +104,7 @@ def load_player_season(con, records: list[dict], season: str | None = None) -> i
     return len(rows)
 
 
-def load_hist_matches(con, matches: list[dict]) -> int:  # noqa: ANN001
+def load_hist_matches(con, matches: list[dict]) -> int:
     """Idempotently load historical results + closing odds into hist_matches."""
     con.execute("DELETE FROM hist_matches")
     rows = [
@@ -119,7 +119,7 @@ def load_hist_matches(con, matches: list[dict]) -> int:  # noqa: ANN001
     return len(rows)
 
 
-def load_all(season: str | None = None, con=None) -> dict:  # noqa: ANN001
+def load_all(season: str | None = None, con=None) -> dict:
     """Init schema, load latest bootstrap + fixtures, return row counts per table."""
     season = season or config.SEASON
     owns = con is None

@@ -127,7 +127,7 @@ class DixonColesEngine:
         self._pb_model = None  # penaltyblog model when available
         self._fallback = None  # (avg_for, avg_against, home_adv) baseline
 
-    def fit(self, matches, half_life_days: float = 180.0):  # noqa: ANN001
+    def fit(self, matches, half_life_days: float = 180.0):
         """Fit on historical matches.
 
         `matches` is an iterable of dicts with keys:
@@ -136,8 +136,8 @@ class DixonColesEngine:
         kicked off strictly before the fixture you intend to predict.
         """
         try:
-            import pandas as pd  # noqa: PLC0415
-            import penaltyblog as pb  # noqa: PLC0415
+            import pandas as pd
+            import penaltyblog as pb
         except ImportError:
             self._fit_fallback(matches)
             return self
@@ -150,7 +150,7 @@ class DixonColesEngine:
         self._pb_model.fit()
         return self
 
-    def _fit_fallback(self, matches) -> None:  # noqa: ANN001
+    def _fit_fallback(self, matches) -> None:
         rows = list(matches)
         if not rows:
             self._fallback = (1.3, 1.3, 0.25)
@@ -159,7 +159,7 @@ class DixonColesEngine:
         ag = sum(r["away_goals"] for r in rows) / len(rows)
         self._fallback = (hg, ag, max(hg - ag, 0.0))
 
-    def expected_goals(self, home: str, away: str) -> tuple[float, float]:  # noqa: ARG002
+    def expected_goals(self, home: str, away: str) -> tuple[float, float]:
         if self._pb_model is not None:
             p = self._pb_model.predict(home, away)
             # penaltyblog exposes expected goals on the prediction object.

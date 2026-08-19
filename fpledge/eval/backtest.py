@@ -136,7 +136,7 @@ def _mlflow_log_run(experiment: str | None, model_ver: str, res: dict) -> None:
     if experiment is None:
         return
     try:
-        import mlflow  # noqa: PLC0415
+        import mlflow
     except ImportError:
         return
     mlflow.set_experiment(experiment)

@@ -66,7 +66,7 @@ def optimize_squad(players: Sequence[dict], budget: float = BUDGET) -> dict:
     Returns {squad, starting_xi, bench, captain, cost, xi_xp, total_xp}.
     Raises ValueError if no feasible optimal squad exists (pool too small / budget too tight).
     """
-    import pulp  # noqa: PLC0415
+    import pulp
 
     by_id = {p["id"]: p for p in players}
     ids = list(by_id)
@@ -113,7 +113,7 @@ def optimize_squad(players: Sequence[dict], budget: float = BUDGET) -> dict:
             "pool too small, budget too tight, or too few clubs."
         )
 
-    def chosen(var) -> list:  # noqa: ANN001
+    def chosen(var) -> list:
         return [i for i in ids if (var[i].value() or 0) > 0.5]
 
     squad = chosen(in_squad)

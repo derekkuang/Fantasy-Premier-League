@@ -4,7 +4,6 @@ import math
 
 from fpledge.betting import odds
 
-
 THREE_WAY = [2.10, 3.50, 3.80]  # a typical 1X2 market (overround > 1)
 
 

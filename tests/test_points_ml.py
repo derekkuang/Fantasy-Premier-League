@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("numpy")
 pytest.importorskip("scipy")
 
-from fpledge.models.points_ml import FEATURES, extract_features  # noqa: E402
+from fpledge.models.points_ml import FEATURES, extract_features
 
 
 def _synthetic():

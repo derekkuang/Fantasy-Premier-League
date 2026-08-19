@@ -38,10 +38,10 @@ class DixonColesModel:
     def knows(self, team: str) -> bool:
         return team in self.idx
 
-    def fit(self, matches):  # noqa: ANN001
-        import numpy as np  # noqa: PLC0415
-        from scipy.optimize import minimize  # noqa: PLC0415
-        from scipy.special import gammaln  # noqa: PLC0415
+    def fit(self, matches):
+        import numpy as np
+        from scipy.optimize import minimize
+        from scipy.special import gammaln
 
         rows = [
             m for m in matches
@@ -101,7 +101,7 @@ class DixonColesModel:
         return self
 
     def _centred(self):
-        import numpy as np  # noqa: PLC0415
+        import numpy as np
 
         p, n = self.params, self._n
         a = p[:n] - p[:n].mean()
@@ -112,7 +112,7 @@ class DixonColesModel:
     def rho(self) -> float:
         return float(self.params[2 * self._n + 1])
 
-    def _strength(self, team: str, a, d):  # noqa: ANN001
+    def _strength(self, team: str, a, d):
         """(attack, defence) for a team — real if known, else the promoted-side prior."""
         if team in self.idx:
             i = self.idx[team]
@@ -120,7 +120,7 @@ class DixonColesModel:
         return self.PROMOTED_ATTACK, self.PROMOTED_DEFENCE
 
     def expected_goals(self, home: str, away: str) -> tuple[float, float]:
-        import numpy as np  # noqa: PLC0415
+        import numpy as np
 
         a, d, home_adv, mu = self._centred()
         att_h, def_h = self._strength(home, a, d)

@@ -86,7 +86,7 @@ def risk_label(tier: int) -> str:
     return ""
 
 
-def differential_captain_index(xps, eos, alpha: float = 0.8):  # noqa: ANN001
+def differential_captain_index(xps, eos, alpha: float = 0.8):
     """Index of the best DIFFERENTIAL captain among parallel xps/eos, subject to an xP floor.
 
     An unowned LOW-xP player is noise, not a rank play — captaining a 4.5-xP differential

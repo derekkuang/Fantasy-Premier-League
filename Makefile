@@ -1,4 +1,4 @@
-.PHONY: setup test lint pull backtest precompute serve eval-brief snapshot capture-props capture-news eval-news simulate-season model-card clean
+.PHONY: setup test lint ci web-check docker-check pull backtest precompute serve eval-brief snapshot capture-props capture-news eval-news simulate-season model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -22,6 +22,26 @@ test:
 
 lint:
 	.venv/bin/python -m ruff check fpledge tests scripts
+
+# Everything CI runs, in the same order, so a red pipeline can be reproduced without pushing.
+# Kept as literal commands rather than a call out to `act`: the point is that this is runnable
+# on a laptop with nothing installed but the venv and node.
+ci: lint test web-check
+	@echo "── all CI checks passed ──"
+
+web-check:
+	cd web && npx tsc --noEmit && npm run lint && npm run build
+
+# Build the container and prove it SERVES, not just that it builds. libgomp (CBC's runtime
+# dependency, which PuLP shells out to for the optimiser) is the reason: without it the image
+# builds cleanly and fails only when someone asks for an optimal squad.
+docker-check:
+	docker build -t fpledge-api:local .
+	docker run -d --name fpledge-check -p 8000:8000 fpledge-api:local
+	@for i in $$(seq 1 30); do \
+	  curl -fsS http://127.0.0.1:8000/health && echo "" && break || sleep 1; \
+	done; \
+	status=$$?; docker rm -f fpledge-check >/dev/null; exit $$status
 
 # Pull + land core FPL data into data/raw/.
 pull:

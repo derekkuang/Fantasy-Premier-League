@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import gzip
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import config
@@ -22,7 +22,7 @@ from .. import config
 
 def utc_stamp() -> str:
     """Filesystem-safe UTC timestamp, e.g. 2026-07-24T06-00-05Z."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
 
 
 def land(

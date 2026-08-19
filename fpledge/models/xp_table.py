@@ -32,7 +32,7 @@ def compute_xp_records(
     players: Sequence[dict],
     fpl_teams: dict,
     fixtures: Sequence[tuple],
-    engine,  # noqa: ANN001 — fitted DixonColesModel
+    engine,
     tmap: dict,
     prices: dict,
     availability: dict | None = None,
@@ -53,7 +53,7 @@ def compute_xp_records(
     """
     minutes_model = MinutesModel()
 
-    def _pred(p):  # noqa: ANN001 — season proxy, discounted by live availability if provided
+    def _pred(p):
         mp = minutes_model.from_season(p["minutes"], p["starts"])
         if availability:
             chance, status = availability.get(p["code"], (None, None))
@@ -160,7 +160,7 @@ def compute_multi_gw_xp(
     players: Sequence[dict],
     fpl_teams: dict,
     fixtures_by_gw: dict,
-    engine,  # noqa: ANN001 — fitted DixonColesModel
+    engine,
     tmap: dict,
     prices: dict,
     ticker: dict,

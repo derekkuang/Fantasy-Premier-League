@@ -16,11 +16,11 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge.eval.backtest import walk_forward  # noqa: E402
-from fpledge.ingest import footballdata  # noqa: E402
-from fpledge.models.dixon_coles import DixonColesModel  # noqa: E402
-from fpledge.storage import duck  # noqa: E402
-from fpledge.storage import load as storeload  # noqa: E402
+from fpledge.eval.backtest import walk_forward
+from fpledge.ingest import footballdata
+from fpledge.models.dixon_coles import DixonColesModel
+from fpledge.storage import duck
+from fpledge.storage import load as storeload
 
 SEASONS = ["2324", "2425", "2526"]  # 2023/24, 2024/25, 2025/26
 

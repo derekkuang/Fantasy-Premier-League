@@ -11,12 +11,12 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config  # noqa: E402
-from fpledge.fdr import fixture_ticker  # noqa: E402
-from fpledge.ingest import footballdata  # noqa: E402
-from fpledge.models.dixon_coles import DixonColesModel  # noqa: E402
-from fpledge.models.teammap import build_team_map  # noqa: E402
-from fpledge.storage import duck  # noqa: E402
+from fpledge import config
+from fpledge.fdr import fixture_ticker
+from fpledge.ingest import footballdata
+from fpledge.models.dixon_coles import DixonColesModel
+from fpledge.models.teammap import build_team_map
+from fpledge.storage import duck
 
 SEASONS = ["2324", "2425", "2526"]
 START_GW = 1
