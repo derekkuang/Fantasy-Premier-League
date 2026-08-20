@@ -49,18 +49,14 @@ WHEN TO RUN IT
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import sys
 from datetime import UTC, datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config
-from fpledge.ingest import landing
+from fpledge.ingest import capture_index, landing
 from fpledge.ingest.fpl_api import FPLClient
-
-INDEX = config.DATA_DIR / "raw" / "snapshot_index.jsonl"
 
 
 def _parse(ts: str | None) -> datetime | None:
@@ -132,13 +128,13 @@ def main() -> None:
         "n_with_ep_next": with_ep,
         "paths": [str(p) for p in paths],
     }
-    INDEX.parent.mkdir(parents=True, exist_ok=True)
-    with INDEX.open("a") as fh:
-        fh.write(json.dumps(row) + "\n")
+    # One immutable object per capture — see the note in capture_news.py. An appended local file
+    # cannot survive a scheduler, and this index is the only record that a capture happened.
+    index_locator = capture_index.record(capture_index.SNAPSHOT, row, ingest_ts=ts)
 
     print(f"captured {len(players)} players — {with_ep} with a non-zero ep_next, "
           f"{flagged} flagged as doubtful or worse")
-    print(f"indexed -> {INDEX}")
+    print(f"indexed -> {index_locator}")
     for p in paths:
         print(f"  {p}")
 

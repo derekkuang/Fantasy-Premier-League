@@ -42,22 +42,22 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
-from .. import config
-from ..ingest import landing
+from ..ingest import capture_index, landing
 
 
 def load_corpus(index_path: pathlib.Path | None = None) -> list[dict]:
     """Every captured item, deduped by guid. Captures overlap by design."""
-    idx = index_path or (config.DATA_DIR / "raw" / "news_index.jsonl")
-    if not idx.exists():
-        return []
+    # Via `capture_index`, which merges the legacy local JSONL with the one-object-per-capture
+    # entries a scheduler writes. An explicit `index_path` still reads that file directly.
+    if index_path is not None:
+        rows = ([json.loads(line) for line in index_path.read_text().splitlines() if line.strip()]
+                if index_path.exists() else [])
+    else:
+        rows = capture_index.entries(capture_index.NEWS)
     items: list[dict] = []
     missing = 0
-    for line in idx.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        locator = json.loads(line).get("path", "")
+    for row in rows:
+        locator = row.get("path", "")
         if not locator:
             continue
         # Routed through `landing` rather than opened directly. The old form was

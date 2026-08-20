@@ -27,25 +27,25 @@ from __future__ import annotations
 import json
 import pathlib
 
-from .. import config
-from ..ingest import landing
+from ..ingest import capture_index, landing
 
 
 def _index_path() -> pathlib.Path:
-    return config.DATA_DIR / "raw" / "snapshot_index.jsonl"
+    return capture_index.legacy_path(capture_index.SNAPSHOT)
 
 
 def load_index(path: pathlib.Path | None = None) -> list[dict]:
-    """Every capture ever taken, newest last. Empty if none have run."""
-    p = path or _index_path()
-    if not p.exists():
-        return []
-    rows = []
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
-    return rows
+    """Every capture ever taken, oldest first. Empty if none have run.
+
+    Reads through `capture_index`, which merges the legacy local JSONL with the one-object-per-
+    capture entries a scheduler writes. An explicit `path` still reads that file directly — the
+    tests depend on it, and so does inspecting a single index by hand.
+    """
+    if path is not None:
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return capture_index.entries(capture_index.SNAPSHOT)
 
 
 def best_capture_per_gameweek(index: list[dict]) -> dict:

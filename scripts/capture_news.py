@@ -33,7 +33,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from fpledge import config
 from fpledge.eval.news_eval import build_digest, fpl_labels, load_corpus
-from fpledge.ingest import landing
+from fpledge.ingest import capture_index, landing
 from fpledge.ingest.fpl_api import FPLClient
 from fpledge.ingest.newsfeed import (
     NewsFeedClient,
@@ -43,8 +43,6 @@ from fpledge.ingest.newsfeed import (
     cue_tags,
     mentions,
 )
-
-INDEX = config.DATA_DIR / "raw" / "news_index.jsonl"
 
 
 def fpl_players(bootstrap: dict) -> list[dict]:
@@ -144,9 +142,11 @@ def main() -> None:
         "partial": partial,
         "path": str(path),
     }
-    INDEX.parent.mkdir(parents=True, exist_ok=True)
-    with INDEX.open("a") as fh:
-        fh.write(json.dumps(row) + "\n")
+    # One immutable object per capture, wherever the raw zone is configured — NOT an append to a
+    # local file. A Lambda's filesystem is read-only apart from /tmp and /tmp dies with the
+    # execution environment, so an appended index would lose the only record that this capture
+    # ran while its data sat in the raw zone, invisible to every reader.
+    index_locator = capture_index.record(capture_index.NEWS, row, ingest_ts=ts)
 
     # Serving digest, written by the CAPTURE rather than the weekly precompute: news is daily,
     # and folding it into the gameweek artifact would make it up to seven days stale on a page
@@ -180,7 +180,7 @@ def main() -> None:
         # Every source for this club failed. It has no team news at all and nothing else says so.
         print(f"WARNING: {len(failed)} club(s) lost EVERY source: "
               f"{', '.join(f['club'] for f in failed)}")
-    print(f"indexed -> {INDEX}")
+    print(f"indexed -> {index_locator}")
     if row["clubs_ok"] == 0:
         raise SystemExit(1)
 
