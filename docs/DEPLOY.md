@@ -38,9 +38,15 @@ docker run -p 8000:8000 \
 > present. A deploy that recreates the container without a volume discards a season of snapshots
 > and there is no way to get them back. See `docs/OPERATIONS.md`.
 
-> **The image has not been built.** It was written on a machine with the Docker CLI but no
-> running daemon. The entrypoint, `/health` and `FPLEDGE_DATA_DIR` are each verified
-> independently; the build is not. Run it once before trusting it.
+> **The image builds and serves — verified in CI, 2026-08-19 (linux/amd64).** The `docker` job
+> in `.github/workflows/ci.yml` builds it, starts it, and polls `/health` until it answers:
+> `healthy after 2s`, `{"status":"ok","available_gws":[]}`. It boots with **no data mounted**,
+> which is the case that matters on a first deploy — `available_gws()` returns `[]` rather than
+> raising, so the container is healthy before the first precompute has ever run.
+>
+> Still unverified: **the volume**. CI proves the image runs, not that `data/` survives a
+> redeploy — and that is the failure that costs a season of captures. Mount it, redeploy once,
+> and confirm the snapshots are still there before trusting the deployment.
 
 ## 3. One worker, on purpose
 

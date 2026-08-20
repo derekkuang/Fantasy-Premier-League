@@ -4,9 +4,21 @@
 # and never fits a model — while the precompute needs numpy and scipy for the Dixon-Coles fit.
 # Splitting them would be tidier and is not worth a second build for a first deploy; the same
 # image serves `uvicorn` and runs `scripts/precompute.py` on a schedule.
-# STATUS: NOT BUILT. Written on a machine with the Docker CLI but no running daemon, so this
-# has never been through `docker build`. The entrypoint, the health endpoint and FPLEDGE_DATA_DIR
-# are each verified independently below/outside; the BUILD is not. Run it once before trusting it.
+# STATUS: BUILT AND SERVING, verified in CI on 2026-08-19 (linux/amd64). The `docker` job in
+# .github/workflows/ci.yml builds this image, starts it, and polls /health until it answers —
+# it reported `healthy after 2s` and `{"status":"ok","available_gws":[]}`. That second field
+# matters: it is an empty artifact directory answering correctly rather than raising, which is
+# what lets the container come up before any data is mounted.
+#
+# Building it is not the same as proving it runs. libgomp below is why: it is CBC's runtime
+# dependency, PuLP shells out to CBC for the squad optimiser, and without it the image builds
+# perfectly and fails only when a user asks for an optimal squad. A build-only check would have
+# gone green and shipped that.
+#
+# A local arm64 attempt failed the same day, and NOT for an architecture reason worth encoding
+# here — pip resolved the correct `manylinux_2_28_aarch64` wheel and the download died on DNS
+# partway through pyarrow. Network, not image. Noted so the next person who sees it does not go
+# looking for a portability bug that is not there.
 FROM python:3.13-slim AS base
 
 # libgomp is CBC's runtime dependency, which PuLP shells out to for the squad optimiser. Without
