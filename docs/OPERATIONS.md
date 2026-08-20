@@ -45,6 +45,49 @@ operations every capture depends on. The first time a backend is exercised shoul
 Turn on **S3 versioning** on the bucket. The raw zone is irreplaceable and a bad sync would
 otherwise be unrecoverable.
 
+### IN THE CLOUD (2026-08-20): Lambda + EventBridge — the laptop is no longer load-bearing
+
+The captures now run on AWS, writing straight to S3 through the same code paths that run
+locally (`main(argv)` driven by `scripts/lambda_captures.py` — one implementation, two
+schedulers; a parallel "cloud version" would drift from the tested one within a month).
+
+| function | schedule (UTC) | handler | verified |
+|---|---|---|---|
+| `fpledge-snapshot` | `rate(3 hours)` | `scripts.lambda_captures.snapshot_handler` | gated skip in 133ms; forced capture landed bootstrap+fixtures+index in S3 in 1.7s |
+| `fpledge-news` | `cron(0 6,12,18 * * ? *)` | `scripts.lambda_captures.news_handler` | full 4-source run in 76s; live `/news` served the new digest minutes later |
+
+Both: python3.13 / **arm64** / 512MB, role `fpledge-captures-lambda` (logs + read/write on the
+data bucket only), env `FPLEDGE_RAW_URI` + `FPLEDGE_SERVING_URI`. Deploy an update:
+
+```bash
+./scripts/build_lambda.sh     # builds fpledge-captures.zip (and the API zip)
+AWS_PROFILE=fpledge aws lambda update-function-code --function-name fpledge-snapshot \
+  --zip-file fileb://build/fpledge-captures.zip
+AWS_PROFILE=fpledge aws lambda update-function-code --function-name fpledge-news \
+  --zip-file fileb://build/fpledge-captures.zip
+```
+
+Smoke-test without waiting for a schedule or a deadline window:
+
+```bash
+AWS_PROFILE=fpledge aws lambda invoke --function-name fpledge-snapshot \
+  --payload '{"force":true}' --cli-binary-format raw-in-base64-out /tmp/out.json
+```
+
+The full pre-cloud history was published to S3 with locators a Lambda can resolve
+(`scripts/migrate_index_to_s3.py`, after an `aws s3 sync data/raw`). Verified the way it has to
+be verified — with **no local files at all**: 14 news captures, the full 2,421-item corpus and
+568 availability entries all resolved from S3 alone.
+
+**The launchd agents below stay loaded through GW1 as belt-and-braces** — cloud and local
+captures dedupe by ingest timestamp, and the eval picks the best pre-deadline snapshot, so
+running both costs nothing. After GW1 lands:
+
+1. `aws s3 sync data/raw s3://fpledge-data-546712138633/raw` and re-run
+   `migrate_index_to_s3.py` once, so any launchd-only capture reaches S3.
+2. `launchctl bootout gui/$UID/com.fpledge.snapshot` and same for `.news`, delete the plists.
+3. `FPLEDGE_RAW_URI` in the shell profile if local runs should also write to S3 from then on.
+
 ### Installed on macOS via launchd, not cron (2026-08-20)
 
 `snapshot` and `capture_news` are **live** as user LaunchAgents. Both were verified by

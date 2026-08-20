@@ -58,10 +58,10 @@ def fpl_players(bootstrap: dict) -> list[dict]:
     return out
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clubs", nargs="*", default=None, help="default: all 20")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     now = datetime.now(UTC)
     ts = now.strftime("%Y%m%dT%H%M%SZ")

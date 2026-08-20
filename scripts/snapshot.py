@@ -80,12 +80,12 @@ def next_deadline(events: list[dict], now: datetime) -> tuple[int | None, dateti
     return min(upcoming, key=lambda t: t[1])  # type: ignore[arg-type,return-value]
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--if-near-deadline", action="store_true",
                     help="skip unless a deadline falls inside --window hours")
     ap.add_argument("--window", type=float, default=12.0, help="hours before a deadline (default 12)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     now = datetime.now(UTC)
     client = FPLClient()
