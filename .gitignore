@@ -26,3 +26,9 @@ mlartifacts/
 # Design handoff bundles (prototypes / references, not source)
 design_handoff_*/
 build/
+# Terraform: state maps config to live resource IDs and carries attributes — credential-adjacent,
+# never committed. The .terraform dir is provider binaries. The LOCK FILE IS committed.
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/*.tfplan

@@ -22,6 +22,7 @@ from collections import Counter
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from .. import config
 from ..balance import check_balance
@@ -42,6 +43,13 @@ app = FastAPI(
 # origin(s) in prod (comma-separated). Defaults to "*" for local dev.
 _cors_env = os.environ.get("FPLEDGE_CORS_ORIGINS", "*").strip()
 _cors_origins = ["*"] if _cors_env in ("", "*") else [o.strip() for o in _cors_env.split(",") if o.strip()]
+# JSON this shape compresses ~8-10x, and nothing here compressed it — measured live: requesting
+# gzip from the deployed API returned identical byte counts, so every consumer was pulling the
+# full ~1MB predictions payload over the wire. That is wasted egress on every Vercel
+# revalidation and a visibly slow transfer on any thin connection. minimum_size leaves tiny
+# responses (/health) alone, where the gzip header would cost more than it saves.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
