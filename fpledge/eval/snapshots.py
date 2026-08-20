@@ -24,11 +24,11 @@ deadline is the most informed, and it is still a forecast.
 
 from __future__ import annotations
 
-import gzip
 import json
 import pathlib
 
 from .. import config
+from ..ingest import landing
 
 
 def _index_path() -> pathlib.Path:
@@ -67,10 +67,13 @@ def best_capture_per_gameweek(index: list[dict]) -> dict:
 
 
 def _read_bootstrap(row: dict) -> dict | None:
+    # Via `landing`, not `Path(p).exists()`: an `s3://` locator is a valid relative path that
+    # does not exist, so the old form would report every snapshot as missing the moment the raw
+    # zone moved off local disk — and `availability_map` would return an empty dict rather than
+    # an error. `landing.exists` raises on a locator it cannot interpret.
     for p in row.get("paths", []):
-        if "bootstrap_snapshot" in p and pathlib.Path(p).exists():
-            with gzip.open(p, "rt", encoding="utf-8") as fh:
-                return json.load(fh)
+        if "bootstrap_snapshot" in p and landing.exists(p):
+            return landing.read_json(p)
     return None
 
 

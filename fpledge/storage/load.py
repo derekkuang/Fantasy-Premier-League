@@ -10,30 +10,25 @@ painful cross-season join later.
 
 from __future__ import annotations
 
-import gzip
-import json
-from pathlib import Path
-
 from .. import config
+from ..ingest import landing
 from . import duck
 
 
-def _read_gz(fp: Path):
-    with gzip.open(fp, "rt", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def latest_raw(source: str, endpoint: str, season: str | None = None):
-    """Return the parsed payload from the newest ingest_ts snapshot of an endpoint."""
+    """Return the parsed payload from the newest ingest_ts snapshot of an endpoint.
+
+    Listing goes through `landing` so this works against either backend — a glob over
+    `config.RAW_DIR` would find nothing once the raw zone lives in S3.
+    """
     season = season or config.SEASON
-    base = config.RAW_DIR / f"source={source}" / f"endpoint={endpoint}" / f"season={season}"
-    snapshots = sorted(base.glob("ingest_ts=*/data.json.gz"))
+    snapshots = landing.list_partitions(source, endpoint, season)
     if not snapshots:
         raise FileNotFoundError(
             f"no landed data for source={source} endpoint={endpoint} season={season}. "
             f"Run scripts/pull_data.py first."
         )
-    return _read_gz(snapshots[-1])  # lexicographic sort == chronological (UTC stamps)
+    return landing.read_json(snapshots[-1])  # lexicographic == chronological (UTC stamps)
 
 
 def load_bootstrap(con, boot: dict, season: str | None = None) -> None:

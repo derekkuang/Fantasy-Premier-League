@@ -36,7 +36,6 @@ thresholded.
 
 from __future__ import annotations
 
-import gzip
 import json
 import pathlib
 from collections import defaultdict
@@ -44,6 +43,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 from .. import config
+from ..ingest import landing
 
 
 def load_corpus(index_path: pathlib.Path | None = None) -> list[dict]:
@@ -52,15 +52,30 @@ def load_corpus(index_path: pathlib.Path | None = None) -> list[dict]:
     if not idx.exists():
         return []
     items: list[dict] = []
+    missing = 0
     for line in idx.read_text().splitlines():
         line = line.strip()
         if not line:
             continue
-        path = pathlib.Path(json.loads(line).get("path", ""))
-        if not path.exists():
+        locator = json.loads(line).get("path", "")
+        if not locator:
             continue
-        with gzip.open(path, "rt") as fh:
-            items.extend(json.load(fh).get("items", []))
+        # Routed through `landing` rather than opened directly. The old form was
+        # `Path(p).exists()` then `gzip.open`, and `Path("s3://bucket/key")` is a valid
+        # relative path that does not exist — so once the raw zone moves to S3 every object
+        # would read as absent and this would return an empty corpus with no error at all.
+        # `landing.exists` raises on a locator it cannot interpret; only a genuinely missing
+        # object is skipped.
+        if not landing.exists(locator):
+            missing += 1
+            continue
+        items.extend(landing.read_json(locator).get("items", []))
+    if missing:
+        # Not fatal — an index outlives the objects it points at, and a pruned capture is a
+        # legitimate state. But a corpus quietly shrinking is how a page goes stale without
+        # anyone noticing, so it is said out loud rather than absorbed.
+        print(f"WARNING: {missing} indexed capture(s) are no longer readable — "
+              f"corpus built from {len(items)} items across the rest")
     seen, uniq = set(), []
     for it in items:
         key = it.get("guid") or it.get("link")

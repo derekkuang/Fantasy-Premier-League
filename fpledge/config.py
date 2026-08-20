@@ -15,6 +15,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("FPLEDGE_DATA_DIR", ROOT / "data"))
 RAW_DIR = DATA_DIR / "raw"            # immutable, timestamped landing zone
+
+# Where the raw zone actually lives. Empty (the default) means local disk under RAW_DIR; set to
+# an `s3://bucket/prefix` URI and `ingest.landing` writes there instead, with callers unchanged.
+# This is what lets the captures run on a scheduler in the cloud rather than one laptop — the
+# data they collect cannot be back-filled at any price, so a single copy on a single machine is
+# the risk, not the cost.
+RAW_URI = os.environ.get("FPLEDGE_RAW_URI", "")
 PROCESSED_DIR = DATA_DIR / "processed"
 DUCKDB_PATH = DATA_DIR / "fpledge.duckdb"
 

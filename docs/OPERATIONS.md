@@ -26,6 +26,25 @@ this says what to run and what failure looks like.
 30 4  *  *  2    cd /path/to/repo && .venv/bin/python scripts/precompute.py 1 8
 ```
 
+### Where the raw zone lives
+
+Local disk by default. Set `FPLEDGE_RAW_URI` and every capture writes to S3 instead, with no
+change to any capture script:
+
+```sh
+export FPLEDGE_RAW_URI=s3://fpledge-data-546712138633/raw
+pip install -e ".[aws]"                    # boto3 is only needed for this path
+python scripts/verify_landing.py           # write → exists → read → list, against the real bucket
+```
+
+**Run the verifier before pointing a capture at a new backend.** It writes a throwaway object
+under `source=_verify`, reads it back, compares it byte for byte and lists it — the four
+operations every capture depends on. The first time a backend is exercised should not be at
+06:00 on a deadline morning, unattended, on the one run that mattered.
+
+Turn on **S3 versioning** on the bucket. The raw zone is irreplaceable and a bad sync would
+otherwise be unrecoverable.
+
 ### Installed on macOS via launchd, not cron (2026-08-20)
 
 `snapshot` and `capture_news` are **live** as user LaunchAgents. Both were verified by
