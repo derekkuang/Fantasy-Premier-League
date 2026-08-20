@@ -235,13 +235,15 @@ def team_news(response: Response) -> dict:
     404 rather than an empty page when nothing has been captured: a team-news page with no news
     should say it has none, not imply a quiet week.
     """
-    path = config.DATA_DIR / "serving" / "news.json"
-    if not path.exists():
+    # Through the store like every other artifact, rather than opening a path. This endpoint was
+    # the last one reading the filesystem directly, so it was also the only one that would have
+    # kept serving a stale local file — or 404ing forever — once the captures write to S3.
+    payload = store.read_artifact("news.json")
+    if payload is None:
         raise HTTPException(
             status_code=404,
             detail="No news captured yet — run `make capture-news`.",
         )
-    payload = json.loads(path.read_text())
     response.headers["Cache-Control"] = "public, max-age=900"   # daily capture; 15 min is ample
     return {
         **payload,

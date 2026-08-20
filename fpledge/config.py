@@ -22,6 +22,12 @@ RAW_DIR = DATA_DIR / "raw"            # immutable, timestamped landing zone
 # data they collect cannot be back-filled at any price, so a single copy on a single machine is
 # the risk, not the cost.
 RAW_URI = os.environ.get("FPLEDGE_RAW_URI", "")
+
+# Where the SERVING artifacts live — the JSON the API reads. Separate from RAW_URI on purpose:
+# the raw zone is immutable and partitioned by ingest time, serving artifacts are overwritten
+# every precompute and addressed by a flat name. They can point at the same bucket, but they are
+# not the same kind of thing and conflating them would give one set of guarantees to both.
+SERVING_URI = os.environ.get("FPLEDGE_SERVING_URI", "")
 PROCESSED_DIR = DATA_DIR / "processed"
 DUCKDB_PATH = DATA_DIR / "fpledge.duckdb"
 

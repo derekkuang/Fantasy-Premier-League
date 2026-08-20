@@ -23,15 +23,13 @@ anything about any player. See the extraction plan in docs/HANDOFF.md.
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import pathlib
 import sys
 from datetime import UTC, datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config
+from fpledge.api import store
 from fpledge.eval.news_eval import build_digest, fpl_labels, load_corpus
 from fpledge.ingest import capture_index, landing
 from fpledge.ingest.fpl_api import FPLClient
@@ -153,18 +151,18 @@ def main() -> None:
     # whose whole value is being current. The API stays a pure reader either way.
     corpus = load_corpus() or items
     digest = build_digest(corpus, fpl_labels(boot), now.isoformat(), clubs_allowed=in_league)
-    serving = config.DATA_DIR / "serving"
-    serving.mkdir(parents=True, exist_ok=True)
-    tmp = serving / "news.json.tmp"
-    tmp.write_text(json.dumps(digest, separators=(",", ":")))
-    os.replace(tmp, serving / "news.json")   # atomic; a reader never sees a half-written file
+    # Through the serving store rather than straight to a path, so the digest follows
+    # FPLEDGE_SERVING_URI wherever it points. A capture on a scheduler writing to a local
+    # filesystem would produce a digest that is discarded seconds later, and the page it feeds
+    # would simply never update — with the capture reporting success every time.
+    digest_locator = store.write_artifact("news.json", digest)
 
     print(f"captured {len(items)} items from {row['clubs_ok']}/{len(clubs)} clubs — "
           f"{len(with_mentions)} name a player, {len(with_cues)} carry an intent cue")
     for name in sorted(by_source):
         print(f"  {name:<9} {by_source[name]:>4} items, "
               f"mean summary {row['mean_summary_chars_by_source'][name]:>5} chars")
-    print(f"digest -> {serving / 'news.json'} "
+    print(f"digest -> {digest_locator} "
           f"({digest['n_clubs']} clubs, {digest['n_items']} items in corpus)")
     for it in with_mentions[:8]:
         who = ", ".join(m["name"] for m in it["mentions"])
