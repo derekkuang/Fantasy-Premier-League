@@ -1,0 +1,94 @@
+# The weekly model refit, off the laptop for good.
+#
+# This was the last job that could only run on one machine — the Dixon-Coles fit needs the heavy
+# stack (numpy/scipy/pandas), which the Lambdas deliberately exclude. A public repo gets Actions
+# minutes free, so the heavyweight step runs here and only its OUTPUT (one JSON artifact in S3)
+# touches production.
+#
+# DAILY, NOT WEEKLY, on purpose. The artifact covers gw..gw+8 so weekly would suffice in a
+# calendar where nothing moves — but deadlines shift, double gameweeks appear, and prices and
+# availability change under the fit. A daily refresh costs ~4 free minutes and means the site is
+# never more than a day stale. The gameweek itself is resolved from FPL's bootstrap inside the
+# script (never hardcoded here — a literal number in a cron goes stale the moment a gameweek
+# completes, and the site would quietly serve last week as current).
+#
+# WHAT STOPS A BAD FIT REACHING USERS. scripts/precompute.py gates BEFORE publishing:
+#   health_check   the fit's inputs (dropped seasons, broken team map, thin records)
+#   publish_gate   the new artifact vs the currently-served one (collapsed projections,
+#                  vanished players — a degenerate fit whose inputs looked fine)
+# A blocked artifact exits non-zero, so this workflow goes red instead of shipping it — and the
+# previously-published artifact simply keeps serving. Staleness is the failure mode here, not
+# corruption, and staleness is recoverable.
+#
+# NO ANTHROPIC KEY, DELIBERATELY. Without one, match briefings render from the deterministic
+# template — narration is never allowed to be load-bearing, and a scheduled job should not burn
+# tokens unattended.
+
+name: Precompute
+
+on:
+  schedule:
+    - cron: "30 4 * * *" # 04:30 UTC daily — after midnight price changes, well before any deadline
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC: the job exchanges its GitHub identity for the AWS role — no stored keys
+  contents: read
+
+concurrency:
+  group: precompute
+  cancel-in-progress: false # a running fit finishes; two fits racing to publish helps nobody
+
+jobs:
+  precompute:
+    runs-on: ubuntu-latest
+    env:
+      FPLEDGE_RAW_URI: s3://fpledge-data-546712138633/raw
+      FPLEDGE_SERVING_URI: s3://fpledge-data-546712138633/serving
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install (the full heavy stack — this is the job the Lambdas can't do)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[aws]"
+
+      - name: Assume the deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Not a secret: role ARNs are identifiers, and this one is assumable only by
+          # main-branch workflows of this exact repo (see the trust policy).
+          role-to-assume: arn:aws:iam::546712138633:role/fpledge-gha
+          aws-region: us-east-1
+
+      - name: Land a fresh bootstrap
+        # Into the S3 raw zone — the same immutable capture path everything else uses. The
+        # precompute reads it back for players/prices AND to resolve which gameweek is next.
+        run: python scripts/pull_data.py
+
+      - name: Fit, gate, publish
+        run: python scripts/precompute.py
+
+      - name: The live API serves the new artifact
+        # The store caches for 60s, so wait it out, then require a run_ts from today. Publishing
+        # to S3 is not the finish line — users read through the API, and this is the only step
+        # that proves the whole chain.
+        run: |
+          sleep 70
+          GW=$(curl -fsS --max-time 30 "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/health" \
+               | python -c "import json,sys; print(json.load(sys.stdin)['available_gws'][-1])")
+          RUN_TS=$(curl -fsS --compressed --max-time 60 \
+               "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/predictions/$GW" \
+               | python -c "import json,sys; print(json.load(sys.stdin)['meta']['run_ts'])")
+          echo "gw=$GW run_ts=$RUN_TS"
+          TODAY=$(date -u +%Y-%m-%d)
+          case "$RUN_TS" in
+            "$TODAY"*) echo "live API is serving today's fit" ;;
+            *) echo "::error::live API still serves run_ts=$RUN_TS (expected $TODAY*)"; exit 1 ;;
+          esac

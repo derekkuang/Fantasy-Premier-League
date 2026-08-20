@@ -92,6 +92,56 @@ jobs:
         # pages that fetch at build time must degrade rather than hard-fail — this proves they do.
         run: npm run build
 
+  deploy:
+    name: deploy — Lambda zips to production
+    # The "D" in CI/CD, and it is gated on everything else being green: a deploy job that can
+    # outrun the tests is just a fast way to ship the bug. Runs only on main pushes — PRs and
+    # branches get the checks, never the deploy.
+    needs: [python, web, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC exchange; the role is assumable only from this repo's main
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build both zips
+        run: ./scripts/build_lambda.sh
+
+      - name: Assume the deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::546712138633:role/fpledge-gha
+          aws-region: us-east-1
+
+      - name: Ship
+        run: |
+          aws lambda update-function-code --function-name fpledge-api \
+            --zip-file fileb://build/fpledge-api.zip --query 'CodeSha256' --output text
+          aws lambda update-function-code --function-name fpledge-snapshot \
+            --zip-file fileb://build/fpledge-captures.zip --query 'CodeSha256' --output text
+          aws lambda update-function-code --function-name fpledge-news \
+            --zip-file fileb://build/fpledge-captures.zip --query 'CodeSha256' --output text
+          for fn in fpledge-api fpledge-snapshot fpledge-news; do
+            aws lambda wait function-updated --function-name "$fn"
+          done
+
+      - name: Prove production still answers
+        # The two bugs that only ever existed in production — a data-less /health and a CORS
+        # preflight the dev setup can never send — are exactly what this step re-checks after
+        # every deploy.
+        run: |
+          curl -fsS --max-time 30 \
+            "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/health"
+          echo
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 -X OPTIONS \
+            -H "Origin: https://web-lac-phi-16.vercel.app" \
+            -H "Access-Control-Request-Method: POST" \
+            "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/advise")
+          [ "$code" = "200" ] || { echo "::error::CORS preflight returned $code"; exit 1; }
+          echo "preflight OK"
+
   docker:
     name: docker — image builds and serves
     runs-on: ubuntu-latest
