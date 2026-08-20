@@ -45,7 +45,11 @@ _cors_origins = ["*"] if _cors_env in ("", "*") else [o.strip() for o in _cors_e
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_methods=["GET"],
+    # GET for every read endpoint, POST for exactly one route: the advisor chat, which the
+    # browser calls directly. This was ["GET"] alone, which made the /advise preflight fail with
+    # a 400 from THIS middleware — invisible locally, where the Next dev server and the API share
+    # an origin and no preflight is ever sent, and fatal on Vercel, where they do not.
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
