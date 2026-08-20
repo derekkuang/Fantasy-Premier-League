@@ -107,8 +107,8 @@ def test_the_index_entry_is_a_normal_landed_object(tmp_path):
 
 def test_it_follows_the_backend_rather_than_the_filesystem():
     """The whole point: on a scheduler the raw zone is S3, and the index has to go with it."""
-    from tests.test_landing import _FakeS3
     from fpledge.ingest.landing import S3Backend
+    from tests.test_landing import _FakeS3
 
     fake = _FakeS3()
     landing.configure(S3Backend("bkt", "raw", client=fake))
