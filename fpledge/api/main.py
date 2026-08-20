@@ -203,7 +203,17 @@ def _demo_picks(records: list[dict]) -> dict:
 
 
 def _load_or_404(gw: int) -> dict:
-    payload = store.read_gw(gw)
+    try:
+        payload = store.read_gw(gw)
+    except store.ArtifactUnavailable as exc:
+        # 503, not 404, and not a 500 either. "Not precomputed" would be a false statement about
+        # our own data when the truth is that the store could not be reached; a 500 would say
+        # the bug is here. 503 says try again, which is the only accurate one — and it keeps
+        # crawlers and the frontend's ISR from caching an absence that is not real.
+        raise HTTPException(
+            status_code=503,
+            detail="Serving store temporarily unreachable — try again shortly.",
+        ) from exc
     if payload is None:
         raise HTTPException(
             status_code=404,
@@ -238,7 +248,15 @@ def team_news(response: Response) -> dict:
     # Through the store like every other artifact, rather than opening a path. This endpoint was
     # the last one reading the filesystem directly, so it was also the only one that would have
     # kept serving a stale local file — or 404ing forever — once the captures write to S3.
-    payload = store.read_artifact("news.json")
+    try:
+        payload = store.read_artifact("news.json")
+    except store.ArtifactUnavailable as exc:
+        # Same distinction as `_load_or_404`: an unreachable store is not the same claim as
+        # "nothing has been captured", and this page's whole point is not implying a quiet week.
+        raise HTTPException(
+            status_code=503,
+            detail="Serving store temporarily unreachable — try again shortly.",
+        ) from exc
     if payload is None:
         raise HTTPException(
             status_code=404,

@@ -121,6 +121,13 @@ def test_a_missing_artifact_is_cached_too(monkeypatch):
 
 
 # --- the S3 backend --------------------------------------------------------------------------- #
+def _client_error(code: str) -> Exception:
+    """A botocore-shaped error: the classifier reads response["Error"]["Code"]."""
+    err = Exception(code)
+    err.response = {"Error": {"Code": code}}
+    return err
+
+
 class _FakeS3:
     def __init__(self):
         self.objects: dict[tuple[str, str], bytes] = {}
@@ -130,7 +137,10 @@ class _FakeS3:
 
     def get_object(self, Bucket, Key):
         if (Bucket, Key) not in self.objects:
-            raise KeyError("NoSuchKey")
+            # Shaped like botocore's ClientError, not a bare KeyError. The first version raised
+            # KeyError, which the production classifier correctly treated as "unknown failure" —
+            # so the fake was the thing lying, and a realistic one caught it immediately.
+            raise _client_error("NoSuchKey")
         import io
         return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
 
@@ -180,3 +190,75 @@ def test_s3_json_is_written_compactly(s3):
     blob = s3.objects[("bkt", "serving/news.json")].decode()
     assert blob == '{"a":1,"b":2}', "whitespace in a serving artifact is bytes over the wire"
     assert json.loads(blob) == {"a": 1, "b": 2}
+
+
+# --- transient failure is not absence -------------------------------------------------------- #
+class _BrokenS3(_FakeS3):
+    """Reads time out mid-body — the 1MB-artifact failure seen against real S3."""
+
+    def get_object(self, Bucket, Key):
+        raise TimeoutError("Read timed out.")
+
+
+class _EmptyS3(_FakeS3):
+    """The object genuinely is not there."""
+
+    def get_object(self, Bucket, Key):
+        raise _client_error("NoSuchKey")
+
+
+def test_a_transient_failure_raises_rather_than_reporting_absence(monkeypatch):
+    """THE BUG THIS EXISTS TO PREVENT. A timeout fetching a 1MB artifact is not the same claim as
+    "this gameweek was never precomputed". Returning None turns an outage into a confident 404,
+    and the body read — the slowest operation on the request path — was originally outside the
+    try block entirely, so it escaped as a 500."""
+    monkeypatch.setenv("FPLEDGE_SERVING_URI", "s3://bkt/serving")
+    monkeypatch.setattr(store, "_s3", lambda: (_BrokenS3(), "bkt", "serving"))
+    store.invalidate()
+    with pytest.raises(store.ArtifactUnavailable, match="could not fetch"):
+        store.read_gw(1)
+
+
+def test_a_genuinely_missing_object_is_still_none(monkeypatch):
+    """The other half: NoSuchKey really does mean absent, and must stay a plain 404."""
+    monkeypatch.setenv("FPLEDGE_SERVING_URI", "s3://bkt/serving")
+    monkeypatch.setattr(store, "_s3", lambda: (_EmptyS3(), "bkt", "serving"))
+    store.invalidate()
+    assert store.read_gw(1) is None
+
+
+def test_a_transient_failure_is_not_cached(monkeypatch):
+    """Caching a blip would serve "not precomputed" for a full TTL after it had passed."""
+    monkeypatch.setenv("FPLEDGE_SERVING_URI", "s3://bkt/serving")
+    broken = _BrokenS3()
+    monkeypatch.setattr(store, "_s3", lambda: (broken, "bkt", "serving"))
+    store.invalidate()
+    with pytest.raises(store.ArtifactUnavailable):
+        store.read_gw(1)
+
+    healthy = _FakeS3()
+    monkeypatch.setattr(store, "_s3", lambda: (healthy, "bkt", "serving"))
+    store.write_gw(1, {"gw": 1})
+    assert store.read_gw(1) == {"gw": 1}, "the failed read was cached and outlived the outage"
+
+
+class _UrllibShapedError(_FakeS3):
+    """An exception whose `.response` is NOT a dict — urllib3 raises these.
+
+    The handler used to call `.get()` on it unconditionally and raised AttributeError from
+    inside the except block, converting every transient failure into a different and far more
+    confusing one. An error path that can itself error is worse than no error path.
+    """
+
+    def get_object(self, Bucket, Key):
+        err = Exception("Read timed out.")
+        err.response = "not-a-dict"
+        raise err
+
+
+def test_an_error_whose_response_is_not_a_dict_is_still_classified(monkeypatch):
+    monkeypatch.setenv("FPLEDGE_SERVING_URI", "s3://bkt/serving")
+    monkeypatch.setattr(store, "_s3", lambda: (_UrllibShapedError(), "bkt", "serving"))
+    store.invalidate()
+    with pytest.raises(store.ArtifactUnavailable, match="could not fetch"):
+        store.read_gw(1)

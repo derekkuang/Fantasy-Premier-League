@@ -53,6 +53,24 @@ def serving_dir() -> Path:
     return Path(os.environ.get("FPLEDGE_SERVING_DIR", config.DATA_DIR / "serving"))
 
 
+class ArtifactUnavailable(ServingError):
+    """The artifact could not be fetched, but that does NOT mean it is absent.
+
+    The distinction is the whole point. A genuinely missing artifact is a 404 — "this gameweek
+    was never precomputed" — and is worth caching. A timeout or a throttle is neither: answering
+    404 tells the caller something false, and caching it serves that lie for a full TTL after
+    the blip has passed.
+    """
+
+
+# Fail fast rather than hang. botocore's defaults are a 60s read timeout with no connect
+# deadline worth the name, which on the request path of a web API means a single slow object
+# holds a worker open for a minute. These are sized for "the artifact is ~1MB and either arrives
+# promptly or is not arriving".
+_S3_TIMEOUTS = {"connect_timeout": 3, "read_timeout": 10,
+                "retries": {"max_attempts": 3, "mode": "adaptive"}}
+
+
 def _s3():
     uri = serving_uri()
     bucket, _, prefix = uri[len(S3_SCHEME):].partition("/")
@@ -60,10 +78,11 @@ def _s3():
         raise ServingError(f"FPLEDGE_SERVING_URI is malformed: {uri!r}")
     try:
         import boto3
+        from botocore.config import Config
     except ImportError as exc:  # pragma: no cover - environment-dependent
         raise ServingError('S3 serving is configured but boto3 is missing — pip install -e ".[aws]"'
                            ) from exc
-    return boto3.client("s3"), bucket, prefix.strip("/")
+    return boto3.client("s3", config=Config(**_S3_TIMEOUTS)), bucket, prefix.strip("/")
 
 
 def _key(name: str, prefix: str) -> str:
@@ -119,15 +138,31 @@ def write_artifact(name: str, payload: dict) -> str:
     return locator
 
 
+_MISSING_CODES = {"NoSuchKey", "NoSuchBucket", "404"}
+
+
 def _read_uncached(name: str) -> dict | None:
+    """Fetch an artifact. None means absent; ArtifactUnavailable means "could not tell"."""
     uri = serving_uri()
     if uri.startswith(S3_SCHEME):
         client, bucket, prefix = _s3()
+        key = _key(name, prefix)
         try:
-            obj = client.get_object(Bucket=bucket, Key=_key(name, prefix))
-        except Exception:  # noqa: BLE001 — any failure to fetch is "not available"
-            return None
-        return json.loads(obj["Body"].read().decode("utf-8"))
+            # The body read is INSIDE the try. It was outside, and a 1MB artifact timing out
+            # mid-download therefore escaped as a 500 rather than being handled at all — the
+            # request path's slowest operation was the one line not covered.
+            obj = client.get_object(Bucket=bucket, Key=key)
+            return json.loads(obj["Body"].read().decode("utf-8"))
+        except Exception as exc:
+            # `.response` is a dict on botocore's ClientError and something else entirely on
+            # urllib3's — reading it without checking raised AttributeError from inside the
+            # handler, turning every transient failure into a different, more confusing one.
+            # An error path that can itself error is worse than no error path.
+            resp = getattr(exc, "response", None)
+            code = (resp.get("Error") or {}).get("Code", "") if isinstance(resp, dict) else ""
+            if code in _MISSING_CODES or type(exc).__name__ in ("NoSuchKey", "NoSuchBucket"):
+                return None
+            raise ArtifactUnavailable(f"could not fetch s3://{bucket}/{key}: {exc}") from exc
     path = serving_dir() / name
     if not path.exists():
         return None
@@ -147,6 +182,8 @@ def read_artifact(name: str) -> dict | None:
         hit = _cache.get(key)
         if hit and now - hit[0] < CACHE_TTL_S:
             return hit[1]
+    # A transient failure propagates and is deliberately NOT cached: caching it would serve a
+    # "not precomputed" answer for a full TTL after the blip had already passed.
     value = _read_uncached(name)
     with _cache_lock:
         _cache[key] = (now, value)
