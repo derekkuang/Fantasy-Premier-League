@@ -88,6 +88,19 @@ running both costs nothing. After GW1 lands:
 2. `launchctl bootout gui/$UID/com.fpledge.snapshot` and same for `.news`, delete the plists.
 3. `FPLEDGE_RAW_URI` in the shell profile if local runs should also write to S3 from then on.
 
+### Alerting (2026-08-20): a dead schedule must not look like a quiet day
+
+Four CloudWatch alarms notify `fpledge-alerts` (SNS -> email; the subscription needed a manual
+confirmation click):
+
+| alarm | fires when | why this shape |
+|---|---|---|
+| `fpledge-{snapshot,news}-errors` | any run fails (Sum(Errors) > 0 over 1h) | captures are unrepeatable; waiting for a pattern means losing data while waiting |
+| `fpledge-{snapshot,news}-not-running` | zero invocations in 24h | a broken EventBridge permission produces no errors and no logs — absence is the only signal, and Lambda emits NO metric when never invoked, so the alarm treats missing data as breaching |
+
+Born from a real near-miss: a timezone misread suggested the snapshot schedule had silently
+failed, and the honest answer to "would anything have told us?" was no.
+
 ### Installed on macOS via launchd, not cron (2026-08-20)
 
 `snapshot` and `capture_news` are **live** as user LaunchAgents. Both were verified by
