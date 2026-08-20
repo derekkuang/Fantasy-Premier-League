@@ -25,3 +25,4 @@ mlartifacts/
 
 # Design handoff bundles (prototypes / references, not source)
 design_handoff_*/
+build/

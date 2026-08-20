@@ -37,6 +37,12 @@ llm = ["anthropic>=0.69"]
 # moving them off one laptop.
 aws = ["boto3>=1.34"]
 
+# Serving the API from Lambda. `mangum` adapts Lambda's event shape to ASGI so the same FastAPI
+# app runs under uvicorn locally and behind a Function URL in production — two entrypoints, one
+# application. boto3 is absent on purpose: the Lambda runtime provides it, and bundling a second
+# copy would add ~50MB to a package whose whole advantage is being small.
+lambda = ["mangum>=0.17", "fastapi>=0.110", "anthropic>=0.69"]
+
 # NOTE: the core numeric modules (scoring, betting.odds, eval.metrics,
 # models.match_engine, features.pointintime) are deliberately STDLIB-ONLY so their
 # tests run with nothing but pytest installed. Heavy deps above are only needed

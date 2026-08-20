@@ -22,8 +22,42 @@ is in circulation — and shareable squads are the only growth mechanism the pro
 
 | | |
 |---|---|
-| **API** | this repo's `Dockerfile`. FastAPI on 8000, reads `data/serving/gw{N}.json`, never fits a model |
+| **API** | **DEPLOYED (2026-08-20): Lambda + API Gateway**, reading serving artifacts from S3. The Dockerfile below remains the container path for anywhere that isn't Lambda. |
 | **Web** | `web/`, Next.js 16. Vercel is the path of least resistance; it needs `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_API_URL` |
+
+### The live API
+
+```text
+https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com
+```
+
+| piece | value |
+|---|---|
+| Function | `fpledge-api`, python3.13, **arm64**, 512MB, 30s timeout |
+| Handler | `fpledge.api.lambda_handler.handler` (Mangum over the same FastAPI `app`) |
+| Env | `FPLEDGE_SERVING_URI=s3://fpledge-data-546712138633/serving` |
+| Role | `fpledge-api-lambda`: CloudWatch logs + **read-only** on the data bucket |
+| Front | API Gateway HTTP API `wdvmpi4xw6` (a Function URL kept 403ing with a provably correct config — likely an account-level public-access block; API Gateway is the standard path anyway) |
+| Package | `scripts/build_lambda.sh` → 4.6MB zip. boto3 excluded (runtime provides it); heavy deps excluded (the API imports none of them — verified, not assumed) |
+| Measured | **85–350ms** per request server-side, ~150MB memory. Slow responses observed from a dev machine were the VPN trickling the 1MB artifact, not the service |
+
+Deploy an update:
+
+```bash
+./scripts/build_lambda.sh
+AWS_PROFILE=fpledge aws lambda update-function-code \
+  --function-name fpledge-api --zip-file fileb://build/fpledge-api.zip
+```
+
+Vercel needs one env var, then a redeploy:
+
+```text
+NEXT_PUBLIC_API_URL=https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com
+```
+
+**Freshness chain**, so nobody has to rediscover it: capture/precompute writes S3 → the API's
+store cache expires within 60s → Vercel's ISR revalidates within 5–15 min. Total worst case is
+~16 minutes from a capture landing to the page showing it, with no deploy in between.
 
 ```bash
 docker build -t fpledge-api .
