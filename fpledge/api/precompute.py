@@ -93,6 +93,35 @@ MIN_RECORDS = 400           # a real gameweek carries ~550
 MAX_UNMAPPED_TEAMS = 3
 
 
+def next_gameweek() -> int:
+    """The gameweek to precompute, resolved from the landed bootstrap — never hardcoded.
+
+    A scheduler passing a literal gameweek number goes stale the moment one completes, and the
+    failure is quiet: the site keeps serving a past week's projections as if they were current.
+    FPL's own `is_next` flag is the authority; the deadline comparison is the fallback for a
+    bootstrap captured mid-transition, when the flags can briefly be stale.
+    """
+    from ..storage import load as storeload
+
+    boot = storeload.latest_raw("fpl_api", "bootstrap")
+    events = boot.get("events") or []
+    for e in events:
+        if e.get("is_next"):
+            return int(e["id"])
+    now = datetime.now(UTC)
+    upcoming = [
+        int(e["id"]) for e in events
+        if e.get("deadline_time")
+        and datetime.fromisoformat(e["deadline_time"]) > now
+    ]
+    if upcoming:
+        return min(upcoming)
+    raise RuntimeError(
+        "no upcoming gameweek in the landed bootstrap — season over, or the bootstrap is stale; "
+        "re-run scripts/pull_data.py before precomputing"
+    )
+
+
 def health_check(meta: dict) -> list[str]:
     """Reasons this artifact should NOT be published. Empty means healthy.
 
@@ -127,9 +156,68 @@ def health_check(meta: dict) -> list[str]:
     return problems
 
 
+# Sanity thresholds for the PUBLISH gate — a second, different kind of check. `health_check`
+# reads the fit's own report of its inputs; this compares the new artifact against the one
+# CURRENTLY BEING SERVED, and exists for the failure the first check cannot see: a fit whose
+# inputs all look fine but whose output is degenerate. The thresholds are wide on purpose —
+# projections legitimately move week to week — so a trip means "grossly wrong", not "different".
+MAX_RECORD_DROP = 0.5   # new artifact has lost more than half the players the live one carries
+MIN_XP_MEAN_RATIO = 0.3  # mean projection collapsed to under 30% of the live artifact's
+MIN_NONZERO_XP_SHARE = 0.5  # over half the projections are exactly zero
+
+
+def publish_gate(new_payload: dict, current_payload: dict | None) -> list[str]:
+    """Reasons the new artifact must not REPLACE the currently-served one. Empty means go.
+
+    `current_payload` is None on a first publish — there is nothing to regress against, so the
+    only checks that run are the absolute ones. That asymmetry is deliberate: a cold start
+    should not be blocked by the absence of history.
+    """
+    problems = []
+    new_recs = new_payload.get("predictions") or []
+    xps = [float(r.get("xp") or 0.0) for r in new_recs]
+    if xps:
+        nonzero = sum(1 for x in xps if x > 0) / len(xps)
+        if nonzero < MIN_NONZERO_XP_SHARE:
+            problems.append(
+                f"only {nonzero:.0%} of projections are non-zero — the fit is degenerate, "
+                "whatever its inputs claimed"
+            )
+    if current_payload is not None:
+        cur_recs = current_payload.get("predictions") or []
+        if cur_recs and len(new_recs) < len(cur_recs) * MAX_RECORD_DROP:
+            problems.append(
+                f"record count fell {len(cur_recs)} -> {len(new_recs)} — more than half the "
+                "players the live artifact serves would vanish"
+            )
+        cur_xps = [float(r.get("xp") or 0.0) for r in cur_recs]
+        if xps and cur_xps:
+            new_mean, cur_mean = sum(xps) / len(xps), sum(cur_xps) / len(cur_xps)
+            if cur_mean > 0 and new_mean < cur_mean * MIN_XP_MEAN_RATIO:
+                problems.append(
+                    f"mean projection collapsed {cur_mean:.2f} -> {new_mean:.2f} — a real "
+                    "week does not do that; a broken fit does"
+                )
+    return problems
+
+
 def run(gw: int, horizon: int = 8, run_ts: str | None = None,
-        narrate: bool = True) -> dict:
-    """Precompute + persist the serving artifact for a gameweek. Returns {path, meta}."""
+        narrate: bool = True, allow_degraded: bool = False) -> dict:
+    """Precompute, GATE, then publish. Returns {path, meta, problems, published}.
+
+    THE ORDER IS THE POINT, and it changed. This used to write the artifact first and let the
+    caller health-check afterwards — correct when "writing" meant a local file a human would
+    inspect before deploying, and silently wrong from the moment `store.write_gw` began
+    publishing straight to the S3 the live API serves. From then on, "written either way so you
+    can inspect it" actually meant "served to users either way". Now nothing reaches the store
+    until both gates pass; a blocked artifact is returned to the caller for inspection instead
+    of being published as a side effect.
+    """
     payload = build_payload(gw, horizon=horizon, run_ts=run_ts, narrate=narrate)
+    problems = health_check(payload["meta"])
+    problems += publish_gate(payload, store.read_gw(gw))
+    if problems and not allow_degraded:
+        return {"path": None, "meta": payload["meta"], "payload": payload,
+                "problems": problems, "published": False}
     path = store.write_gw(gw, payload)
-    return {"path": str(path), "meta": payload["meta"]}
+    return {"path": str(path), "meta": payload["meta"], "problems": problems, "published": True}

@@ -1,43 +1,56 @@
 #!/usr/bin/env python3
 """Precompute the serving artifact the API reads (per gameweek).
 
-Runs the engine fit once and writes data/serving/gw{gw}.json (xP records + fixture ticker).
-Schedule this weekly in production; the API only ever reads its output.
+Runs the engine fit once, GATES the result, and only then publishes to wherever the serving
+store points (local disk, or the live S3 when FPLEDGE_SERVING_URI is set).
 
-IT EXITS NON-ZERO ON A DEGRADED FIT, and that is the entire point of the health check below.
-The failure mode this guards against is not a crash. A dropped Football-Data season used to
-print `warn:`, exit 0, and leave the engine fitted on less history — `fallback_fixtures` creeps
-from 2 to 4, every projection gets slightly worse, and the site serves it happily for weeks
-because nothing ever broke. docs/HANDOFF.md §4 has called this "the one thing that will silently
-rot a deployed site" since 2026-08-03.
+THE GATE RUNS BEFORE THE PUBLISH, and the order is the point. An earlier version wrote the
+artifact first and health-checked after — correct when "written" meant a local file a human
+would inspect, and silently wrong from the moment the store began publishing straight to the
+S3 the live API serves: "written either way so you can inspect it" had become "served to users
+either way". Now a degraded artifact never reaches the store; it is dumped beside the build
+outputs for inspection instead.
 
-A scheduled run must therefore fail LOUDLY: the artifact is written either way (so you can
-inspect it), but a non-zero exit stops a cron from treating a degraded refresh as a success.
-`--allow-degraded` publishes anyway, for when you know why and mean it.
+Two gates, catching different failures (fpledge.api.precompute):
+  health_check   the fit's own report of its INPUTS — dropped source seasons, broken team
+                 mapping, too few records. §4's "the one thing that will silently rot a
+                 deployed site".
+  publish_gate   the new artifact against the one CURRENTLY SERVED — a degenerate fit whose
+                 inputs all looked fine (projections collapsed, half the players vanished).
+                 Wide thresholds on purpose: it trips on "grossly wrong", never on "different".
 
-Usage: python scripts/precompute.py [gw] [horizon] [--allow-degraded]
+Usage:
+    python scripts/precompute.py                       # NEXT gameweek (from the bootstrap), horizon 8
+    python scripts/precompute.py 3 8                   # explicit gameweek + horizon
+    python scripts/precompute.py --allow-degraded      # publish anyway, when you know why
 """
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge.api.precompute import health_check, run
+from fpledge.api.precompute import next_gameweek, run
 
 
-def main() -> None:
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    allow_degraded = "--allow-degraded" in sys.argv
-    gw = int(args[0]) if args else 1
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    args = [a for a in argv if not a.startswith("--")]
+    allow_degraded = "--allow-degraded" in argv
+
+    # No positional argument means "the next gameweek", resolved from the landed bootstrap. A
+    # scheduler must never pass a literal number — it goes stale the moment a gameweek
+    # completes, and the site quietly serves last week's projections as current.
+    gw = int(args[0]) if args else next_gameweek()
     horizon = int(args[1]) if len(args) > 1 else 8
-    res = run(gw, horizon=horizon)
+
+    res = run(gw, horizon=horizon, allow_degraded=allow_degraded)
     m = res["meta"]
-    print(f"wrote {res['path']}")
     print(
-        f"  gw{m['gw']}  horizon={m['horizon']}  model={m['model_ver']}  "
+        f"gw{m['gw']}  horizon={m['horizon']}  model={m['model_ver']}  "
         f"run_ts={m['run_ts']}  records={m['n_records']}  "
         f"fallback_fixtures={m['fallback_fixtures']}"
     )
@@ -46,17 +59,24 @@ def main() -> None:
         print(f"  sources: {len(src.get('loaded', []))}/{len(src.get('requested', []))} seasons, "
               f"{src.get('n_matches', 0)} matches")
 
-    problems = health_check(m)
-    if not problems:
-        print("  health: OK")
+    if res["published"]:
+        if res["problems"]:
+            print("published DESPITE problems (--allow-degraded):")
+            for pr in res["problems"]:
+                print(f"  ! {pr}")
+        else:
+            print("  gates: OK")
+        print(f"published -> {res['path']}")
         return
-    print("\nDEGRADED — this artifact should not be published:")
-    for pr in problems:
+
+    # Blocked. The artifact goes somewhere a human can inspect — NEVER the serving store.
+    dump = pathlib.Path("build") / f"blocked-gw{gw}.json"
+    dump.parent.mkdir(parents=True, exist_ok=True)
+    dump.write_text(json.dumps(res["payload"], separators=(",", ":")))
+    print("\nBLOCKED — this artifact was NOT published:")
+    for pr in res["problems"]:
         print(f"  ! {pr}")
-    if allow_degraded:
-        print("\n--allow-degraded set; publishing anyway.")
-        return
-    print("\nExiting non-zero so a scheduler does not record this as a success.")
+    print(f"\nthe blocked artifact is at {dump} for inspection.")
     print("Re-run, or pass --allow-degraded if you know why and mean it.")
     raise SystemExit(1)
 

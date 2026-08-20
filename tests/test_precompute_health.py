@@ -12,6 +12,8 @@ reassuring green tick.
 
 from __future__ import annotations
 
+import pytest
+
 from fpledge.api.precompute import MAX_FALLBACK_FIXTURES, MIN_RECORDS, health_check
 
 
@@ -125,3 +127,105 @@ def test_more_unmapped_than_promoted_clubs_is_a_refusal():
                             "unmapped_teams": ["A", "B", "C", "D"]})
     p = health_check(meta)
     assert p and "mapping has probably broken" in p[0]
+
+
+# --- the publish gate: nothing degraded reaches the serving store ---------------------------- #
+# These exist because the ORDER inverted. run() used to write the artifact and let the caller
+# health-check afterwards — right, back when "written" meant a local file a human inspects;
+# silently wrong from the moment store.write_gw began publishing to the S3 the live API serves.
+from fpledge.api import store
+from fpledge.api.precompute import next_gameweek, publish_gate, run
+
+
+def _payload(n=500, xp=4.0, gw=1):
+    return {
+        "meta": {"gw": gw, "horizon": 8, "model_ver": "t", "run_ts": "t", "n_records": n,
+                 "fallback_fixtures": 2, "source": {"loaded": ["a"], "requested": ["a"],
+                                                    "failed": [], "unmapped_teams": []}},
+        "predictions": [{"element_id": i, "xp": xp} for i in range(n)],
+    }
+
+
+@pytest.fixture(autouse=True)
+def _serving_tmp(tmp_path, monkeypatch):
+    monkeypatch.setenv("FPLEDGE_SERVING_DIR", str(tmp_path / "serving"))
+    monkeypatch.delenv("FPLEDGE_SERVING_URI", raising=False)
+    store.invalidate()
+    yield
+    store.invalidate()
+
+
+def test_a_degraded_artifact_never_reaches_the_store(monkeypatch):
+    """THE ORDERING BUG. With the old write-then-check shape this test fails: the artifact is
+    in the store by the time anyone sees the problems, and on S3 that means served to users."""
+    bad = _payload(n=50)   # far under MIN_RECORDS
+    monkeypatch.setattr("fpledge.api.precompute.build_payload",
+                        lambda gw, horizon=8, run_ts=None, narrate=True: bad)
+    res = run(1)
+    assert res["published"] is False and res["problems"]
+    assert store.read_gw(1) is None, "the degraded artifact was published"
+
+
+def test_a_healthy_artifact_publishes_and_reports_no_problems(monkeypatch):
+    monkeypatch.setattr("fpledge.api.precompute.build_payload",
+                        lambda gw, horizon=8, run_ts=None, narrate=True: _payload())
+    res = run(1)
+    assert res["published"] is True and res["problems"] == []
+    assert store.read_gw(1) is not None
+
+
+def test_allow_degraded_publishes_but_still_reports(monkeypatch):
+    bad = _payload(n=50)
+    monkeypatch.setattr("fpledge.api.precompute.build_payload",
+                        lambda gw, horizon=8, run_ts=None, narrate=True: bad)
+    res = run(1, allow_degraded=True)
+    assert res["published"] is True
+    assert res["problems"], "override must not hide the problems it overrode"
+
+
+def test_a_degenerate_fit_is_blocked_even_when_inputs_look_healthy():
+    """publish_gate exists for what health_check cannot see: every input fine, output garbage."""
+    zeroed = _payload(xp=0.0)
+    assert any("non-zero" in p for p in publish_gate(zeroed, None))
+
+
+def test_losing_half_the_players_vs_the_live_artifact_is_blocked():
+    assert any("record count fell" in p for p in publish_gate(_payload(n=200), _payload(n=550)))
+
+
+def test_a_collapsed_mean_projection_is_blocked():
+    assert any("collapsed" in p for p in publish_gate(_payload(xp=0.5), _payload(xp=4.0)))
+
+
+def test_a_normal_week_to_week_change_is_not_blocked():
+    """The gate must trip on 'grossly wrong', never on 'different' — a gate that cries wolf
+    gets --allow-degraded added to the cron line, and then it guards nothing."""
+    assert publish_gate(_payload(n=540, xp=3.4), _payload(n=555, xp=4.1)) == []
+
+
+def test_first_publish_with_no_live_artifact_only_runs_absolute_checks():
+    assert publish_gate(_payload(), None) == []
+
+
+# --- auto gameweek: a scheduler must never pass a literal number ----------------------------- #
+def test_next_gameweek_prefers_fpls_own_flag(monkeypatch):
+    boot = {"events": [{"id": 1, "is_next": False}, {"id": 2, "is_next": True}]}
+    monkeypatch.setattr("fpledge.storage.load.latest_raw", lambda s, e: boot)
+    assert next_gameweek() == 2
+
+
+def test_next_gameweek_falls_back_to_the_earliest_future_deadline(monkeypatch):
+    boot = {"events": [
+        {"id": 1, "deadline_time": "2020-01-01T00:00:00Z"},
+        {"id": 2, "deadline_time": "2099-01-01T00:00:00Z"},
+        {"id": 3, "deadline_time": "2099-02-01T00:00:00Z"},
+    ]}
+    monkeypatch.setattr("fpledge.storage.load.latest_raw", lambda s, e: boot)
+    assert next_gameweek() == 2
+
+
+def test_a_stale_bootstrap_raises_rather_than_precomputing_the_past(monkeypatch):
+    boot = {"events": [{"id": 38, "deadline_time": "2020-01-01T00:00:00Z"}]}
+    monkeypatch.setattr("fpledge.storage.load.latest_raw", lambda s, e: boot)
+    with pytest.raises(RuntimeError, match="stale"):
+        next_gameweek()
