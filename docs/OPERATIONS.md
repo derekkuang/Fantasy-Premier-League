@@ -26,6 +26,34 @@ this says what to run and what failure looks like.
 30 4  *  *  2    cd /path/to/repo && .venv/bin/python scripts/precompute.py 1 8
 ```
 
+### Installed on macOS via launchd, not cron (2026-08-20)
+
+`snapshot` and `capture_news` are **live** as user LaunchAgents. Both were verified by
+`launchctl kickstart`: snapshot found the GW1 deadline and skipped correctly (outside its 12h
+window, exit 0); news captured all 20 clubs and wrote the index.
+
+```sh
+~/Library/LaunchAgents/com.fpledge.snapshot.plist   # 00:00, 06:00, 12:00, 18:00
+~/Library/LaunchAgents/com.fpledge.news.plist       # 07:00, 13:00, 19:00
+
+launchctl list | grep fpledge                       # loaded? second column is last exit code
+launchctl kickstart -k gui/$UID/com.fpledge.news    # run one now
+tail -f data/logs/news.log                          # both agents log to data/logs/
+```
+
+**Two reasons it is launchd rather than the cron block above.** First, macOS refuses
+`crontab` edits without Full Disk Access — the install fails with `Operation not permitted`.
+Second, and the one that actually matters: **if the machine is asleep at the scheduled time,
+cron silently skips the run and launchd executes it on wake.** On a laptop, with data that
+cannot be back-filled at any price, a silent skip is the expensive failure mode.
+
+It is still a laptop. A machine that is shut down over a deadline misses that gameweek
+permanently, and no scheduler fixes that — only moving the captures to a host that stays up
+does. Until then, check `data/logs/` after each deadline rather than assuming.
+
+`capture_props` is deliberately **not** installed: it has no API key and its live path has never
+executed. Prove it manually once before scheduling code that has never run.
+
 **Why news is daily and the other two are not.** Snapshot and props want a single reading as
 close to the deadline as possible, so a six-hourly cron with `--if-near-deadline` yields roughly
 one useful capture per gameweek and does nothing the rest of the time. News feeds are a **rolling
