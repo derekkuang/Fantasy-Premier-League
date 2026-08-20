@@ -72,6 +72,14 @@ jobs:
         # precompute reads it back for players/prices AND to resolve which gameweek is next.
         run: python scripts/pull_data.py
 
+      - name: Rebuild the database from landed raw
+        # The runner starts with no DuckDB; everything in it is derived state rebuilt from the
+        # raw zone. Crucially this includes player_season from the LANDED player-history object —
+        # past-season aggregates are static all season, so this costs one S3 read instead of 558
+        # FPL API calls. The first cloud run failed precisely here: the laptop's database had the
+        # table as a months-old side effect, the runner's didn't, and no code path rebuilt it.
+        run: python scripts/build_db.py
+
       - name: Fit, gate, publish
         run: python scripts/precompute.py
 

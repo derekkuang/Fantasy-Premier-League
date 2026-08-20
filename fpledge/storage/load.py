@@ -115,7 +115,19 @@ def load_hist_matches(con, matches: list[dict]) -> int:
 
 
 def load_all(season: str | None = None, con=None) -> dict:
-    """Init schema, load latest bootstrap + fixtures, return row counts per table."""
+    """Init schema, rebuild every table from the landed raw zone, return row counts.
+
+    DuckDB here is DERIVED state — anything in it must be rebuildable from landed raw alone,
+    because a scheduler's runner starts with no database at all. This function is that rebuild.
+
+    `player_season` comes from the landed `player_history` object rather than 558 fresh FPL API
+    calls, and the distinction matters twice over: past-season aggregates are static for the
+    entire season, so re-pulling them daily would be pointless load on FPL's API; and the first
+    cloud precompute failed exactly here — the laptop's DuckDB had the table (pull_player_history
+    had loaded it as a side effect months ago) and the runner's did not, because no code path
+    rebuilt it from the landed object. Missing is tolerated with a loud count of 0 rather than an
+    exception: the artifact for a brand-new season legitimately precedes any history pull.
+    """
     season = season or config.SEASON
     owns = con is None
     con = con or duck.connect()
@@ -123,9 +135,15 @@ def load_all(season: str | None = None, con=None) -> dict:
         duck.init_schema(con)
         load_bootstrap(con, latest_raw("fpl_api", "bootstrap", season), season)
         load_fixtures(con, latest_raw("fpl_api", "fixtures", season), season)
+        try:
+            history = latest_raw("fpl_api", "player_history", season)
+        except FileNotFoundError:
+            history = None
+        if history is not None:
+            load_player_season(con, history, season)
         return {
             t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
-            for t in ("teams", "players", "fixtures")
+            for t in ("teams", "players", "fixtures", "player_season")
         }
     finally:
         if owns:
