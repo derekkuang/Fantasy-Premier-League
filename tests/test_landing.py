@@ -145,6 +145,26 @@ def test_an_s3_locator_under_a_local_backend_raises_rather_than_reading_as_absen
         landing.read_json("s3://bucket/raw/source=fpl/data.json.gz")
 
 
+def test_a_local_locator_still_reads_under_an_s3_backend(tmp_path):
+    """THE CUTOVER CASE, and the one most likely to be missed.
+
+    Flipping the captures to S3 does not rewrite the index files. From that moment every index
+    holds BOTH — local absolute paths for everything captured before, `s3://` URIs after — and
+    the whole history has to keep resolving or `load_corpus` quietly halves. An S3 backend must
+    therefore still read a local locator, rather than treating "not mine" as "not there".
+    """
+    landing.configure(LocalBackend(tmp_path))
+    local_locator = landing.land({"era": "before cutover"}, source="fpl", endpoint="bootstrap")
+
+    landing.configure(S3Backend("bkt", "raw", client=_FakeS3()))
+    s3_locator = landing.land({"era": "after cutover"}, source="fpl", endpoint="bootstrap")
+
+    # Both eras readable while the S3 backend is the active one.
+    assert landing.exists(local_locator) and landing.exists(s3_locator)
+    assert landing.read_json(local_locator) == {"era": "before cutover"}
+    assert landing.read_json(s3_locator) == {"era": "after cutover"}
+
+
 def test_a_genuinely_missing_local_object_is_absent_not_an_error(local, tmp_path):
     """The other half of the same rule: a real path that is simply not there is a legitimate
     answer, and must stay distinguishable from the misconfiguration above."""
