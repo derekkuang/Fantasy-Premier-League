@@ -11,7 +11,7 @@
 // squad nor a transfer history to move from. The dashboard hides that card for a manual squad
 // rather than showing a suggestion that means nothing.
 
-import type { Prediction, SquadPlayer, TeamResponse } from "@/lib/api";
+import type { PredictionRow as Prediction, SquadPlayer, TeamResponse } from "@/lib/api";
 import { countByPos, type Pos } from "@/lib/formation";
 
 export const BUDGET = 100.0;
@@ -164,9 +164,22 @@ export function autoPick(pool: Prediction[]): Prediction[] {
 }
 
 // --- adapting to the dashboard --------------------------------------------------------- //
-/** A Prediction is a squad row plus two booleans. */
+/** A lean row is a squad row plus two booleans — and two stubbed context objects.
+ *
+ *  `SquadPlayer` models the /team API response, which genuinely carries `recent` and
+ *  `price_moves`; the lean rows this builder works from deliberately do not (they were the page
+ *  weight). Nothing in the locally-assembled dashboard renders either field — verified by
+ *  grepping every consumer (player-sheet, team-dashboard, captain-compare, pitch) — so the
+ *  stubs exist purely to satisfy the wire type honestly rather than to be read. If a dashboard
+ *  component ever grows a form or price display, it must fetch detail rather than trust these. */
 export function toSquadPlayer(p: Prediction, isStarter: boolean, isCaptain: boolean): SquadPlayer {
-  return { ...p, is_starter: isStarter, is_captain: isCaptain };
+  return {
+    ...p,
+    is_starter: isStarter,
+    is_captain: isCaptain,
+    recent: { form: 0, points_per_game: 0, ep_next: null },
+    price_moves: { change_event: 0, change_start: 0, transfers_in: 0, transfers_out: 0, net_transfers: 0 },
+  };
 }
 
 /** The payload the dashboard expects, assembled locally.

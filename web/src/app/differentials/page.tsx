@@ -1,4 +1,4 @@
-import { getLatestGw, getPredictions } from "@/lib/api";
+import { getLatestGw, getPredictions, toRow } from "@/lib/api";
 import { DifferentialsExplorer } from "@/components/differentials-view";
 import { JerseyDefs } from "@/components/jersey";
 import { PageError, PageShell } from "@/components/page-shell";
@@ -18,7 +18,7 @@ export default async function DifferentialsPage() {
     >
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
       <JerseyDefs />
-      <DifferentialsExplorer predictions={data.predictions} />
+      <DifferentialsExplorer predictions={data.predictions.map(toRow)} />
       {/* page-specific model caveats only — affiliation, kits and the model disclaimer are
           in the global footer */}
       <p className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">

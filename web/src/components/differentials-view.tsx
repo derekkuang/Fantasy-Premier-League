@@ -12,7 +12,7 @@
 // demand — deselect bands 1-2 and the list IS the differential group, still ranked honestly.
 
 import { useMemo, useState } from "react";
-import type { Prediction } from "@/lib/api";
+import type { PredictionRow as Prediction } from "@/lib/api";
 import { getClub } from "@/lib/clubs";
 import { BAND_RANGE, bandStyle, bandTitle } from "@/lib/risk";
 import { Jersey } from "@/components/jersey";

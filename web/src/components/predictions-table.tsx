@@ -5,7 +5,7 @@
 // between the pills and the sortable table headers.
 
 import { useMemo, useState } from "react";
-import type { Prediction } from "@/lib/api";
+import type { PredictionRow as Prediction } from "@/lib/api";
 import { getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
 import { DEFAULT_PAGE_SIZE, Pagination, pageOf, type PageSize } from "@/components/pagination";

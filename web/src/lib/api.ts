@@ -185,6 +185,33 @@ export type Prediction = PlayerContext & {
 
 export type PredictionsResponse = { meta: Meta; predictions: Prediction[] };
 
+/** The lean shape a LIST row carries across the server->client boundary.
+ *
+ *  Everything a client component receives as props is serialised into the page HTML, and with
+ *  555 players the full records made every list page ~1MB of markup — of which the heavy fields
+ *  (`breakdown`, `recent`, `price_moves`, fixtures beyond the 3 the strip shows) were only ever
+ *  read inside the detail sheet, one player at a time. Rows keep every scalar (cheap, and no
+ *  component has to guess) plus `availability`/`set_pieces` (small objects the differentials
+ *  rows render); the sheet fetches the rest from the API at the moment it opens. */
+export type PredictionRow = Omit<Prediction, "breakdown" | "recent" | "price_moves">;
+
+export function toRow(p: Prediction): PredictionRow {
+  // Explicit deletes rather than destructure-and-discard: the linter is right that unused
+  // bindings are noise, and the intent here IS deletion.
+  const row: Partial<Prediction> = { ...p, fixtures: (p.fixtures ?? []).slice(0, 3) };
+  delete row.breakdown;
+  delete row.recent;
+  delete row.price_moves;
+  return row as PredictionRow;
+}
+
+/** One player's full record, fetched from the browser when the detail sheet opens. */
+export async function getPlayerDetail(gw: number, elementId: number): Promise<Prediction> {
+  const res = await fetch(`${API_URL}/predictions/${gw}/player/${elementId}`);
+  if (!res.ok) throw new Error(`player detail failed (${res.status})`);
+  return res.json();
+}
+
 /** Fetch the ranked per-player xP table for a gameweek (precomputed, cacheable). */
 export async function getPredictions(gw = 1): Promise<PredictionsResponse> {
   const res = await fetch(`${API_URL}/predictions/${gw}`, { next: { revalidate: 3600 } });

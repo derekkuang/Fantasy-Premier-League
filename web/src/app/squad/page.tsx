@@ -4,7 +4,7 @@
 
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { fixturesByTeam, getFixtures, getLatestGw, getPredictions } from "@/lib/api";
+import { fixturesByTeam, getFixtures, getLatestGw, getPredictions, toRow } from "@/lib/api";
 import { PageError } from "@/components/page-shell";
 import { SquadBuilder } from "@/components/squad-builder";
 
@@ -32,7 +32,7 @@ export default async function SquadPage() {
     // useSearchParams needs a suspense boundary during prerender.
     <Suspense fallback={null}>
       <SquadBuilder
-        pool={predictions.predictions}
+        pool={predictions.predictions.map(toRow)}
         fixtures={fixturesByTeam(fixtures)}
         gw={gw}
         meta={predictions.meta}

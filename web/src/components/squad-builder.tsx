@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Prediction, TeamResponse, TickerFixture } from "@/lib/api";
+import type { PredictionRow as Prediction, TeamResponse, TickerFixture } from "@/lib/api";
 import { getClub } from "@/lib/clubs";
 import { POS_ORDER, countByPos, type Pos } from "@/lib/formation";
 import {

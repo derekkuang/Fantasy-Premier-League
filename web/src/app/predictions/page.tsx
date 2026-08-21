@@ -1,4 +1,4 @@
-import { getLatestGw, getPredictions } from "@/lib/api";
+import { getLatestGw, getPredictions, toRow } from "@/lib/api";
 import { PredictionsExplorer } from "@/components/predictions-table";
 import { JerseyDefs } from "@/components/jersey";
 import { PageError, PageShell } from "@/components/page-shell";
@@ -18,7 +18,7 @@ export default async function PredictionsPage() {
     >
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
       <JerseyDefs />
-      <PredictionsExplorer predictions={data.predictions} />
+      <PredictionsExplorer predictions={data.predictions.map(toRow)} />
       {/* affiliation + kit notices live in the global footer */}
       <p className="text-center text-[11px] leading-relaxed text-black/55 dark:text-white/60">
         xP is model-estimated: the mean points a player would score across many simulated

@@ -3,7 +3,8 @@
 // true FDR, and the exact per-term xP breakdown (terms sum to xP). Bottom sheet on mobile,
 // centred dialog on desktop. Closes on backdrop / ✕ / Escape.
 
-import type { Prediction } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { getPlayerDetail, type Prediction, type PredictionRow } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { BAND_BLURB, BAND_RANGE, bandStyle } from "@/lib/risk";
 import { Jersey } from "@/components/jersey";
@@ -36,11 +37,27 @@ function Row({ label, value, negative = false, strong = false }: { label: string
   );
 }
 
-export function PredictionSheet({ player, onClose }: { player: Prediction; onClose: () => void }) {
+export function PredictionSheet({ player, onClose }: { player: PredictionRow; onClose: () => void }) {
   const club = getClub(player.team);
-  const fixtures = player.fixtures ?? [];
-  const gw = fixtures[0]?.gw;
-  const b = player.breakdown;
+  const gw = (player.fixtures ?? [])[0]?.gw;
+
+  // The row carries every scalar, so the sheet renders complete-looking instantly; the heavy
+  // fields (breakdown, form, price momentum, fixtures beyond 3) arrive from the API a beat
+  // later. This is the other half of the page-weight fix: the list pages stopped serialising
+  // 555 players' detail into their HTML, so the one player actually inspected fetches on demand.
+  const [detail, setDetail] = useState<Prediction | null>(null);
+  const [detailFailed, setDetailFailed] = useState(false);
+  useEffect(() => {
+    if (gw == null) return; // a blank gameweek carries no fixtures to key the fetch on
+    let cancelled = false;
+    getPlayerDetail(gw, player.element_id)
+      .then((d) => { if (!cancelled) setDetail(d); })
+      .catch(() => { if (!cancelled) setDetailFailed(true); });
+    return () => { cancelled = true; };
+  }, [gw, player.element_id]);
+
+  const fixtures = detail?.fixtures ?? player.fixtures ?? [];
+  const b = detail?.breakdown ?? null;
   const f2 = (n: number) => n.toFixed(2);
   const isDef = player.position === "GK" || player.position === "DEF";
   const a = player.availability;
@@ -66,13 +83,17 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
   }
 
   // Preseason: both of these are structurally zero for every player until the first deadline.
-  // Say "not yet" rather than implying the player has no form / no price movement.
-  const formNote = player.recent.form === 0
+  // Say "not yet" rather than implying the player has no form / no price movement. Both live in
+  // the detail fetch now; until it lands the honest text is "loading", never a fabricated zero.
+  const loadingNote = detailFailed ? "Couldn't load — the projection above is unaffected." : "Loading…";
+  const formNote = detail == null ? loadingNote
+    : detail.recent.form === 0
     ? "Not yet measured — form is 0.0 for every player until the season starts, and lights up on its own after the first deadline."
-    : `Form ${player.recent.form.toFixed(1)} points per match over the last 30 days.`;
-  const priceNote = player.price_moves.change_start === 0 && player.price_moves.net_transfers === 0
+    : `Form ${detail.recent.form.toFixed(1)} points per match over the last 30 days.`;
+  const priceNote = detail == null ? loadingNote
+    : detail.price_moves.change_start === 0 && detail.price_moves.net_transfers === 0
     ? "Nothing yet — prices don't move before the first deadline. When they do, this shows what HAS happened; there is no price-change forecast here."
-    : `£${player.price_moves.change_start.toFixed(1)}m since the season began · net transfers ${player.price_moves.net_transfers.toLocaleString()}`;
+    : `£${detail.price_moves.change_start.toFixed(1)}m since the season began · net transfers ${detail.price_moves.net_transfers.toLocaleString()}`;
 
   return (
     <Sheet
@@ -220,7 +241,15 @@ export function PredictionSheet({ player, onClose }: { player: Prediction; onClo
           ))}
         </div>
 
-        {/* why this xP */}
+        {/* why this xP — from the detail fetch; its absence has three distinct states */}
+        {!b && !detailFailed && gw != null && (
+          <span className="text-[11px] text-black/40 dark:text-white/40">Loading the full xP breakdown…</span>
+        )}
+        {detailFailed && (
+          <span className="text-[11px] text-black/40 dark:text-white/40">
+            Couldn&apos;t load the full breakdown — every number above is unaffected.
+          </span>
+        )}
         {b && (
           <div className="flex flex-col">
             <span className="mb-1 t-label text-[10px] text-black/40 dark:text-white/40">

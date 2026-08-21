@@ -324,3 +324,20 @@ def test_sample_squad_is_a_legal_fpl_team(client):
     assert max(per_club.values()) <= 3, f"more than 3 from one club: {per_club}"
 
     assert round(sum(p["price"] for p in squad), 1) <= 100.0
+
+
+def test_prediction_detail_returns_one_full_record(client):
+    """The page-weight fix depends on this: rows are lean, and THIS endpoint carries the heavy
+    fields for exactly one player, fetched when a sheet opens."""
+    listing = client.get("/predictions/1").json()["predictions"]
+    target = listing[0]["element_id"]
+    r = client.get(f"/predictions/1/player/{target}")
+    assert r.status_code == 200
+    detail = r.json()
+    assert detail["element_id"] == target
+    assert "breakdown" in detail and "recent" in detail and "price_moves" in detail
+
+
+def test_prediction_detail_404s_for_an_unknown_player(client):
+    r = client.get("/predictions/1/player/999999")
+    assert r.status_code == 404

@@ -315,6 +315,25 @@ def predictions(gw: int, response: Response) -> dict:
     return {"meta": payload["meta"], "predictions": [_project_prediction(r) for r in rows]}
 
 
+@app.get("/predictions/{gw}/player/{element_id}")
+def prediction_detail(gw: int, element_id: int, response: Response) -> dict:
+    """One player's full record — breakdown, meta bundle, the whole fixture run.
+
+    Exists so the pages can stop shipping every player's detail to every visitor. The
+    predictions list serialises into each page's HTML via client-component props, and with 555
+    players the full records made every page ~1MB of markup; the heavy fields (breakdown,
+    recent, price_moves, the fixture run beyond 3) are only ever read inside the detail sheet,
+    for one player at a time, on tap. So rows carry the scalars and THIS endpoint carries the
+    rest, fetched from the browser at the moment it is actually needed.
+    """
+    payload = _load_or_404(gw)
+    for r in payload["records"]:
+        if r["element_id"] == element_id:
+            response.headers["Cache-Control"] = _WEEKLY_CACHE
+            return _project_prediction(r)
+    raise HTTPException(status_code=404, detail=f"no player {element_id} in GW{gw}")
+
+
 @app.get("/fixtures/{gw}")
 def fixtures(gw: int, response: Response, horizon: int | None = Query(default=None, ge=1, le=10)) -> dict:
     payload = _load_or_404(gw)
