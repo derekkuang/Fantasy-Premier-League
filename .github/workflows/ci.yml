@@ -123,7 +123,9 @@ jobs:
             --zip-file fileb://build/fpledge-captures.zip --query 'CodeSha256' --output text
           aws lambda update-function-code --function-name fpledge-news \
             --zip-file fileb://build/fpledge-captures.zip --query 'CodeSha256' --output text
-          for fn in fpledge-api fpledge-snapshot fpledge-news; do
+          aws lambda update-function-code --function-name fpledge-props \
+            --zip-file fileb://build/fpledge-captures.zip --query 'CodeSha256' --output text
+          for fn in fpledge-api fpledge-snapshot fpledge-news fpledge-props; do
             aws lambda wait function-updated --function-name "$fn"
           done
 

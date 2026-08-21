@@ -26,6 +26,7 @@ locals {
   capture_functions = {
     snapshot = aws_lambda_function.snapshot.function_name
     news     = aws_lambda_function.news.function_name
+    props    = aws_lambda_function.props.function_name
   }
 }
 
@@ -83,4 +84,13 @@ import {
 import {
   to = aws_cloudwatch_metric_alarm.capture_not_running["news"]
   id = "fpledge-news-not-running"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.capture_errors["props"]
+  id = "fpledge-props-errors"
+}
+import {
+  to = aws_cloudwatch_metric_alarm.capture_not_running["props"]
+  id = "fpledge-props-not-running"
 }

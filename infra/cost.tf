@@ -56,7 +56,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
 # debugging session this project has ever needed; the capture INDEX in S3 — not CloudWatch —
 # is the permanent record of what ran.
 resource "aws_cloudwatch_log_group" "lambda" {
-  for_each = toset(["fpledge-api", "fpledge-snapshot", "fpledge-news"])
+  for_each = toset(["fpledge-api", "fpledge-snapshot", "fpledge-news", "fpledge-props"])
 
   name              = "/aws/lambda/${each.value}"
   retention_in_days = 30
@@ -82,4 +82,9 @@ import {
 import {
   to = aws_cloudwatch_log_group.lambda["fpledge-news"]
   id = "/aws/lambda/fpledge-news"
+}
+
+import {
+  to = aws_cloudwatch_log_group.lambda["fpledge-props"]
+  id = "/aws/lambda/fpledge-props"
 }

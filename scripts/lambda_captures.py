@@ -42,6 +42,21 @@ def snapshot_handler(event, context):
     return {"ok": True, "forced": bool((event or {}).get("force"))}
 
 
+def props_handler(event, context):
+    """Anytime-goalscorer prices. Scheduled frequently; self-gates to the deadline window,
+    which is also the credit budget: ~27 of every 28 firings exit before touching the odds API."""
+    _require_s3()
+    if not os.environ.get("ODDS_API_KEY"):
+        # Without the key the script exits 2 with a clear message — but on a scheduler a missing
+        # env var is a deployment mistake, not a runtime condition, and deserves the alarm.
+        raise RuntimeError("ODDS_API_KEY is not set on this function")
+    from scripts.capture_props import main
+
+    argv = [] if (event or {}).get("force") else ["--if-near-deadline"]
+    main(argv)
+    return {"ok": True, "forced": bool((event or {}).get("force"))}
+
+
 def news_handler(event, context):
     """Club news feeds, all sources. Also rebuilds the serving digest the live API reads."""
     _require_s3()

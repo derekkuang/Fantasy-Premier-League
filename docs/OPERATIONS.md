@@ -55,6 +55,7 @@ schedulers; a parallel "cloud version" would drift from the tested one within a 
 |---|---|---|---|
 | `fpledge-snapshot` | `rate(3 hours)` | `scripts.lambda_captures.snapshot_handler` | gated skip in 133ms; forced capture landed bootstrap+fixtures+index in S3 in 1.7s |
 | `fpledge-news` | `cron(0 6,12,18 * * ? *)` | `scripts.lambda_captures.news_handler` | full 4-source run in 76s; live `/news` served the new digest minutes later |
+| `fpledge-props` | `rate(3 hours)` | `scripts.lambda_captures.props_handler` | first LIVE run ever caught an inverted fixture filter (0 prices, exit 0); fixed, then captured 1,009 GW1 prices for 387 players across 10/10 fixtures — 11 credits of 500/mo |
 
 Both: python3.13 / **arm64** / 512MB, role `fpledge-captures-lambda` (logs + read/write on the
 data bucket only), env `FPLEDGE_RAW_URI` + `FPLEDGE_SERVING_URI`. Deploy an update:
@@ -65,6 +66,14 @@ AWS_PROFILE=fpledge aws lambda update-function-code --function-name fpledge-snap
   --zip-file fileb://build/fpledge-captures.zip
 AWS_PROFILE=fpledge aws lambda update-function-code --function-name fpledge-news \
   --zip-file fileb://build/fpledge-captures.zip
+```
+
+`ODDS_API_KEY` lives ONLY in the fpledge-props Lambda environment — never in the repo (public)
+and never in the Terraform (`ignore_changes = [environment]` keeps it out of state). Rotate with:
+
+```bash
+AWS_PROFILE=fpledge aws lambda update-function-configuration --function-name fpledge-props \
+  --environment "Variables={FPLEDGE_RAW_URI=...,FPLEDGE_SERVING_URI=...,ODDS_API_KEY=<new>}"
 ```
 
 Smoke-test without waiting for a schedule or a deadline window:

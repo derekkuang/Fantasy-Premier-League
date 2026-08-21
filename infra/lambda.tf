@@ -74,3 +74,28 @@ resource "aws_lambda_function" "news" {
     ignore_changes = [filename, source_code_hash, last_modified]
   }
 }
+
+resource "aws_lambda_function" "props" {
+  function_name = "fpledge-props"
+  role          = aws_iam_role.captures.arn
+  runtime       = "python3.13"
+  architectures = ["arm64"]
+  handler       = "scripts.lambda_captures.props_handler"
+  memory_size   = 512
+  timeout       = 120
+  filename      = "${path.module}/../build/fpledge-captures.zip"
+
+  # ODDS_API_KEY lives in this function's environment and DELIBERATELY NOT in this file: the
+  # repo is public, and a secret in HCL is a secret in git history forever. The key was set at
+  # create time via CLI; `ignore_changes` on environment keeps Terraform from ever reading it
+  # into state or trying to reconcile it away. Rotating the key is a CLI operation, not a
+  # Terraform one — see docs/OPERATIONS.md.
+  lifecycle {
+    ignore_changes = [filename, source_code_hash, last_modified, environment]
+  }
+}
+
+import {
+  to = aws_lambda_function.props
+  id = "fpledge-props"
+}

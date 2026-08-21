@@ -63,8 +63,7 @@ from datetime import UTC, datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config
-from fpledge.ingest import landing
+from fpledge.ingest import capture_index, landing
 from fpledge.ingest.fpl_api import FPLClient
 from fpledge.ingest.oddsapi import (
     GOALSCORER_MARKET,
@@ -73,8 +72,6 @@ from fpledge.ingest.oddsapi import (
     OddsApiError,
     goalscorer_prices,
 )
-
-INDEX = config.DATA_DIR / "raw" / "props_index.jsonl"
 
 
 def _parse(ts: str | None) -> datetime | None:
@@ -102,7 +99,22 @@ def next_deadline(events: list[dict], now: datetime):
     return best_gw, best_dt
 
 
-def main() -> None:
+def gameweek_fixtures(events: list[dict], deadline, following) -> list[dict]:
+    """The odds-API fixtures that belong to THIS gameweek: kickoff after its deadline, at or
+    before the next gameweek's. Module-level and pure because the inverted version of this
+    filter (kickoff <= deadline, with a confident comment) shipped and captured zero prices —
+    logic that has already been wrong once does not get to live inline and untested."""
+    if deadline is None:
+        return list(events)
+    out = []
+    for e in events:
+        ko = _parse(e.get("commence_time"))
+        if ko is not None and ko > deadline and (following is None or ko <= following):
+            out.append(e)
+    return out
+
+
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--if-near-deadline", action="store_true",
                     help="capture only when a deadline is inside --window hours")
@@ -111,7 +123,7 @@ def main() -> None:
     ap.add_argument("--regions", default="uk")
     ap.add_argument("--list-markets", action="store_true",
                     help="ask the API which market keys exist for the next fixture, then exit")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     now = datetime.now(UTC)
     boot = FPLClient().bootstrap_static()
@@ -149,11 +161,18 @@ def main() -> None:
         print(json.dumps(client.list_markets(ev["id"], regions=args.regions), indent=1)[:4000])
         return
 
-    # Only fixtures before the deadline belong to this gameweek's capture. A later kickoff is a
-    # different gameweek and filing it here would misdate the price.
-    upcoming = [e for e in events if (_parse(e.get("commence_time")) or now) <= deadline] \
-        if deadline else events
-    print(f"{len(upcoming)} of {len(events)} listed fixtures fall before the GW{gw} deadline")
+    # A gameweek's fixtures kick off AFTER its deadline — the deadline is the last moment to set
+    # a team before those matches — and run until the NEXT gameweek's deadline. The first version
+    # had this filter INVERTED (kickoff <= deadline), complete with a confident comment
+    # rationalising the wrong direction, and it captured zero prices while exiting 0. It was
+    # caught only because the runbook insists a never-run capture is proven by hand before being
+    # scheduled: on a scheduler it would have burned credits reporting success all season.
+    following = min((d for e in boot.get("events", [])
+                     if (d := _parse(e.get("deadline_time"))) and deadline and d > deadline),
+                    default=None)
+    upcoming = gameweek_fixtures(events, deadline, following)
+    print(f"{len(upcoming)} of {len(events)} listed fixtures are GW{gw}'s "
+          f"(kickoff after its deadline, before the next)")
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     payloads, prices, failed = [], [], []
@@ -190,9 +209,10 @@ def main() -> None:
         "failed": failed,
         "path": str(path),
     }
-    INDEX.parent.mkdir(parents=True, exist_ok=True)
-    with INDEX.open("a") as fh:
-        fh.write(json.dumps(row) + "\n")
+    # One immutable object per capture, wherever the raw zone points — the same migration the
+    # other captures made. An appended local file cannot survive a scheduler, and this index is
+    # the only record that credits were spent on a capture at all.
+    index_locator = capture_index.record(capture_index.PROPS, row, ingest_ts=ts)
 
     print(f"captured {len(prices)} prices for {row['n_players']} players "
           f"across {priced_events}/{len(payloads)} fixtures")
@@ -206,7 +226,15 @@ def main() -> None:
               "the difference — a wrong key captures nothing all season and looks like a quiet "
               "week every time.")
         raise SystemExit(1)
-    print(f"indexed -> {INDEX}")
+    if not upcoming:
+        # Inside the capture window there is always a gameweek of fixtures ahead; finding none
+        # means the filter or the listing is broken, not that the week is quiet. Exit non-zero
+        # AFTER landing and indexing, so the evidence of what the API returned is preserved —
+        # this is the state the inverted filter produced, and it must never again read as
+        # success on a machine nobody is watching.
+        print("ERROR: no fixtures matched this gameweek inside the capture window")
+        raise SystemExit(1)
+    print(f"indexed -> {index_locator}")
     print(f"  {path}")
 
 

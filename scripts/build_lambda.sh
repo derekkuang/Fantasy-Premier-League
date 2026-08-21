@@ -104,7 +104,8 @@ rsync -a --quiet --exclude '__pycache__' --exclude '*.pyc' "$ROOT/fpledge" "$CAP
 # package's scripts/__init__.py makes them importable as scripts.<name> from the zip root.
 mkdir -p "$CAP_BUILD/scripts"
 cp "$ROOT/scripts/__init__.py" "$ROOT/scripts/lambda_captures.py" \
-   "$ROOT/scripts/snapshot.py" "$ROOT/scripts/capture_news.py" "$CAP_BUILD/scripts/"
+   "$ROOT/scripts/snapshot.py" "$ROOT/scripts/capture_news.py" \
+   "$ROOT/scripts/capture_props.py" "$CAP_BUILD/scripts/"
 trim "$CAP_BUILD"
 ( cd "$CAP_BUILD" && zip -qr "$CAP_ZIP" . -x '*.DS_Store' )
 verify "$CAP_ZIP" 'scripts/lambda_captures.py' requests fpledge
@@ -123,5 +124,6 @@ for mod in ('fastapi', 'starlette', 'pydantic', 'numpy', 'pandas', 'scipy', 'bot
 import scripts.lambda_captures
 import scripts.snapshot
 import scripts.capture_news        # pulls fpledge.api.store — must stay stdlib-only
+import scripts.capture_props
 print('  capture modules import cleanly with fastapi/numpy/boto3 blocked')
 "

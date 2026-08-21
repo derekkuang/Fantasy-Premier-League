@@ -47,3 +47,36 @@ resource "aws_lambda_permission" "events_news" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.news.arn
 }
+
+resource "aws_cloudwatch_event_rule" "props" {
+  name                = "fpledge-props-3h"
+  schedule_expression = "rate(3 hours)" # self-gates to the deadline window, like snapshot —
+                                        # which is also the credit budget: ~27 of 28 firings free
+}
+
+resource "aws_cloudwatch_event_target" "props" {
+  rule      = aws_cloudwatch_event_rule.props.name
+  arn       = aws_lambda_function.props.arn
+  target_id = "props"
+}
+
+resource "aws_lambda_permission" "events_props" {
+  statement_id  = "events-invoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.props.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.props.arn
+}
+
+import {
+  to = aws_cloudwatch_event_rule.props
+  id = "fpledge-props-3h"
+}
+import {
+  to = aws_cloudwatch_event_target.props
+  id = "fpledge-props-3h/props"
+}
+import {
+  to = aws_lambda_permission.events_props
+  id = "fpledge-props/events-invoke"
+}

@@ -203,3 +203,45 @@ def test_unparseable_deadlines_are_skipped_not_guessed():
               {"id": 2, "deadline_time": "2026-08-21T17:30:00Z"}]
     now = capture_props._parse("2026-08-01T00:00:00Z")
     assert capture_props.next_deadline(events, now)[0] == 2
+
+
+# --- the gameweek-window filter: inverted once, never again ---------------------------------- #
+def test_gameweek_fixtures_keeps_kickoffs_after_the_deadline():
+    """THE BUG THIS PINS. The first version kept kickoffs BEFORE the deadline — backwards, since
+    a gameweek's matches are what you set your team for ahead of its deadline — and captured
+    zero prices for GW1 while exiting 0. Found only because the never-run script was proven by
+    hand before being scheduled."""
+    from datetime import UTC, datetime
+
+    from scripts.capture_props import gameweek_fixtures
+
+    deadline = datetime(2026, 8, 21, 17, 30, tzinfo=UTC)
+    following = datetime(2026, 8, 28, 17, 30, tzinfo=UTC)
+    events = [
+        {"id": "past", "commence_time": "2026-08-20T19:00:00+00:00"},     # before the deadline
+        {"id": "gw1a", "commence_time": "2026-08-21T19:00:00+00:00"},     # this gameweek
+        {"id": "gw1b", "commence_time": "2026-08-23T15:00:00+00:00"},     # this gameweek
+        {"id": "gw2", "commence_time": "2026-08-29T11:30:00+00:00"},      # after the NEXT deadline
+    ]
+    got = [e["id"] for e in gameweek_fixtures(events, deadline, following)]
+    assert got == ["gw1a", "gw1b"]
+
+
+def test_gameweek_fixtures_without_a_following_deadline_keeps_everything_after():
+    from datetime import UTC, datetime
+
+    from scripts.capture_props import gameweek_fixtures
+
+    deadline = datetime(2026, 8, 21, 17, 30, tzinfo=UTC)
+    events = [{"id": "a", "commence_time": "2026-08-22T14:00:00+00:00"},
+              {"id": "b", "commence_time": "2026-09-30T14:00:00+00:00"}]
+    assert len(gameweek_fixtures(events, deadline, None)) == 2
+
+
+def test_gameweek_fixtures_drops_events_with_no_kickoff_time():
+    from datetime import UTC, datetime
+
+    from scripts.capture_props import gameweek_fixtures
+
+    deadline = datetime(2026, 8, 21, 17, 30, tzinfo=UTC)
+    assert gameweek_fixtures([{"id": "x"}], deadline, None) == []
