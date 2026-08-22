@@ -27,6 +27,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -94,7 +95,12 @@ class LocalBackend:
         base = self.root / prefix
         if not base.exists():
             return []
-        return sorted(str(p.resolve()) for p in base.glob("ingest_ts=*/data.json.gz"))
+        # `**` may match zero directories, so this finds both season-level objects
+        # (ingest_ts=... directly under the prefix) and gw-partitioned ones (gw=NN/ingest_ts=...).
+        # It MUST stay recursive to mirror S3's prefix scan: the single-level version answered
+        # "nothing landed" on disk for objects the cloud run could see — a local/S3 divergence
+        # in the one function whose docstring says the backends cannot be allowed to drift.
+        return sorted(str(p.resolve()) for p in base.glob("**/ingest_ts=*/data.json.gz"))
 
 
 class S3Backend:
@@ -245,8 +251,29 @@ def exists(locator: str) -> bool:
     return _reader_for(locator).exists(locator)
 
 
-def list_partitions(source: str, endpoint: str, season: str | None = None) -> list[str]:
-    """Every landed object for an endpoint, oldest first."""
+def list_partitions(source: str, endpoint: str, season: str | None = None,
+                    gameweek: int | None = None) -> list[str]:
+    """Every landed object for an endpoint, oldest first.
+
+    `gameweek` narrows the listing to one gw partition (the layout `land(gameweek=...)`
+    writes). It is a filter, not a correctness requirement: a season-wide listing returns
+    gw-partitioned objects too, on both backends.
+    """
     season = season or config.SEASON
     prefix = f"source={source}/endpoint={endpoint}/season={season}"
+    if gameweek is not None:
+        prefix += f"/gw={int(gameweek):02d}"
     return backend().list_partitions(prefix)
+
+
+_GW_SEGMENT = re.compile(r"/gw=(\d+)/")
+
+
+def gameweek_of(locator: str) -> int | None:
+    """The gw=NN partition a locator sits under, or None for a season-level object.
+
+    One definition, next to `partition()` which writes the segment, so a reader deriving
+    gameweeks from a listing cannot drift from the writer's layout.
+    """
+    m = _GW_SEGMENT.search(locator)
+    return int(m.group(1)) if m else None

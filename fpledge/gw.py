@@ -54,6 +54,36 @@ PLAYER_COLS = [
 ]
 
 
+def recent_minutes_by_code(elements: list[dict], live_by_gw: dict,
+                           past_fixtures: list[tuple]) -> dict:
+    """{code: [minutes per GW, oldest -> newest]} from landed event-live payloads.
+
+    A gameweek contributes to a player's list only when his team had a fixture that week:
+    event-live reports 0 minutes both for "benched" and for "his club had a blank", and folding
+    blanks in would depress every affected player's recency minutes for no footballing reason.
+    The team is the CURRENT one from the bootstrap — for a mid-season signing from another PL
+    club this can mis-filter the gameweeks played at the old club, which under-counts evidence
+    and delays his switch to the recency model rather than corrupting it.
+
+    Pure and separately testable; `_load_inputs` feeds it and `compute_xp_records` consumes it.
+    """
+    played: dict = defaultdict(set)
+    for g, h, a in past_fixtures:
+        played[g].update((h, a))
+    ident = {e["id"]: (e["code"], e.get("team")) for e in elements}
+    out: dict = defaultdict(list)
+    for g in sorted(live_by_gw):
+        teams = played.get(g)
+        if not teams:
+            continue
+        for el in live_by_gw[g].get("elements", []):
+            code, team = ident.get(el.get("id"), (None, None))
+            if code is None or team not in teams:
+                continue
+            out[code].append(int((el.get("stats") or {}).get("minutes") or 0))
+    return dict(out)
+
+
 def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | None:
     """Shared load + engine fit for a gameweek window [gw, gw+horizon).
 
@@ -80,6 +110,16 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         "SELECT gw, home_id, away_id FROM fixtures WHERE season = ? AND gw >= ? AND gw < ?",
         [config.SEASON, gw, gw + horizon],
     ).fetchall()
+    # Completed-gameweek fixtures, for the recency-minutes blank filter — separate from the
+    # prediction window above, which deliberately starts at `gw`. `finished` is load-bearing:
+    # a postponed match keeps its original gw label until rescheduled, and without the flag a
+    # called-off fixture makes both clubs count as "played" — appending a phantom 0-minute
+    # gameweek to every one of their players, the exact fabrication the blank filter exists
+    # to prevent.
+    past_fixtures = con.execute(
+        "SELECT gw, home_id, away_id FROM fixtures WHERE season = ? AND gw < ? AND finished",
+        [config.SEASON, gw],
+    ).fetchall()
     con.close()
     if not players:
         return None
@@ -96,6 +136,15 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     # duties) attached to each record. Changes no projection — it explains them.
     meta = playermeta.player_meta(boot)
 
+    # Current-season per-GW minutes from the landed event-live objects, so mid-season minutes
+    # come from the validated recency model rather than last season's aggregates. The
+    # `max_gw=gw - 1` bound is the point-in-time rule: predicting gameweek N may read only
+    # gameweeks < N, so re-precomputing a past week never sees (or pays to fetch) data that
+    # postdates its own deadline. Preseason this is {} and every projection is unchanged.
+    recent_minutes = recent_minutes_by_code(
+        boot["elements"], storeload.landed_event_live(max_gw=gw - 1), past_fixtures
+    )
+
     matches, source_report = footballdata.load_seasons_report(seasons or SEASONS)
     engine = DixonColesModel(half_life_days=180).fit(matches)
     fd_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
@@ -107,6 +156,7 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     return {
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
         "prices": prices, "availability": availability, "meta": meta,
+        "recent_minutes": recent_minutes,
         "engine": engine, "tmap": tmap, "source_report": source_report,
     }
 
@@ -120,6 +170,7 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], meta=inp["meta"],
+        recent_minutes=inp["recent_minutes"],
     )
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
@@ -145,7 +196,7 @@ def assemble_for_serving(
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], market_lambdas=market,
-        meta=inp["meta"],
+        meta=inp["meta"], recent_minutes=inp["recent_minutes"],
     )
     ticker_fixtures = [{"gw": g, "home_id": h, "away_id": a} for (g, h, a) in inp["fixtures"]]
     ticker = fixture_ticker(
@@ -167,7 +218,7 @@ def assemble_for_serving(
     multi = compute_multi_gw_xp(
         inp["players"], inp["fpl_teams"], fixtures_by_gw, inp["engine"], inp["tmap"],
         inp["prices"], ticker, sorted(fixtures_by_gw), availability=inp["availability"],
-        market_lambdas=market,
+        market_lambdas=market, recent_minutes=inp["recent_minutes"],
     )
     for r in records:
         fx = multi.get(r["element_id"], [])

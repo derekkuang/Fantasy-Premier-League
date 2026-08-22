@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from ..playermeta import EMPTY_META
 from . import rank
-from .minutes import MinutesModel
+from .minutes import RECENT_GWS, MinutesModel
 from .shares import match_shares, team_minutes
 from .xpoints import (
     PlayerContext,
@@ -26,6 +26,25 @@ from .xpoints import (
 
 LOW_COVERAGE = 9000       # current-squad last-season minutes below this -> shares unreliable
 MIN_RATE_MINUTES = 270    # need this many last-season minutes to trust a per-90 rate
+
+# Gameweeks of current-season evidence before a player's minutes switch from the preseason
+# proxy (`from_season` on last-season aggregates) to the recency model (`from_recent` on his
+# last RECENT_GWS gameweeks). The recency model is the VALIDATED configuration — `validate_xp`
+# runs minutes_mode="recent" and it is where the measured all-players gain (0.67 -> 0.73
+# Spearman) came from — but the harness burns in 8 gameweeks and so never priced how
+# `from_recent` behaves on one or two GWs of history. Four is a judgment call, not a measured
+# number: half the recency window, enough that one odd substitution pattern is not the whole
+# sample. Until a player crosses it (early season, a winter signing) he keeps the preseason
+# proxy, which is exactly what production shipped for all of him before this switch existed.
+#
+# The switch additionally requires at least one NONZERO minute in the player's list. An
+# all-zero list is not evidence about his minutes — it is what a backfilled event-live payload
+# fabricates for a player who was not yet in the game (zeroing a new signing to 0.00 xP), and
+# what a season on the sidelines looks like. With no appearance to learn from, the preseason
+# proxy is the only informed estimate we hold. A player whose recent WINDOW is all zeros but
+# who has played this season stays on the recency model — that is the validated behaviour,
+# and those zeros are real selection decisions, not artefacts.
+MIN_RECENT_GWS = 4
 
 
 def compute_xp_records(
@@ -40,6 +59,8 @@ def compute_xp_records(
     min_rate_minutes: int = MIN_RATE_MINUTES,
     market_lambdas: dict | None = None,
     meta: dict | None = None,
+    recent_minutes: dict | None = None,
+    min_recent_gws: int = MIN_RECENT_GWS,
 ):
     """Return (records, skipped_fixtures, coverage).
 
@@ -50,11 +71,25 @@ def compute_xp_records(
     `meta` ({code: context} from `playermeta.player_meta`) is attached verbatim to each record
     and never affects any number here — availability already reached the projection through
     the `availability` argument and the minutes model. This is the explanatory layer.
+
+    `recent_minutes` ({code: [minutes per GW, oldest -> newest]}, current season) switches a
+    player with `min_recent_gws`+ gameweeks of evidence onto the recency minutes model — the
+    configuration the published validation numbers were measured under. Without it (preseason,
+    or the argument omitted) every player keeps the last-season proxy, which was production's
+    only behaviour before this parameter existed: the backtest ran `from_recent` while serving
+    ran `from_season` all season, so the shipped projection was a different, unmeasured model
+    from the one the README describes. Availability is applied AFTER either path, in the same
+    order the backtest applies it — availability must discount minutes before shares are built.
     """
     minutes_model = MinutesModel()
+    recent_minutes = recent_minutes or {}
 
     def _pred(p):
-        mp = minutes_model.from_season(p["minutes"], p["starts"])
+        rec = recent_minutes.get(p["code"]) or []
+        if len(rec) >= min_recent_gws and any(rec):
+            mp = minutes_model.from_recent(rec[-RECENT_GWS:])
+        else:
+            mp = minutes_model.from_season(p["minutes"], p["starts"])
         if availability:
             chance, status = availability.get(p["code"], (None, None))
             mp = minutes_model.apply_availability(mp, chance, status)
@@ -167,6 +202,7 @@ def compute_multi_gw_xp(
     gws: Sequence[int],
     availability: dict | None = None,
     market_lambdas: dict | None = None,
+    recent_minutes: dict | None = None,
 ):
     """Per-player xP for each upcoming gameweek, joined to the fixture + true FDR.
 
@@ -181,6 +217,7 @@ def compute_multi_gw_xp(
         recs, _, _ = compute_xp_records(
             players, fpl_teams, fixtures_by_gw.get(g, []), engine, tmap, prices,
             availability=availability, market_lambdas=market_lambdas,
+            recent_minutes=recent_minutes,
         )
         xp_by_el: dict = defaultdict(float)
         meta: dict = {}

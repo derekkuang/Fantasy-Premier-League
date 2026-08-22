@@ -31,6 +31,25 @@ def latest_raw(source: str, endpoint: str, season: str | None = None):
     return landing.read_json(snapshots[-1])  # lexicographic == chronological (UTC stamps)
 
 
+def landed_event_live(season: str | None = None, max_gw: int | None = None) -> dict:
+    """{gw: payload} for the finalised gameweeks `pull_data` has landed. {} preseason.
+
+    One season-wide listing, gameweeks derived from each locator's gw= segment — never a
+    per-gameweek probe loop (38 S3 LISTs per precompute) and never a hardcoded season length.
+    `max_gw` bounds what is READ, not just what is returned: the caller predicting gameweek N
+    passes N-1, so a re-precompute of an early week neither parses nor pays for payloads that
+    postdate its own deadline. Objects are only fetched for gameweeks inside the bound.
+    """
+    season = season or config.SEASON
+    newest: dict = {}
+    for loc in landing.list_partitions("fpl_api", "event_live", season):
+        gw = landing.gameweek_of(loc)
+        if gw is None or (max_gw is not None and gw > max_gw):
+            continue
+        newest[gw] = loc  # listing is oldest-first, so the last locator per gw wins
+    return {gw: landing.read_json(loc) for gw, loc in newest.items()}
+
+
 def load_bootstrap(con, boot: dict, season: str | None = None) -> None:
     season = season or config.SEASON
 

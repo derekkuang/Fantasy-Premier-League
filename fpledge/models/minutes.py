@@ -15,6 +15,12 @@ from dataclasses import dataclass
 # unavailable, not-in-squad. ('a' = available, 'd' = doubtful -> use chance_of_playing.)
 _OUT_STATUSES = {"i", "s", "u", "n", "o"}
 
+# Gameweeks the recency model reads (`from_recent(recent[-RECENT_GWS:])`). One definition:
+# the validation harness and the serving path must score the SAME window, or the shipped
+# model quietly diverges from the measured one — the gap that motivated wiring recency
+# minutes into serving in the first place.
+RECENT_GWS = 6
+
 
 @dataclass
 class MinutesPrediction:

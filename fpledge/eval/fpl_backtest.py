@@ -19,7 +19,7 @@ from datetime import datetime
 
 from ..models import saves as saves_model
 from ..models.dixon_coles import DixonColesModel
-from ..models.minutes import MinutesModel
+from ..models.minutes import RECENT_GWS, MinutesModel
 from ..models.shares import rate_shares
 from ..models.xpoints import (
     PlayerContext,
@@ -161,7 +161,9 @@ def validate_xp(
 
     def _mp(a):
         if minutes_mode == "recent":
-            return minutes_model.from_recent(a["recent"][-6:])
+            # RECENT_GWS is shared with the serving path so harness and production score
+            # the same window — a re-tune here without the constant is a silent divergence.
+            return minutes_model.from_recent(a["recent"][-RECENT_GWS:])
         return minutes_model.from_season(a["minutes"], a["starts"], max(a["games"], 1))
 
     def _rate(a, key, half_life=4.0):
