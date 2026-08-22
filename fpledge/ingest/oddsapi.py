@@ -29,6 +29,7 @@ import os
 import time
 
 from .. import config
+from .httpget import get_with_retries
 
 BASE = "https://api.the-odds-api.com/v4"
 SPORT = "soccer_epl"
@@ -70,15 +71,29 @@ class OddsApiClient:
         self._last = time.monotonic()
 
     def _get(self, path: str, **params):
+        import requests
+
         if not self.api_key:
             raise NoApiKey(
                 "No ODDS_API_KEY. Get a free key at https://the-odds-api.com (500 credits/month, "
                 "which covers ~10 credits per gameweek for this capture many times over)."
             )
-        self._throttle()
-        resp = self.session.get(
-            f"{BASE}/{path}", params={"apiKey": self.api_key, **params}, timeout=self._timeout
-        )
+        try:
+            # attempts=2, below the module default, and the throttle runs before EVERY
+            # attempt: this endpoint is metered, so each retry of a priced call can be a
+            # spent credit — one bounded second chance for an unrepeatable capture, never a
+            # burst against a struggling book inside the politeness window.
+            resp = get_with_retries(
+                self.session, f"{BASE}/{path}",
+                params={"apiKey": self.api_key, **params}, timeout=self._timeout,
+                attempts=2, before_attempt=self._throttle,
+            )
+        except requests.RequestException as exc:
+            # Wrapped so the capture's per-event loop, which catches OddsApiError, keeps its
+            # partial-failure behaviour. A raw Timeout used to escape that catch and crash the
+            # run AFTER credits were spent, landing nothing and writing no index row — the exact
+            # "credits spent, no evidence" state the index exists to prevent.
+            raise OddsApiError(f"{path}: {type(exc).__name__} — request never completed") from exc
         # Header names are lowercase-insensitive through requests' CaseInsensitiveDict.
         used = resp.headers.get("x-requests-used")
         left = resp.headers.get("x-requests-remaining")
@@ -91,7 +106,10 @@ class OddsApiClient:
                 f"429 — out of credits (remaining={self.credits_remaining}). "
                 "The capture did NOT run; this week is lost unless it is re-run in time."
             )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Same reason as the wrap above: raise_for_status() would throw requests.HTTPError,
+            # which is not OddsApiError, and a mid-loop 5xx would take the whole capture down.
+            raise OddsApiError(f"HTTP {resp.status_code} from {path}")
         return resp.json()
 
     def events(self, sport: str = SPORT) -> list[dict]:

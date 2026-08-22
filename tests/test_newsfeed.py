@@ -165,6 +165,68 @@ def test_a_club_raises_only_when_every_source_fails():
         NewsFeedClient(session=sess, min_interval=0, sources=TWO).club("Arsenal")
 
 
+def test_a_timed_out_source_costs_coverage_but_not_the_club():
+    """THE CRASH THIS PREVENTS. `club()` catches NewsFeedError, but a slow publisher raises
+    requests.Timeout — which is not one. Before the wrap in `fetch`, one timed-out feed escaped
+    the per-source catch and crashed the entire capture, with every already-fetched club's items
+    still unlanded: the partial-failure design held for HTTP errors and not for the most common
+    real-world failure there is."""
+    import requests
+
+    sess = _Session(by_url={"bbc.test": (_feed("BBC Sport", 2), 200)})
+    orig = sess.get
+
+    def get(url, timeout=None):
+        if "grauniad.test" in url:
+            raise requests.ConnectTimeout("publisher hung")
+        return orig(url, timeout=timeout)
+
+    sess.get = get
+    failures: list = []
+    got = NewsFeedClient(session=sess, min_interval=0, sources=TWO).club(
+        "Arsenal", failures=failures)
+    assert [i["source"] for i in got] == ["bbc", "bbc"]
+    assert len(failures) == 1 and "ConnectTimeout" in failures[0]["error"]
+
+
+def test_a_repeatedly_hanging_publisher_is_skipped_for_the_rest_of_the_run():
+    """THE WALL-CLOCK CEILING. A hanging (not erroring) publisher costs a full timeout per
+    attempt per club; 20 clubs against one dead host is ~13 minutes — past the capture
+    Lambda's limit, which kills the run before land() and loses every club already fetched.
+    After MAX_TRANSPORT_FAILURES strikes the source is skipped instantly for remaining clubs,
+    recorded as a partial failure per club so coverage accounting stays honest."""
+    import requests
+
+    THREE_CLUBS = (
+        Source("bbc", {"Arsenal": "arsenal", "Chelsea": "chelsea", "Everton": "everton"},
+               "https://bbc.test/{slug}.xml", None),
+        Source("guardian", {"Arsenal": "arsenal", "Chelsea": "chelsea", "Everton": "everton"},
+               "https://grauniad.test/{slug}/rss",
+               {"Arsenal": "g", "Chelsea": "g", "Everton": "g"}),
+    )
+    sess = _Session(by_url={"grauniad.test": (_feed("g", 1), 200)})
+    bbc_calls: list = []
+    orig = sess.get
+
+    def get(url, timeout=None):
+        if "bbc.test" in url:
+            bbc_calls.append(url)
+            raise requests.ConnectTimeout("host hangs")
+        return orig(url, timeout=timeout)
+
+    sess.get = get
+    client = NewsFeedClient(session=sess, min_interval=0, sources=THREE_CLUBS)
+    failures: list = []
+    for club in ("Arsenal", "Chelsea", "Everton"):
+        got = client.club(club, failures=failures)
+        assert [i["source"] for i in got] == ["guardian"], f"{club} keeps its other source"
+    # Two clubs' worth of real attempts (2 each with retries), then the breaker: Everton's
+    # BBC fetch never touches the network.
+    assert len(bbc_calls) == 4
+    assert len(failures) == 3
+    assert "skipped" in failures[2]["error"]
+
+
 def test_a_feed_serving_the_site_wide_edition_is_rejected():
     """THE BUG THIS GUARD EXISTS TO PREVENT, and it is invisible to every other check. An
     unrecognised Guardian slug does not 404 — it answers HTTP 200 with twenty well-formed items

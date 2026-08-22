@@ -85,6 +85,32 @@ def test_a_rejected_key_is_an_error():
         c.events()
 
 
+def test_a_transport_failure_is_an_odds_api_error_not_a_crash():
+    """THE CRASH THIS PREVENTS. The capture's per-event loop catches OddsApiError so one failed
+    fixture costs one fixture. A raw requests.Timeout is not OddsApiError: before the wrap it
+    escaped that catch and crashed the run AFTER credits were spent, landing nothing and writing
+    no index row — the exact 'credits spent, no evidence' state the index exists to prevent."""
+    import requests
+
+    class _TimeoutSession:
+        def __init__(self):
+            self.headers: dict = {}
+
+        def get(self, url, params=None, timeout=None):
+            raise requests.ReadTimeout("book hung")
+
+    c = OddsApiClient(api_key="k", session=_TimeoutSession(), min_interval=0)
+    with pytest.raises(OddsApiError, match="ReadTimeout"):
+        c.events()
+
+
+def test_a_5xx_is_an_odds_api_error_for_the_same_reason():
+    """raise_for_status() throws requests.HTTPError, which the per-event catch would miss."""
+    c, _s = _client(payload={}, status=500)
+    with pytest.raises(OddsApiError, match="HTTP 500"):
+        c.events()
+
+
 def test_credit_headers_are_recorded():
     """The free tier is the entire premise, so the run has to report what it spent."""
     c, _s = _client(payload=[])

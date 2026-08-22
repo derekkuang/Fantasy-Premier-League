@@ -52,6 +52,7 @@ from html import unescape
 from urllib.parse import quote, urlparse
 
 from .. import config
+from .httpget import get_with_retries
 
 BBC_TEAM_FEED = "https://feeds.bbci.co.uk/sport/football/teams/{slug}/rss.xml"
 GUARDIAN_TEAM_FEED = "https://www.theguardian.com/football/{slug}/rss"
@@ -403,6 +404,14 @@ def parse_pl_content(json_text: str, slug: str) -> list[dict]:
 class NewsFeedClient:
     """Polite reader for publisher RSS across several sources. No article bodies are fetched."""
 
+    # Transport failures per source before the rest of the run skips it. A publisher whose
+    # host is HANGING (not erroring) costs a full timeout per attempt per club; without a
+    # breaker, 20 clubs x 2 attempts x 20s against one dead publisher is ~13 minutes of wall
+    # clock — past the capture Lambda's ceiling, which kills the run before land() and loses
+    # every club already fetched. Two strikes bounds that at ~80s, and the skip is recorded
+    # as a per-source partial failure, so coverage accounting stays honest.
+    MAX_TRANSPORT_FAILURES = 2
+
     def __init__(self, session=None, min_interval: float | None = None,
                  sources: tuple[Source, ...] = SOURCES):
         import requests
@@ -413,6 +422,7 @@ class NewsFeedClient:
         self._min_interval = MIN_INTERVAL_S if min_interval is None else min_interval
         self._last = 0.0
         self.sources = sources
+        self._transport_failures: dict[str, int] = {}
 
     def _throttle(self) -> None:
         dt = time.monotonic() - self._last
@@ -422,9 +432,29 @@ class NewsFeedClient:
 
     def fetch(self, source: Source, club: str) -> list[dict]:
         """One club from one publisher. Raises rather than returning an empty list on any doubt."""
-        self._throttle()
+        import requests
+
+        fails = self._transport_failures.get(source.name, 0)
+        if fails >= self.MAX_TRANSPORT_FAILURES:
+            raise NewsFeedError(
+                f"{club}/{source.name}: skipped — {fails} transport failures already this run"
+            )
         url = source.url(club)
-        resp = self.session.get(url, timeout=self._timeout)
+        try:
+            # The throttle runs as `before_attempt` so retried attempts respect the politeness
+            # interval too; attempts=2 keeps the worst case per fetch to ~2 timeouts, which is
+            # what the breaker's arithmetic above assumes.
+            resp = get_with_retries(self.session, url, timeout=self._timeout,
+                                    attempts=2, before_attempt=self._throttle)
+        except requests.RequestException as exc:
+            # A transport failure MUST become a NewsFeedError: `club()` treats NewsFeedError as
+            # "this publisher failed, the club keeps its other sources", and any other exception
+            # type escapes that catch and crashes the whole capture — with every club already
+            # fetched this run still unlanded. One timed-out feed cost a full day's corpus once.
+            self._transport_failures[source.name] = fails + 1
+            raise NewsFeedError(
+                f"{club}/{source.name}: {type(exc).__name__} from {urlparse(url).netloc}"
+            ) from exc
         if resp.status_code != 200:
             raise NewsFeedError(
                 f"{club}/{source.name}: HTTP {resp.status_code} from {urlparse(url).netloc}")

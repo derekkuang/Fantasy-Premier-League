@@ -17,24 +17,38 @@ from __future__ import annotations
 import time
 
 from .. import config
+from .httpget import get_with_retries
 
 
 class FPLClient:
-    """Polite, retrying-free client. Add retries/backoff before going to prod."""
+    """Polite client with bounded retries on transient failures.
 
-    def __init__(self, session=None, min_interval: float | None = None):
+    Defaults to ONE retry (attempts=2) — the capture-side posture, where the data is worth a
+    second try. The API layer constructs its shared client with attempts=1: interactive
+    requests sit inside a 30s Lambda budget holding a lock, so they must fail fast instead.
+    Status errors still raise `requests.HTTPError` — the API layer's handling depends on it.
+    """
+
+    def __init__(self, session=None, min_interval: float | None = None, attempts: int = 2):
         import requests
 
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": config.HTTP_USER_AGENT})
         self._last_call = 0.0
+        self._attempts = attempts
         self._min_interval = (
             config.FPL_API_MIN_INTERVAL_S if min_interval is None else min_interval
         )
 
     def _get(self, path: str):
+        # The throttle runs as `before_attempt`, so retried attempts respect the politeness
+        # interval too — a retry that skips it sends extra requests inside the very window
+        # the throttle promised, at the moment the host is struggling. Every endpoint goes
+        # through here, so bulk loops (event-live backfill, element summaries) are paced
+        # without each call site having to remember to be polite.
         url = f"{config.FPL_API_BASE}/{path}"
-        resp = self.session.get(url, timeout=config.HTTP_TIMEOUT)
+        resp = get_with_retries(self.session, url, timeout=config.HTTP_TIMEOUT,
+                                attempts=self._attempts, before_attempt=self._throttle)
         resp.raise_for_status()
         return resp.json()
 
@@ -52,8 +66,7 @@ class FPLClient:
         return self._get("fixtures/" if event is None else f"fixtures/?event={event}")
 
     def element_summary(self, element_id: int) -> dict:
-        self._throttle()  # ~700 players; be gentle
-        return self._get(f"element-summary/{element_id}/")
+        return self._get(f"element-summary/{element_id}/")  # ~700 players; _get paces them
 
     def event_live(self, gameweek: int) -> dict:
         return self._get(f"event/{gameweek}/live/")
@@ -66,7 +79,6 @@ class FPLClient:
         and `entry_history` (bank, squad value, transfers). Raises for HTTP errors
         (404 for a private/nonexistent entry or a gameweek the manager hasn't entered).
         """
-        self._throttle()  # rate-limit outbound calls so a busy server can't get IP-blocked
         return self._get(f"entry/{entry_id}/event/{gw}/picks/")
 
     def picks_summary(self, entry_id: int, gw: int) -> dict:
