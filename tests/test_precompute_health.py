@@ -134,15 +134,15 @@ def test_more_unmapped_than_promoted_clubs_is_a_refusal():
 # health-check afterwards — right, back when "written" meant a local file a human inspects;
 # silently wrong from the moment store.write_gw began publishing to the S3 the live API serves.
 from fpledge.api import store
-from fpledge.api.precompute import next_gameweek, publish_gate, run
+from fpledge.api.precompute import build_payload, next_gameweek, publish_gate, run
 
 
-def _payload(n=500, xp=4.0, gw=1):
+def _payload(n=500, xp=4.0, gw=1, clubs=20):
     return {
         "meta": {"gw": gw, "horizon": 8, "model_ver": "t", "run_ts": "t", "n_records": n,
                  "fallback_fixtures": 2, "source": {"loaded": ["a"], "requested": ["a"],
                                                     "failed": [], "unmapped_teams": []}},
-        "predictions": [{"element_id": i, "xp": xp} for i in range(n)],
+        "records": [{"element_id": i, "xp": xp, "team_id": i % clubs} for i in range(n)],
     }
 
 
@@ -189,8 +189,22 @@ def test_a_degenerate_fit_is_blocked_even_when_inputs_look_healthy():
     assert any("non-zero" in p for p in publish_gate(zeroed, None))
 
 
-def test_losing_half_the_players_vs_the_live_artifact_is_blocked():
-    assert any("record count fell" in p for p in publish_gate(_payload(n=200), _payload(n=550)))
+def test_losing_half_the_players_within_covered_clubs_is_blocked():
+    """Same 20 clubs, under half the players each — a degenerate fit, not a small week."""
+    assert any("players per club fell" in p
+               for p in publish_gate(_payload(n=200), _payload(n=550)))
+
+
+def test_a_blank_heavy_gameweek_is_not_mistaken_for_a_degenerate_fit():
+    """THE FALSE POSITIVE THE RAW-COUNT CHECK WOULD SHIP: a cup-rescheduled week can carry
+    half the clubs and therefore half the records while every covered club is fully priced.
+    Refusing to publish it would freeze the site on the PREVIOUS week's artifact for exactly
+    the gameweek rescheduling makes projections most wanted — staleness enforced by the guard
+    against rot. Density (players per club) separates the two: blanks lose whole clubs,
+    degenerate fits lose players inside clubs."""
+    blank_week = _payload(n=220, clubs=8)      # 8 clubs, ~27 players each
+    full_week = _payload(n=550, clubs=20)      # 20 clubs, ~27 players each
+    assert publish_gate(blank_week, full_week) == []
 
 
 def test_a_collapsed_mean_projection_is_blocked():
@@ -205,6 +219,29 @@ def test_a_normal_week_to_week_change_is_not_blocked():
 
 def test_first_publish_with_no_live_artifact_only_runs_absolute_checks():
     assert publish_gate(_payload(), None) == []
+
+
+def test_publish_gate_reads_the_shape_build_payload_actually_writes(monkeypatch):
+    """THE KEY-MISMATCH BUG. The gate read `predictions`; build_payload writes `records`. Every
+    check saw an empty list, silently skipped, and the gate published anything health_check let
+    through — a no-op guard shaped exactly like a working one. The hand-rolled `_payload` helper
+    above encoded the same wrong key, so the suite stayed green. This test is the contract: the
+    gate must catch a degenerate artifact that came from build_payload ITSELF, so the two can
+    never diverge on shape again."""
+    out = {
+        "records": [{"element_id": i, "xp": 0.0, "team_id": 1, "web_name": f"p{i}",
+                     "team_name": "A", "position": "MID", "price": 5.0, "ownership": 1.0}
+                    for i in range(500)],
+        "matches": [], "fallback": [], "fpl_teams": {1: "A"},
+        "fixture_ticker": {}, "source_report": {},
+    }
+    monkeypatch.setattr("fpledge.api.precompute.assemble_for_serving",
+                        lambda gw, horizon=8: out)
+    payload = build_payload(1, narrate=False)
+    assert any("non-zero" in p for p in publish_gate(payload, None)), (
+        "an all-zero artifact built by build_payload passed the gate — the gate is reading "
+        "a key build_payload does not write"
+    )
 
 
 # --- auto gameweek: a scheduler must never pass a literal number ----------------------------- #

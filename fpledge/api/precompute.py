@@ -161,7 +161,14 @@ def health_check(meta: dict) -> list[str]:
 # CURRENTLY BEING SERVED, and exists for the failure the first check cannot see: a fit whose
 # inputs all look fine but whose output is degenerate. The thresholds are wide on purpose —
 # projections legitimately move week to week — so a trip means "grossly wrong", not "different".
-MAX_RECORD_DROP = 0.5   # new artifact has lost more than half the players the live one carries
+#
+# The drop check is players-per-club, not raw record count: a blank-heavy gameweek (cup and
+# European rescheduling) legitimately carries half the clubs and therefore half the records,
+# and a raw-count check would refuse to publish the correct artifact for exactly the week the
+# rescheduling makes projections most wanted — silent staleness enforced by the guard against
+# silent rot. A degenerate fit loses players WITHIN the clubs it still covers; a blank week
+# loses whole clubs and keeps the density.
+MAX_RECORD_DROP = 0.5   # players-per-club fell below half the live artifact's density
 MIN_XP_MEAN_RATIO = 0.3  # mean projection collapsed to under 30% of the live artifact's
 MIN_NONZERO_XP_SHARE = 0.5  # over half the projections are exactly zero
 
@@ -174,7 +181,7 @@ def publish_gate(new_payload: dict, current_payload: dict | None) -> list[str]:
     should not be blocked by the absence of history.
     """
     problems = []
-    new_recs = new_payload.get("predictions") or []
+    new_recs = new_payload.get("records") or []
     xps = [float(r.get("xp") or 0.0) for r in new_recs]
     if xps:
         nonzero = sum(1 for x in xps if x > 0) / len(xps)
@@ -184,11 +191,17 @@ def publish_gate(new_payload: dict, current_payload: dict | None) -> list[str]:
                 "whatever its inputs claimed"
             )
     if current_payload is not None:
-        cur_recs = current_payload.get("predictions") or []
-        if cur_recs and len(new_recs) < len(cur_recs) * MAX_RECORD_DROP:
+        cur_recs = current_payload.get("records") or []
+
+        def _per_club(recs):
+            clubs = {r.get("team_id") for r in recs if r.get("team_id") is not None}
+            return len(recs) / len(clubs) if clubs else 0.0
+
+        if cur_recs and _per_club(new_recs) < _per_club(cur_recs) * MAX_RECORD_DROP:
             problems.append(
-                f"record count fell {len(cur_recs)} -> {len(new_recs)} — more than half the "
-                "players the live artifact serves would vanish"
+                f"players per club fell {_per_club(cur_recs):.1f} -> {_per_club(new_recs):.1f} "
+                "— clubs the new artifact still covers have lost most of their players, which "
+                "is a degenerate fit, not a blank gameweek"
             )
         cur_xps = [float(r.get("xp") or 0.0) for r in cur_recs]
         if xps and cur_xps:
