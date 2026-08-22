@@ -258,6 +258,42 @@ def test_team_unfetchable_entry_is_404_with_helpful_message(client):
     assert "deadline" in detail               # explains the preseason cause
 
 
+def test_team_loads_mid_gameweek_from_the_previous_gameweeks_picks(client):
+    """THE LAUNCH-DAY BUG. The moment GW1 kicked off, FPL's is_next flipped to GW2, the
+    precompute served GW2, and /team asked FPL for GW2 picks — which FPL reveals for NOBODY
+    until GW2's own deadline. Every valid entry id 404'd while everyone's GW1 squad sat one
+    gameweek back. Mid-week the manager's current squad IS the previous gameweek's, and the
+    response must say which gameweek the picks came from."""
+    owned = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    summary = {"element_ids": owned, "captain": 8, "vice_captain": 13,
+               "bank": 5.0, "squad_value": 100.0}
+
+    class _MidWeekClient:
+        """FPL between GW1 kickoff and GW2 deadline: GW2 picks 404, GW1 picks exist."""
+
+        def picks_summary(self, entry_id, gw):
+            if gw == 2:
+                raise _FakeHTTPError(404)
+            return summary
+
+    store.write_gw(2, _synthetic_payload())
+    app.dependency_overrides[get_fpl_client] = lambda: _MidWeekClient()
+    r = client.get("/team/1234567?gw=2")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["gw"] == 2 and body["picks_gw"] == 1
+    assert {p["element_id"] for p in body["squad"]} == set(owned)
+    assert body["projected_points"] is not None
+
+
+def test_team_404_when_no_gameweek_has_picks_at_all(client):
+    """Both the served gameweek AND the one before it 404 (preseason, private, or invalid id)
+    — only then is the 404 the caller's answer."""
+    store.write_gw(2, _synthetic_payload())
+    app.dependency_overrides[get_fpl_client] = lambda: _FailingClient()
+    assert client.get("/team/999999?gw=2").status_code == 404
+
+
 def test_team_api_outage_is_502(client):
     app.dependency_overrides[get_fpl_client] = lambda: _OutageClient()
     r = client.get(f"/team/999999?gw={GW}")

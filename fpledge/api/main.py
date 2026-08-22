@@ -81,7 +81,11 @@ def get_fpl_client():
         with _client_lock:
             if _shared_client is None:
                 from ..ingest.fpl_api import FPLClient
-                _shared_client = FPLClient()
+                # attempts=1: the API Lambda has a 30s budget and holds _picks_lock across
+                # this call, so a retry after a 20s hang (20s + backoff + 20s) would blow the
+                # budget mid-retry and queue every concurrent /team behind it — the friendly
+                # 502 never gets sent. Interactive requests fail fast; captures retry.
+                _shared_client = FPLClient(attempts=1)
     return _shared_client
 
 
@@ -104,6 +108,26 @@ def _cached_picks(client, entry_id: int, gw: int) -> dict:
         summary = client.picks_summary(entry_id, gw)  # throttled inside the client
         _picks_cache[key] = (time.monotonic(), summary)
         return summary
+
+
+def _picks_with_fallback(client, entry_id: int, gw: int) -> tuple[dict, int]:
+    """A manager's squad for `gw`, falling back one gameweek when FPL hasn't revealed it.
+
+    FPL exposes picks only after a gameweek's DEADLINE, and the site serves the NEXT
+    gameweek's projections from the moment the previous one kicks off — so for most of every
+    week the served gameweek's picks do not exist for ANYONE, and asking for them 404s. That
+    is not "team not found"; the manager's current squad is simply the previous gameweek's,
+    and joining it to the upcoming week's projections is exactly what the page promises.
+    Returns (picks, the gameweek they came from). Only when the previous gameweek has no
+    picks either (preseason, a private or invalid id) does the 404 reach the caller.
+    """
+    try:
+        return _cached_picks(client, entry_id, gw), gw
+    except Exception as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if gw <= 1 or status != 404:
+            raise
+    return _cached_picks(client, entry_id, gw - 1), gw - 1
 
 
 # --- adapters: serving record -> the shape each engine function expects ------------- #
@@ -415,22 +439,23 @@ def team(
     records = payload["records"]
 
     if entry_id == 0:  # reserved id: a sample team, no FPL API call (see _demo_picks)
-        picks = _demo_picks(records)
+        picks, picks_gw = _demo_picks(records), gw
     else:
         try:
-            picks = _cached_picks(client, entry_id, gw)
+            picks, picks_gw = _picks_with_fallback(client, entry_id, gw)
         except Exception as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status == 404:
-                # FPL only exposes a squad AFTER that gameweek's deadline, so before the
-                # season's first deadline no team is fetchable for anyone (preseason).
+                # The fallback already tried the previous gameweek, so landing here means
+                # no squad exists at all: preseason (before the season's first deadline no
+                # team is fetchable for anyone), or a private/invalid id.
                 raise HTTPException(
                     status_code=404,
-                    detail="No FPL squad is available for this gameweek yet. FPL only "
-                    "reveals a manager's team after the gameweek deadline, so no team can "
-                    "be loaded before the season's first deadline (preseason). If the "
-                    "season is under way, this ID may be private or invalid. Meanwhile, "
-                    "try the sample team.",
+                    detail="No FPL squad is available for this ID yet. FPL only reveals "
+                    "a manager's team after a gameweek deadline, so no team can be loaded "
+                    "before the season's first deadline (preseason). If the season is "
+                    "under way, this ID may be private or invalid. Meanwhile, try the "
+                    "sample team.",
                 ) from exc
             # Network error / FPL outage — not the caller's fault, so don't blame the id.
             raise HTTPException(
@@ -511,6 +536,10 @@ def team(
         "meta": payload["meta"],
         "entry_id": entry_id,
         "gw": gw,
+        # Which gameweek the squad itself came from. Between a kickoff and the next deadline
+        # this is gw-1 — the manager's current team, shown against the upcoming projections —
+        # and the UI says so rather than letting the join pass as this gameweek's picks.
+        "picks_gw": picks_gw,
         "bank": picks["bank"],
         "free_transfers": free_transfers,
         "projected_points": projected_points,
@@ -640,7 +669,26 @@ def advise_endpoint(body: dict, request: Request) -> dict:
         free_transfers = int(body.get("free_transfers") or 0)
     else:
         entry_id = int(body.get("entry_id") or 0)
-        picks = _demo_picks(records) if entry_id == 0 else _cached_picks(get_fpl_client(), entry_id, gw)
+        if entry_id == 0:
+            picks = _demo_picks(records)
+        else:
+            # Same fallback and error taxonomy as /team: mid-week the served gameweek's
+            # picks don't exist for anyone, and an unfetchable entry must be the caller's
+            # 404, not this endpoint's 500 — /advise used to crash here on a private id.
+            try:
+                picks, _ = _picks_with_fallback(get_fpl_client(), entry_id, gw)
+            except Exception as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status == 404:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="No FPL squad is available for this ID — it may be private "
+                        "or invalid, or the season's first deadline hasn't passed.",
+                    ) from exc
+                raise HTTPException(
+                    status_code=502,
+                    detail="The FPL API is unavailable right now — please try again shortly.",
+                ) from exc
         owned_ids = list(picks["element_ids"])
         bank = picks["bank"]
         free_transfers = int(body.get("free_transfers") or 1)
