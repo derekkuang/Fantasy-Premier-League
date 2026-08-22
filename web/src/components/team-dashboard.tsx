@@ -115,6 +115,18 @@ export function TeamDashboard({
         </span>
       </header>
 
+      {!manual && data.picks_gw != null && data.picks_gw < data.gw && (
+        // Honest join: FPL reveals a gameweek's picks only after its deadline, so mid-week
+        // the squad shown is the manager's current one from the previous gameweek, priced
+        // against the upcoming projections. Transfers made for GW{gw} appear once its
+        // deadline passes — FPL doesn't expose them earlier.
+        <p className="text-xs leading-relaxed text-black/55 dark:text-white/60">
+          Squad as of GW{data.picks_gw} — your latest confirmed team — projected against
+          GW{data.gw}. Transfers you make for GW{data.gw} will show up here after its
+          deadline, when FPL reveals them.
+        </p>
+      )}
+
       <Card className="p-5">
         <div className="flex items-end justify-between gap-4">
           <Stat

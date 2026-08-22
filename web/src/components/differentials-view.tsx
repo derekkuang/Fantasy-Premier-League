@@ -45,9 +45,11 @@ const LABEL = "t-label text-[10px] text-black/55 dark:text-white/60";
 const MUTED = "text-black/55 dark:text-white/60";
 
 const eo = (p: Prediction) => Math.max(0, Math.min(p.ownership / 100, 1));
-const sumFixtures = (p: Prediction) => (p.fixtures ?? []).slice(0, 8).reduce((s, f) => s + f.xp, 0);
+// xp_next8 is a row scalar computed in toRow BEFORE the fixture list is trimmed to the 3 the
+// strip shows. Summing p.fixtures here is the bug this replaced: it silently ranked "Next 8"
+// on a next-3 window from the day the trim was added.
 const hzXp = (p: Prediction, h: Horizon) =>
-  h === "xp_next3" ? p.xp_next3 : h === "xp_next8" ? sumFixtures(p) : p.xp;
+  h === "xp_next3" ? p.xp_next3 : h === "xp_next8" ? p.xp_next8 : p.xp;
 
 // --- legend -------------------------------------------------------------------------- //
 function RiskBandLegend({ labels }: { labels: Record<number, string> }) {
@@ -372,9 +374,14 @@ export function DifferentialsExplorer({ predictions }: { predictions: Prediction
     setF({ ...DEFAULTS, ...p }); setActivePreset(name); setOpenId(null); setPage(1);
   };
 
-  // The horizon button says "Next 8" (the product's intent) but the unit label states what was
-  // actually summed, so a shorter payload never claims 8 gameweeks it does not have.
-  const nGw = Math.min(predictions[0]?.fixtures?.length ?? 8, 8);
+  // The horizon button says "Next 8" (the product's intent) but the unit label states what the
+  // payload actually offers, so a shorter payload never claims 8 gameweeks it does not have.
+  // Max across ALL rows, never row zero alone: per-row counts legitimately vary — a club with
+  // a blank sums 7 real gameweeks and earns nothing in the blank, which is correct ranking —
+  // so one club's blank must not relabel every other row's genuine 8-gameweek sum.
+  const nGw = predictions.length
+    ? Math.max(...predictions.map((p) => p.xp_next8_gws))
+    : 8;
   const hzTag = f.horizon === "xp_next3" ? "xP over 3 GW" : f.horizon === "xp_next8" ? `xP over ${nGw} GW` : "xP";
   const hzUnit = f.horizon === "xp_next3" ? "xP · 3gw" : f.horizon === "xp_next8" ? `xP · ${nGw}gw` : "xP";
 
@@ -433,7 +440,7 @@ export function DifferentialsExplorer({ predictions }: { predictions: Prediction
   const pg = pageOf(rows, page, pageSize);
   const open = openId != null ? predictions.find((p) => p.element_id === openId) ?? null : null;
 
-  const rankNote = f.horizon === "xp_next8"
+  const rankNote = f.horizon === "xp_next8" && nGw < 8
     ? `One flat ranking, so a strong band-3 pick is never buried under a stack of band-5 noise. Eight-gameweek window requested — this payload carries ${nGw}, so that is what is summed.`
     : "One flat ranking, so a strong band-3 pick is never buried under a stack of band-5 noise.";
 

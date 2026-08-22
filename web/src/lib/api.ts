@@ -130,6 +130,10 @@ export type TeamResponse = {
   meta: Meta;
   entry_id: number;
   gw: number;
+  // Gameweek the squad itself came from. Between a kickoff and the next deadline FPL hasn't
+  // revealed `gw`'s picks for anyone, so the API serves the manager's current (previous-GW)
+  // squad against `gw`'s projections and says so here. Optional: older API builds predate it.
+  picks_gw?: number;
   bank: number;
   free_transfers: number;
   projected_points: number | null;
@@ -179,7 +183,7 @@ export type Prediction = PlayerContext & {
   low_coverage: boolean;
   captain_score: number;
   xp_next3: number;                  // 3-week outlook (sum of the next 3 GWs)
-  fixtures: PredictionFixture[];     // next 5, ordered
+  fixtures: PredictionFixture[];     // next GWs across the payload horizon (8), ordered; blanks absent
   breakdown: Breakdown | null;       // per-term xP split (Breakdown === the README's XpBreakdown)
 };
 
@@ -192,17 +196,34 @@ export type PredictionsResponse = { meta: Meta; predictions: Prediction[] };
  *  (`breakdown`, `recent`, `price_moves`, fixtures beyond the 3 the strip shows) were only ever
  *  read inside the detail sheet, one player at a time. Rows keep every scalar (cheap, and no
  *  component has to guess) plus `availability`/`set_pieces` (small objects the differentials
- *  rows render); the sheet fetches the rest from the API at the moment it opens. */
-export type PredictionRow = Omit<Prediction, "breakdown" | "recent" | "price_moves">;
+ *  rows render); the sheet fetches the rest from the API at the moment it opens.
+ *
+ *  `xp_next8` is summed HERE, from the full fixture list, before that list is trimmed to the 3
+ *  the strip shows. It used to be summed downstream in the differentials view, which silently
+ *  became a next-3 sum the day this trim was added — the "Next 8" ranking ran on 3 gameweeks
+ *  and the UI blamed the payload for a truncation this function had performed. Any future
+ *  aggregate over fixtures belongs on this side of the trim, with its own scalar. */
+export type PredictionRow = Omit<Prediction, "breakdown" | "recent" | "price_moves"> & {
+  xp_next8: number;      // 8-week outlook (incl. this GW), summed before the trim
+  xp_next8_gws: number;  // how many GWs that sum actually covers (<8 only near season end)
+};
 
 export function toRow(p: Prediction): PredictionRow {
+  const next8 = (p.fixtures ?? []).slice(0, 8);
   // Explicit deletes rather than destructure-and-discard: the linter is right that unused
-  // bindings are noise, and the intent here IS deletion.
-  const row: Partial<Prediction> = { ...p, fixtures: (p.fixtures ?? []).slice(0, 3) };
+  // bindings are noise, and the intent here IS deletion. The intersection keeps every
+  // PredictionRow field required (forgetting one is a compile error, not an undefined shipped
+  // to the client) while Partial<Prediction> keeps the three deleted keys legal to mention.
+  const row: Partial<Prediction> & PredictionRow = {
+    ...p,
+    fixtures: (p.fixtures ?? []).slice(0, 3),
+    xp_next8: Math.round(next8.reduce((s, f) => s + f.xp, 0) * 100) / 100,
+    xp_next8_gws: next8.length,
+  };
   delete row.breakdown;
   delete row.recent;
   delete row.price_moves;
-  return row as PredictionRow;
+  return row;
 }
 
 /** One player's full record, fetched from the browser when the detail sheet opens. */
