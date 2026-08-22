@@ -143,6 +143,18 @@ jobs:
             "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/advise")
           [ "$code" = "200" ] || { echo "::error::CORS preflight returned $code"; exit 1; }
           echo "preflight OK"
+          # The demo team is the deepest cheap probe the API has: it exercises the serving
+          # artifact, the optimiser, the transfer suggester, the balance check AND the FPL
+          # client dependency — without an FPL id or an outbound FPL call. /health proves the
+          # process is up; it imports none of that. The API zip shipped without `requests`
+          # once, /health stayed green, and the site's core page 500'd all preseason.
+          GW=$(curl -fsS --max-time 30 \
+            "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/health" \
+            | python -c "import json,sys; print(json.load(sys.stdin)['available_gws'][-1])")
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/team/0?gw=$GW")
+          [ "$code" = "200" ] || { echo "::error::/team/0?gw=$GW returned $code"; exit 1; }
+          echo "demo team OK (gw=$GW)"
 
   docker:
     name: docker — image builds and serves

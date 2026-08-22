@@ -87,11 +87,16 @@ echo "building for python $PY_VERSION / $PLATFORM"
 API_BUILD="$ROOT/build/lambda"
 API_ZIP="$ROOT/build/fpledge-api.zip"
 rm -rf "$API_BUILD" "$API_ZIP"; mkdir -p "$API_BUILD"
-pip_into "$API_BUILD" mangum fastapi anthropic
+# `requests` is not optional here: /team and /advise construct FPLClient, whose lazy
+# `import requests` runs inside the route DEPENDENCY — so without it every /team request,
+# demo included, is a 500 before the handler body executes. It shipped missing once: the
+# post-deploy check only exercised /health, which imports none of this, and the site's core
+# page was dead in production all preseason while every deploy stayed green.
+pip_into "$API_BUILD" mangum fastapi anthropic requests
 rsync -a --quiet --exclude '__pycache__' --exclude '*.pyc' "$ROOT/fpledge" "$API_BUILD/"
 trim "$API_BUILD"
 ( cd "$API_BUILD" && zip -qr "$API_ZIP" . -x '*.DS_Store' )
-verify "$API_ZIP" 'fpledge/api/lambda_handler.py' mangum fastapi starlette pydantic anthropic
+verify "$API_ZIP" 'fpledge/api/lambda_handler.py' mangum fastapi starlette pydantic anthropic requests
 echo "  api zip:      $API_ZIP  ($(du -h "$API_ZIP" | awk '{print $1}'), $(du -sh "$API_BUILD" | awk '{print $1}') unzipped)"
 
 # ---- 2. the captures -----------------------------------------------------------------------
