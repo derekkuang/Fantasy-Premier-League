@@ -146,6 +146,14 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     )
 
     matches, source_report = footballdata.load_seasons_report(seasons or SEASONS)
+    if not matches:
+        # Every season failed live AND has nothing landed to fall back on. Name the actual
+        # problem at the actual layer — the 2026-09-06 outage surfaced as a bare ValueError
+        # from deep inside the engine fit, which reads as a modelling bug, not a source outage.
+        raise RuntimeError(
+            "no training matches from any source — football-data.co.uk is unreachable and "
+            f"no landed copy exists to fall back on (failed: {source_report['failed']})"
+        )
     engine = DixonColesModel(half_life_days=180).fit(matches)
     fd_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
     tmap = build_team_map(list(fpl_teams.values()), fd_names)

@@ -84,20 +84,73 @@ def test_missing_metadata_does_not_crash_the_check():
 
 
 # --- the source loader's report ------------------------------------------------------------ #
-def test_load_seasons_report_records_a_failure_instead_of_swallowing_it(monkeypatch):
+_CSV = "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,PSCH,PSCD,PSCA\nE0,16/08/2024,A,B,1,0,2,3,4\n"
+
+
+@pytest.fixture
+def _empty_raw_zone(tmp_path, monkeypatch):
+    """Point the landing zone at an empty tmp dir. Without this, the fallback would read the
+    REAL data/raw on the developer's machine and a 'failed season' test would quietly pass or
+    fail depending on what that laptop happens to have landed."""
+    from fpledge.ingest import landing
+
+    monkeypatch.setattr("fpledge.config.RAW_DIR", tmp_path)
+    monkeypatch.setattr("fpledge.config.RAW_URI", "")
+    landing._backend = None
+    yield tmp_path
+    landing._backend = None
+
+
+def test_load_seasons_report_records_a_failure_instead_of_swallowing_it(
+        monkeypatch, _empty_raw_zone):
     from fpledge.ingest import footballdata
 
     def fake_download(code, division="E0"):
         if code == "2425":
             raise RuntimeError("connection reset")
-        return "Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,PSCH,PSCD,PSCA\nE0,16/08/2024,A,B,1,0,2,3,4\n"
+        return _CSV
 
     monkeypatch.setattr(footballdata, "download_season", fake_download)
     matches, report = footballdata.load_seasons_report(["2324", "2425"])
     assert len(matches) == 1                      # only the season that worked
     assert [f["code"] for f in report["failed"]] == ["2425"]
     assert report["loaded"] == ["2023-24"]
+    assert report["stale"] == []
     assert report["n_matches"] == 1
+
+
+def test_a_source_outage_falls_back_to_the_landed_copy(monkeypatch, _empty_raw_zone):
+    """THE 2026-09-06 OUTAGE. football-data.co.uk served 503 for every season; the fit had
+    zero matches; the precompute published nothing and the site sat on yesterday's artifact —
+    while yesterday's CSVs, landed by yesterday's successful run, sat unread in the raw zone.
+    A live-fetch failure must fall back to the newest landed copy, loudly, under `stale`,
+    with the timestamp of the data actually fitted."""
+    from fpledge.ingest import footballdata, landing
+
+    landing.land(_CSV, source="football_data", endpoint="E0", season="2425")
+
+    def outage(code, division="E0"):
+        raise RuntimeError("503 Server Error")
+
+    monkeypatch.setattr(footballdata, "download_season", outage)
+    matches, report = footballdata.load_seasons_report(["2425"])
+    assert len(matches) == 1, "the landed copy must feed the fit"
+    assert report["failed"] == [], "a season served from landing is degraded, not failed"
+    assert report["loaded"] == ["2024-25"]
+    assert [s["code"] for s in report["stale"]] == ["2425"]
+    assert report["stale"][0]["as_of"], "the report must say how old the data actually is"
+    # And the health check must not refuse the artifact over it: a whole-day non-publish
+    # costs strictly more than a fit missing the newest results.
+    assert health_check(_healthy(source=report)) == []
+
+
+def test_an_outage_with_nothing_landed_is_still_a_failure(monkeypatch, _empty_raw_zone):
+    from fpledge.ingest import footballdata
+
+    monkeypatch.setattr(footballdata, "download_season",
+                        lambda code, division="E0": (_ for _ in ()).throw(RuntimeError("503")))
+    matches, report = footballdata.load_seasons_report(["2425"])
+    assert matches == [] and [f["code"] for f in report["failed"]] == ["2425"]
 
 
 def test_the_legacy_loader_still_returns_just_matches(monkeypatch):

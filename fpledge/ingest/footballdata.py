@@ -16,6 +16,7 @@ from datetime import datetime
 
 from .. import config
 from . import landing
+from .httpget import get_with_retries
 
 FD_BASE = "https://www.football-data.co.uk/mmz4281"
 FD_FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"  # upcoming, with pre-match odds
@@ -79,10 +80,27 @@ def download_season(code: str, division: str = "E0") -> str:
     import requests
 
     url = f"{FD_BASE}/{code}/{division}.csv"
-    resp = requests.get(url, timeout=config.HTTP_TIMEOUT)
+    resp = get_with_retries(requests.Session(), url, timeout=config.HTTP_TIMEOUT)
     resp.raise_for_status()
     landing.land(resp.text, source="football_data", endpoint=division, season=code)
     return resp.text
+
+
+def cached_season(code: str, division: str = "E0"):
+    """The newest LANDED CSV for a season, as (text, ingest_ts) — or None if never landed.
+
+    `download_season` lands every fetch, so after any successful run the raw zone holds a
+    usable copy of each season. This is the read side of that bargain: when football-data.co.uk
+    is down, the fit falls back to results as of the last successful fetch instead of the
+    precompute publishing nothing. A 2026-09-06 outage proved the need — three 503s, zero
+    training matches, no artifact, while yesterday's CSVs sat landed and unread.
+    """
+    parts = landing.list_partitions("football_data", division, season=code)
+    if not parts:
+        return None
+    loc = parts[-1]
+    as_of = loc.split("ingest_ts=")[-1].split("/")[0]
+    return landing.read_json(loc), as_of
 
 
 def parse_csv(text: str, label: str) -> list[dict]:
@@ -133,7 +151,7 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
     """
     import requests
 
-    resp = requests.get(FD_FIXTURES_URL, timeout=config.HTTP_TIMEOUT)
+    resp = get_with_retries(requests.Session(), FD_FIXTURES_URL, timeout=config.HTTP_TIMEOUT)
     resp.raise_for_status()
     landing.land(resp.text, source="football_data", endpoint="fixtures", season=config.SEASON)
     out: list[dict] = []
@@ -161,17 +179,31 @@ def load_seasons_report(codes: list[str], division: str = "E0") -> tuple[list[di
     worse rather than anything breaking.
 
     Callers that cannot tolerate a partial fit should check `report["failed"]` and stop.
+
+    A season whose LIVE fetch fails is not immediately a failure: every successful fetch is
+    landed, so the newest landed copy stands in — loudly, under `report["stale"]` with the
+    timestamp of the data actually used — and only a season with no landed history at all
+    reaches `failed`. The distinction is deliberate: a third-party outage costs freshness
+    (results since the last fetch are missing from the fit, the same lag football-data's own
+    publishing cadence already imposes routinely), while refusing to publish over it costs
+    the site a whole day — which is what happened before the fallback existed.
     """
     out: list[dict] = []
-    per_season, failed = {}, []
+    per_season, failed, stale = {}, [], []
     for code in codes:
         label = season_label(code)
         try:
             text = download_season(code, division)
         except Exception as e:  # noqa: BLE001
-            print(f"  warn: could not fetch season {code}: {e}")
-            failed.append({"code": code, "season": label, "error": str(e)})
-            continue
+            cached = cached_season(code, division)
+            if cached is None:
+                print(f"  warn: could not fetch season {code}: {e}")
+                failed.append({"code": code, "season": label, "error": str(e)})
+                continue
+            text, as_of = cached
+            print(f"  warn: live fetch of season {code} failed ({e}); using the copy landed "
+                  f"{as_of} — results since then are missing from this fit")
+            stale.append({"code": code, "season": label, "as_of": as_of, "error": str(e)})
         got = parse_csv(text, label)
         print(f"  {label}: {len(got)} matches")
         per_season[label] = len(got)
@@ -180,6 +212,7 @@ def load_seasons_report(codes: list[str], division: str = "E0") -> tuple[list[di
         "requested": list(codes),
         "loaded": sorted(per_season),
         "failed": failed,
+        "stale": stale,
         "matches_per_season": per_season,
         "n_matches": len(out),
     }
