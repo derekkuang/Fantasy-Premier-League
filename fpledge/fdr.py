@@ -48,12 +48,20 @@ def fixture_ticker(
 ) -> dict:
     """Per team, the upcoming `horizon` fixtures with expected goals + FDR ratings.
 
-    fixtures: dicts with gw, home_id, away_id. Returns {team_id: [fixture-dicts sorted by gw]}.
+    fixtures: dicts with gw, home_id, away_id. Returns {team_id: [fixture-dicts sorted by gw]}
+    for EVERY team in `fpl_teams` — a team with no fixture in the window maps to [].
     Each row is tagged `source`: "market" when a de-vigged betting line supplied the lambdas
     (near gameweeks), else "model" (the engine). The UI reads lam_for + lam_against for the
     high/low-scoring and favourite cues.
     """
+    # Seeded with EVERY team, not only those with a fixture in the window: a club blank for
+    # the whole horizon must render as a row of blanks, not disappear from the grid. The UI was
+    # already written for this (its rank key returns 99 "to sink empty rows"); the backend
+    # could not produce one. Still a defaultdict underneath, so a fixture naming a team absent
+    # from `fpl_teams` keeps its old behaviour rather than raising.
     ticker: dict = defaultdict(list)
+    for tid in fpl_teams:
+        ticker[tid] = []
     for fx in fixtures:
         if not (start_gw <= fx["gw"] < start_gw + horizon):
             continue
