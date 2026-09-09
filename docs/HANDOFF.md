@@ -85,6 +85,8 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **27** | **the edge sits among the most-owned players; four-season stability; the four claims** |
 | **28** | **real managers: FPL is 56% skill, and ~30 seasons confirmed without a simulator** |
 | **29** | **the team-news feed: what exists, what is built, and the extraction design** |
+| 30-31 | three feeds per club; the PL content API — best single source, all 20 clubs |
+| **32** | **the market-lambda path had never run: a BOM, and the two guards that hid it** |
 
 ---
 
@@ -2339,3 +2341,109 @@ Caveat on the volume figure: the PL summaries are rich for some clubs (Forest 1,
 which is fine, because its titles are unusually dense (*"Iraola provides injury update on
 Bajcetic, Bradley, Ekitike, Endo"*), and a 40.7% player-naming rate on 405 mean characters is the
 proof. But do not expect paragraph prose from it for every club.
+
+---
+
+## 32. A byte-order mark had killed every market lambda (2026-09-09)
+
+`market_lambda.py` has said since it was written that the betting market out-predicts our
+engine, so where a fixture has a de-vigged line we use the market's lambdas and keep the engine
+as the fallback. Measured at +0.0085 Spearman, described everywhere as live, documented as
+auto-activating ~2 weeks before GW1.
+
+**It had never once run.** Not degraded — never run. Checked against production on 2026-09-09,
+every published gameweek:
+
+| endpoint | rows | market | model |
+|---|---|---|---|
+| `/fixtures/3` | 160 | **0** | 160 |
+| `/fixtures/4` | 160 | **0** | 160 |
+
+### The cause, in five steps
+
+1. football-data's `fixtures.csv` begins with a UTF-8 BOM.
+2. It is served as `text/csv` with **no charset**, so `requests` falls back to ISO-8859-1 (the
+   HTTP default for `text/*`) and `resp.text` returns the mark as the mojibake `ï»¿`.
+3. `csv.DictReader` names the first column from that: **`ï»¿Div`**, not `Div`.
+4. `fetch_upcoming` filters `if row.get("Div") != division: continue` — `None != "E0"` — so
+   **every row was skipped**.
+5. `[]` back to `_market_lambda_map`, `{}` forward to everything else, engine for all.
+
+Ten Premier League fixtures with complete 1X2 + O/U lines were in the landed file that morning.
+The code saw none of them.
+
+### Why it survived four months
+
+**Only the FIRST column is affected.** `parse_csv` reads `HomeTeam`/`FTHG` and never touches
+`Div`, so the historical fit was perfect and the engine, the backtests and 533 tests were all
+genuinely fine. `fetch_upcoming` is the only function in the codebase that filters on the first
+column, and it is the only one that broke.
+
+Then two pieces of deliberate, well-reasoned graceful degradation stacked:
+
+> `fetch_upcoming`: *"Returns [] out of season / before books post lines."*
+> `_market_lambda_map`: *"or {} if none are available... Never fails the precompute over odds."*
+
+Both correct. Together they made **total failure byte-identical to a quiet Tuesday** — and
+because the whole preseason genuinely was a quiet Tuesday, the silence was continuously
+confirmed as correct. Same family as §16's contaminated benchmark: a number that looked fine
+because nothing asked where it came from. Same family as the publish gate that read the wrong
+key and reported success, and the dead capture schedule that looked like a quiet day.
+
+**The rule worth carrying: every `return []` on a fallible path must distinguish "nothing to
+report" from "I could not tell."** Here the distinguishing test was local and free — the file
+held 165 rows across 20 divisions, and a division filter matching zero of them is a parse
+failure, not an out-of-season condition. `fetch_upcoming` now raises on exactly that.
+
+### What else the investigation turned up
+
+**Promoted clubs could never be priced.** `_market_lambda_map` resolved feed names through the
+ENGINE's team map, whose candidates come from the fitted seasons — where a promoted club has
+never appeared. Coventry and Hull scored 1.000 against the FPL names and still mapped to None,
+so their lines were dropped: the clubs the engine is weakest on were also the ones denied the
+better input. New `teammap.build_odds_team_map` resolves against the feed's own names. 8/10 →
+10/10 on the landed file.
+
+That map matches **stably**, not by best-score: "Man Utd" scores 0.667 against "Man City", above
+threshold, so on a week where City play and United do not, naive matching hands City's odds to
+United — a wrong lambda that looks entirely normal. An odds feed is always a partial slate, so
+this is the normal case, not an edge one.
+
+**football-data is a single point of failure, and it failed.** HTTP 503 across the whole site
+from 2026-09-06 to at least 2026-09-09 — results and fixtures both. A validated input with one
+unauthenticated host spends those days silently degraded. The Odds API is now the standby via
+`oddsapi.upcoming_1x2_ou`, same row shape, on the BULK `/odds` endpoint: **2 credits for the
+whole slate**, not 2 per fixture, against a 500/month free tier.
+
+Verified live 2026-09-09 with football-data still down — `20/20 upcoming fixtures priced from
+the market (0 unmapped, 0 malformed)`, source `the_odds_api`. 371/371 h2h markets carried
+exactly {home, away, "Draw"}; 20/20 fixtures offered a 2.5 totals line; 15-21 books per event.
+Prices are averaged across books because football-data's `Avg*` columns — what this project has
+always fed to `market_lambdas` — are averaged decimal odds, so a fallback week stays comparable.
+
+### The FDR band question, answered
+
+The original worry was that market and model lambdas flowing through the same fixed bands
+(`_ATTACK_BANDS`, tuned to the engine's range) would mean "attack FDR 2" says different things
+in GW1 and GW7. Measured head-to-head, same 20 fixtures, both sources, n=40 team-rows:
+
+```
+lambda spread   market: mean 1.478  sd 0.465        engine: mean 1.419  sd 0.434
+attack FDR      differs 19/40 (48%)  mean shift -0.07  mean |shift| 0.53
+defence FDR     differs 19/40 (48%)  mean shift +0.25  mean |shift| 0.50
+```
+
+The market is ~7% more dispersed — directionally as predicted, but small. **Keep the absolute
+bands.** A half-band mean disagreement with a near-zero SIGNED shift is symmetric: the sources
+disagree about which teams are good, not about the scale, and no re-banding addresses that.
+Percentile bands would be worse — "3" would always mean median, a genuinely easy week would
+contain no 1s, and cross-week comparison is the entire purpose of a ticker.
+
+The right response to the disagreement is disclosure, which is now shipped: `source` reaches the
+UI (it was computed, serialised and served for months, and `TickerFixture` simply never declared
+it), the tooltip names it per cell, and the legend states the rule — read off the payload, not
+asserted, so the page describes the artifact it is actually rendering. `meta.market` carries the
+same story into the artifact for the publish gate to read later.
+
+Caveat on the numbers above: the engine side was fitted on landed copies as of 2026-08-22
+because football-data was down for results too, so read 48% as an upper bound.
