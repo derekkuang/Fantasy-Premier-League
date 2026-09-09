@@ -70,6 +70,10 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
             # Everything the caller needs to decide whether this artifact is fit to publish.
             # A dropped source season used to be invisible from here.
             "source": out.get("source_report", {}),
+            # How many fixtures were priced from the betting market rather than the engine.
+            # Zero is a legitimate answer out of season and a red flag during one — the
+            # artifact should say which, not leave a reader to infer it from the cells.
+            "market": out.get("market_report", {}),
         },
         # JSON object keys must be strings; the API normalises team ids back to int on read.
         "fpl_teams": {str(tid): name for tid, name in out["fpl_teams"].items()},

@@ -11,41 +11,100 @@ from collections import defaultdict
 from . import config, playermeta
 from .betting.market_lambda import market_lambdas as _market_lambdas
 from .fdr import fixture_ticker
-from .ingest import footballdata
+from .ingest import footballdata, oddsapi
 from .lineup import projected_xi
 from .matches import match_previews
 from .models.dixon_coles import DixonColesModel
-from .models.teammap import build_team_map
+from .models.teammap import build_odds_team_map, build_team_map
 from .models.xp_table import compute_multi_gw_xp, compute_xp_records
 from .storage import duck
 from .storage import load as storeload
 
 
-def _market_lambda_map(fpl_teams: dict, tmap: dict) -> dict:
+def _upcoming_odds() -> tuple[list[dict], str, dict]:
+    """Upcoming fixtures with 1X2 + O/U 2.5, from the first source that has them.
+
+    Returns (rows, source_name, {source: error}). Both sources emit the same row shape, so
+    everything downstream is source-agnostic.
+
+    ORDER, AND WHY. football-data leads because it is free, needs no key and costs nothing to
+    ask. It is also a single unauthenticated host: it returned 503 for three days across
+    2026-09-06..09, and a validated input (+0.0085 Spearman) with one point of failure spends
+    those days silently degraded. The Odds API is the standby — an existing client, an existing
+    key, and 2 credits for the whole slate on the bulk endpoint against a 500/month free tier.
+
+    A legitimately EMPTY football-data file still falls through to the standby. That costs ~2
+    credits on a genuinely quiet week, which is the cheap side of the trade: the expensive side
+    was four months of the engine standing in for a market nobody knew was missing.
+    """
+    errors: dict = {}
+    try:
+        rows = footballdata.fetch_upcoming()
+        if rows:
+            return rows, "football_data", errors
+    except Exception as e:  # noqa: BLE001 — odds are strictly optional
+        errors["football_data"] = str(e)
+
+    try:
+        rows = oddsapi.upcoming_1x2_ou()
+        if rows:
+            return rows, "the_odds_api", errors
+    except oddsapi.NoApiKey:
+        # Not an error worth shouting about: no key configured is a deployment choice, and the
+        # standby simply is not available. Recorded so the artifact still says why.
+        errors["the_odds_api"] = "no ODDS_API_KEY configured"
+    except Exception as e:  # noqa: BLE001
+        errors["the_odds_api"] = str(e)
+
+    return [], "none", errors
+
+
+def _market_lambda_map(fpl_teams: dict) -> tuple[dict, dict]:
     """{(home_id, away_id): (lam_home, lam_away)} from upcoming betting odds, or {} if none
-    are available (preseason / before books post lines / fetch failure).
+    are available (preseason / before books post lines / fetch failure), plus a REPORT.
 
     Our validation showed the market out-predicts the engine on outcomes, so where a fixture
     has a de-vigged line we use market-implied lambdas for its FDR + xP; the engine is the
     fallback for every fixture not in this map. Never fails the precompute over odds.
+
+    The report is the point. An empty map is a legitimate state AND the exact shape a silent
+    failure takes, and for four months nothing could tell them apart: a byte-order mark
+    renamed football-data's first CSV column, `fetch_upcoming` matched zero rows, and every
+    published gameweek used the engine while betting lines sat unread in the landed file. The
+    posture stays "odds are optional" — but a run that got none now says so, and says why.
     """
-    try:
-        upcoming = footballdata.fetch_upcoming()
-    except Exception:  # noqa: BLE001 — odds are strictly optional
-        return {}
-    fd_to_fpl = {fd: name for name, fd in tmap.items() if fd}
+    report: dict = {"source": None, "fixtures_with_odds": 0, "mapped": 0, "unmapped": [],
+                    "malformed": 0, "errors": {}}
+    upcoming, source, errors = _upcoming_odds()
+    report["source"], report["errors"] = source, errors
+    if not upcoming:
+        print(f"  warn: no market odds this run ({errors or 'nothing upcoming'}) — "
+              "every fixture uses the engine")
+        return {}, report
+    report["fixtures_with_odds"] = len(upcoming)
+    # Resolved against the FEED's own names, not the engine's team map. The engine's map only
+    # knows clubs with history in the fitted seasons, so promoted sides could never be priced
+    # from the market even when the bookmaker had priced them — see `build_odds_team_map`.
+    odds_names = sorted({m["home"] for m in upcoming} | {m["away"] for m in upcoming})
+    omap = build_odds_team_map(list(fpl_teams.values()), odds_names)
     name_to_id = {name: tid for tid, name in fpl_teams.items()}
+    odds_to_id = {o: name_to_id[f] for o, f in omap.items() if f in name_to_id}
     out: dict = {}
     for m in upcoming:
-        hid = name_to_id.get(fd_to_fpl.get(m["home"]))
-        aid = name_to_id.get(fd_to_fpl.get(m["away"]))
+        hid, aid = odds_to_id.get(m["home"]), odds_to_id.get(m["away"])
         if hid is None or aid is None:
+            report["unmapped"].append(f'{m["home"]} v {m["away"]}')
             continue
         try:
             out[(hid, aid)] = _market_lambdas(m["o_h"], m["o_d"], m["o_a"], m["o_over"], m["o_under"])
         except Exception:  # noqa: BLE001 — skip a malformed odds row
+            report["malformed"] += 1
             continue
-    return out
+    report["mapped"] = len(out)
+    print(f"  market odds [{source}]: {report['mapped']}/{report['fixtures_with_odds']} "
+          f"upcoming fixtures priced from the market ({len(report['unmapped'])} unmapped, "
+          f"{report['malformed']} malformed)")
+    return out, report
 
 SEASONS = ["2324", "2425", "2526"]
 PLAYER_COLS = [
@@ -199,7 +258,7 @@ def assemble_for_serving(
     if inp is None:
         return None
     # Market-implied lambdas for fixtures with a betting line (near GWs); engine is fallback.
-    market = _market_lambda_map(inp["fpl_teams"], inp["tmap"])
+    market, market_report = _market_lambda_map(inp["fpl_teams"])
     gw_fixtures = [(h, a) for (g, h, a) in inp["fixtures"] if g == gw]
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
@@ -247,4 +306,5 @@ def assemble_for_serving(
         "records": records, "fallback": fallback, "coverage": coverage,
         "fpl_teams": inp["fpl_teams"], "fixture_ticker": ticker, "horizon": horizon,
         "matches": previews, "source_report": inp["source_report"],
+        "market_report": market_report,
     }

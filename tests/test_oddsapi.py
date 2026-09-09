@@ -271,3 +271,95 @@ def test_gameweek_fixtures_drops_events_with_no_kickoff_time():
 
     deadline = datetime(2026, 8, 21, 17, 30, tzinfo=UTC)
     assert gameweek_fixtures([{"id": "x"}], deadline, None) == []
+
+
+# --- fixture-level 1X2 + O/U: the standby source for market lambdas ---------------------- #
+def _event(home="Everton", away="Crystal Palace", books=2, line=2.5):
+    """Two bookmakers, both pricing h2h and totals, with prices one apart so the mean is
+    unambiguous."""
+    return {
+        "home_team": home, "away_team": away,
+        "bookmakers": [
+            {"key": f"book{i}", "markets": [
+                {"key": "h2h", "outcomes": [
+                    {"name": home, "price": 2.20 + i},
+                    {"name": "Draw", "price": 3.40 + i},
+                    {"name": away, "price": 3.20 + i},
+                ]},
+                {"key": "totals", "outcomes": [
+                    {"name": "Over", "price": 1.90 + i, "point": line},
+                    {"name": "Under", "price": 1.80 + i, "point": line},
+                ]},
+            ]}
+            for i in range(books)
+        ],
+    }
+
+
+def test_an_event_becomes_a_football_data_shaped_row():
+    """The standby must be a drop-in: `gw._market_lambda_map` consumes both sources through the
+    same keys, so a fallback week cannot change the shape of anything downstream."""
+    from fpledge.ingest.oddsapi import _row_from_event
+
+    row = _row_from_event(_event(books=1))
+    assert set(row) == {"home", "away", "o_h", "o_d", "o_a", "o_over", "o_under"}
+    assert row["home"] == "Everton" and row["away"] == "Crystal Palace"
+    assert row["o_h"] == 2.20 and row["o_d"] == 3.40 and row["o_a"] == 3.20
+    assert row["o_over"] == 1.90 and row["o_under"] == 1.80
+
+
+def test_prices_are_averaged_across_bookmakers():
+    """football-data's `Avg*` columns are averaged decimal odds, and those are the columns this
+    project has always fed to `market_lambdas`. Matching that convention keeps a fallback week
+    comparable to every other week."""
+    from fpledge.ingest.oddsapi import _row_from_event
+
+    row = _row_from_event(_event(books=2))
+    assert row["o_h"] == 2.70      # mean(2.20, 3.20)
+    assert row["o_over"] == 2.40   # mean(1.90, 2.90)
+
+
+def test_an_event_missing_the_totals_line_is_dropped_not_half_used():
+    """`market_lambdas` needs 1X2 AND over/under: the 1X2 prices fix supremacy, the totals fix
+    total goals, and one without the other determines no pair of lambdas at all."""
+    from fpledge.ingest.oddsapi import _row_from_event
+
+    ev = _event(books=1)
+    ev["bookmakers"][0]["markets"] = [ev["bookmakers"][0]["markets"][0]]   # h2h only
+    assert _row_from_event(ev) is None
+
+
+def test_a_totals_market_on_another_line_does_not_count():
+    """Books price 1.5, 2.5 and 3.5. Only the 2.5 line inverts to the lambdas we want."""
+    from fpledge.ingest.oddsapi import _row_from_event
+
+    ev = _event(books=1, line=3.5)
+    assert _row_from_event(ev) is None
+
+
+def test_the_standby_raises_without_a_key_rather_than_reporting_a_quiet_week(monkeypatch):
+    """The whole lesson of the football-data BOM: an empty return must never be the shape a
+    configuration failure takes."""
+    from fpledge.ingest.oddsapi import upcoming_1x2_ou
+
+    monkeypatch.delenv("ODDS_API_KEY", raising=False)
+    with pytest.raises(NoApiKey):
+        upcoming_1x2_ou()
+
+
+def test_the_slate_costs_one_bulk_call_not_one_per_fixture(monkeypatch):
+    """(markets x regions) credits for every fixture at once — 2, not 2 each. That is what lets
+    these markets ride on the same free tier as the goalscorer capture."""
+    from fpledge.ingest import oddsapi
+
+    calls = []
+
+    class _C:
+        def sport_odds(self, markets, regions):
+            calls.append((markets, regions))
+            return [_event(), _event("Man City", "Bournemouth")]
+
+    monkeypatch.setattr(oddsapi.landing, "land", lambda *a, **k: None)
+    rows = oddsapi.upcoming_1x2_ou(client=_C())
+    assert len(calls) == 1 and calls[0][0] == "h2h,totals"
+    assert [r["home"] for r in rows] == ["Everton", "Man City"]
