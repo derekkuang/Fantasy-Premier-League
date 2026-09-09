@@ -250,6 +250,7 @@ export type TickerFixture = {
   lam_against: number;  // model expected goals against
   attack_fdr: number;   // 1 (easy to score) .. 5 (hard)
   defence_fdr: number;  // 1 (likely clean sheet) .. 5 (leaky)
+  source: "market" | "model";   // de-vigged betting line, or the Dixon-Coles engine
 };
 
 export type FixturesResponse = {
