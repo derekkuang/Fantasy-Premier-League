@@ -155,6 +155,12 @@ jobs:
             "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/team/0?gw=$GW")
           [ "$code" = "200" ] || { echo "::error::/team/0?gw=$GW returned $code"; exit 1; }
           echo "demo team OK (gw=$GW)"
+          # The honesty page. It read a file off local disk and 404'd in production from
+          # launch day while every test passed (HANDOFF §33). A missing card is a deploy failure.
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/model")
+          [ "$code" = "200" ] || { echo "::error::/model returned $code"; exit 1; }
+          echo "model card OK"
 
   docker:
     name: docker — image builds and serves

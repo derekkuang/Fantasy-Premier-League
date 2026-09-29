@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fpledge.api import main as api_main
+from fpledge.api import store
 
 
 @pytest.fixture
@@ -160,16 +161,35 @@ def test_the_rate_limit_fires(monkeypatch, tmp_path):
 
 
 # --- the model card ------------------------------------------------------------------ #
-def test_model_card_404s_rather_than_inventing_numbers(client, monkeypatch, tmp_path):
+def test_model_card_404s_rather_than_inventing_numbers(client):
     """A page that publishes the model's accuracy must not fall back to a placeholder."""
-    monkeypatch.setattr(api_main.config, "DATA_DIR", tmp_path)
     res = client.get("/model")
     assert res.status_code == 404
     assert "build_model_card" in res.json()["detail"]
 
 
-def test_model_card_is_served_when_generated(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(api_main.config, "DATA_DIR", tmp_path)
-    (tmp_path / "eval").mkdir()
-    (tmp_path / "eval" / "model_card.json").write_text(json.dumps({"season": "2025-26"}))
+def test_model_card_is_served_from_the_serving_store(client):
+    """Written and read through the store, so it follows FPLEDGE_SERVING_URI to S3.
+
+    It used to be read from `DATA_DIR/eval/` on local disk — present on the laptop that built it
+    and nowhere else, so production 404'd from launch while this test, which wrote the file to
+    exactly that local path, stayed green."""
+    store.write_artifact("model_card.json", {"season": "2025-26"})
     assert client.get("/model").json() == {"season": "2025-26"}
+
+
+def test_model_card_ignores_a_stray_local_eval_file(client, monkeypatch, tmp_path):
+    """The old local path must not quietly satisfy the endpoint — that is how the bug hid."""
+    data = tmp_path / "data"
+    (data / "eval").mkdir(parents=True)
+    (data / "eval" / "model_card.json").write_text(json.dumps({"season": "stale"}))
+    monkeypatch.setattr("fpledge.config.DATA_DIR", data)
+    assert client.get("/model").status_code == 404
+
+
+def test_model_card_unreachable_store_is_503_not_404(client, monkeypatch):
+    """Could-not-tell is not absent: a blip must not tell the page the card was never built."""
+    def boom(name):
+        raise store.ArtifactUnavailable("throttled")
+    monkeypatch.setattr(store, "read_artifact", boom)
+    assert client.get("/model").status_code == 503
