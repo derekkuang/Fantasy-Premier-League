@@ -230,3 +230,75 @@ def test_the_two_formats_interleave_correctly_in_the_digest():
              _row("Arsenal", "rss-oldest", "Sun, 09 Aug 2026 09:00:00 GMT")]
     got = build_digest(items, _labels(), "now")["clubs"]["Arsenal"]
     assert [i["title"] for i in got] == ["json-newer", "rss-older", "rss-oldest"]
+
+
+# --- loading the corpus -------------------------------------------------------------------- #
+def _rolling_captures(monkeypatch, n_captures, window, missing=()):
+    """Stub the index and the raw zone with `n_captures` reads of a rolling feed: capture i
+    carries guids i..i+window-1, so consecutive captures overlap the way the real feeds do.
+    Returns a probe recording the peak number of item objects alive at once."""
+    import threading
+    import weakref
+
+    from fpledge.eval import news_eval
+
+    class Item(dict):          # a plain dict cannot be weakly referenced; a subclass can
+        __hash__ = object.__hash__     # identity, so the WeakSet counts objects, not contents
+        __eq__ = object.__eq__
+
+    live: weakref.WeakSet = weakref.WeakSet()
+    probe = {"peak": 0}
+    lock = threading.Lock()
+
+    def read_json(locator):
+        i = int(locator.rsplit("/", 1)[-1])
+        items = [Item(guid=f"g{j:04d}", seen_in=i) for j in range(i, i + window)]
+        with lock:
+            live.update(items)
+            probe["peak"] = max(probe["peak"], len(live))
+        return {"items": items}
+
+    monkeypatch.setattr(news_eval.capture_index, "entries",
+                        lambda kind: [{"path": f"cap/{i}"} for i in range(n_captures)])
+    monkeypatch.setattr(news_eval.landing, "exists",
+                        lambda loc: int(loc.rsplit("/", 1)[-1]) not in missing)
+    monkeypatch.setattr(news_eval.landing, "read_json", read_json)
+    return probe
+
+
+def test_the_corpus_is_deduped_as_it_reads_not_after_holding_every_capture(monkeypatch):
+    """THE 2026-09-26 OUTAGE. The corpus is ~150 re-reads of the same rolling feeds, and the
+    first version held every capture's items before deduping: 689 MB for ~8,000 unique items,
+    against the news Lambda's 512 MB, so every run from 26 Sep timed out and the digest froze.
+
+    Asserted on what is ALIVE at the peak, not on the output — the output was always correct,
+    which is exactly why the bug shipped. Old behaviour here: all 60 x 20 = 1,200 items at once."""
+    from fpledge.eval import news_eval
+
+    n, window = 60, 20
+    probe = _rolling_captures(monkeypatch, n, window)
+    corpus = news_eval.load_corpus()
+
+    assert [it["guid"] for it in corpus] == [f"g{j:04d}" for j in range(n + window - 1)]
+    unique = n + window - 1
+    assert probe["peak"] <= unique + 2 * news_eval._READ_BATCH * window
+    assert probe["peak"] < n * window / 2
+
+
+def test_the_oldest_copy_of_an_item_still_wins(monkeypatch):
+    """Reading in parallel batches must not change which capture an item is attributed to."""
+    from fpledge.eval import news_eval
+
+    _rolling_captures(monkeypatch, 30, 5)
+    by_guid = {it["guid"]: it["seen_in"] for it in news_eval.load_corpus()}
+    assert by_guid["g0010"] == 6        # first appears in capture 6 (guids 6..10)
+    assert by_guid["g0000"] == 0
+
+
+def test_a_pruned_capture_is_skipped_and_said_out_loud(monkeypatch, capsys):
+    from fpledge.eval import news_eval
+
+    _rolling_captures(monkeypatch, 10, 3, missing={4})
+    corpus = news_eval.load_corpus()
+    assert len(corpus) == 12             # guids 0..11; capture 4's are all covered by 3 and 5
+    assert "1 indexed capture(s) are no longer readable" in capsys.readouterr().out

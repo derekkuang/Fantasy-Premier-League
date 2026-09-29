@@ -39,14 +39,40 @@ from __future__ import annotations
 import json
 import pathlib
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 from ..ingest import capture_index, landing
 
+# How many captures are read, and held, at once. Small on purpose: see `load_corpus`.
+_READ_BATCH = 8
+
+
+def _capture_items(locator: str) -> list[dict] | None:
+    """One capture's items, or None if the indexed object is gone."""
+    # Routed through `landing` rather than opened directly. The old form was
+    # `Path(p).exists()` then `gzip.open`, and `Path("s3://bucket/key")` is a valid
+    # relative path that does not exist — so once the raw zone moves to S3 every object
+    # would read as absent and this would return an empty corpus with no error at all.
+    # `landing.exists` raises on a locator it cannot interpret; only a genuinely missing
+    # object is skipped.
+    if not landing.exists(locator):
+        return None
+    return landing.read_json(locator).get("items", [])
+
 
 def load_corpus(index_path: pathlib.Path | None = None) -> list[dict]:
-    """Every captured item, deduped by guid. Captures overlap by design."""
+    """Every captured item, deduped by guid. Captures overlap by design.
+
+    DEDUPED AS IT READS, never after. Each capture is the same rolling feeds re-read, so ~150
+    captures of ~1,500 items hold ~8,000 unique ones. The first version collected every
+    capture's items and deduped at the end, holding 20x the corpus at its peak: 689 MB on
+    2026-09-28, against the news Lambda's 512 MB. From 2026-09-26 every run timed out at that
+    ceiling — after landing its raw capture, so no data was lost, but the /news digest froze and
+    each async retry landed another capture, making the next read larger still. Reading a few
+    captures at a time bounds memory by the corpus plus one batch rather than by the history.
+    """
     # Via `capture_index`, which merges the legacy local JSONL with the one-object-per-capture
     # entries a scheduler writes. An explicit `index_path` still reads that file directly.
     if index_path is not None:
@@ -54,34 +80,29 @@ def load_corpus(index_path: pathlib.Path | None = None) -> list[dict]:
                 if index_path.exists() else [])
     else:
         rows = capture_index.entries(capture_index.NEWS)
-    items: list[dict] = []
-    missing = 0
-    for row in rows:
-        locator = row.get("path", "")
-        if not locator:
-            continue
-        # Routed through `landing` rather than opened directly. The old form was
-        # `Path(p).exists()` then `gzip.open`, and `Path("s3://bucket/key")` is a valid
-        # relative path that does not exist — so once the raw zone moves to S3 every object
-        # would read as absent and this would return an empty corpus with no error at all.
-        # `landing.exists` raises on a locator it cannot interpret; only a genuinely missing
-        # object is skipped.
-        if not landing.exists(locator):
-            missing += 1
-            continue
-        items.extend(landing.read_json(locator).get("items", []))
+    locators = [row["path"] for row in rows if row.get("path")]
+    seen: set = set()
+    uniq: list[dict] = []
+    missing = read = 0
+    with ThreadPoolExecutor(max_workers=_READ_BATCH) as pool:
+        for start in range(0, len(locators), _READ_BATCH):
+            # `map` preserves order, so the oldest copy of an item still wins, as it always has.
+            for got in pool.map(_capture_items, locators[start:start + _READ_BATCH]):
+                if got is None:
+                    missing += 1
+                    continue
+                read += len(got)
+                for it in got:
+                    key = it.get("guid") or it.get("link")
+                    if key and key not in seen:
+                        seen.add(key)
+                        uniq.append(it)
     if missing:
         # Not fatal — an index outlives the objects it points at, and a pruned capture is a
         # legitimate state. But a corpus quietly shrinking is how a page goes stale without
         # anyone noticing, so it is said out loud rather than absorbed.
         print(f"WARNING: {missing} indexed capture(s) are no longer readable — "
-              f"corpus built from {len(items)} items across the rest")
-    seen, uniq = set(), []
-    for it in items:
-        key = it.get("guid") or it.get("link")
-        if key and key not in seen:
-            seen.add(key)
-            uniq.append(it)
+              f"corpus built from {read} items across the rest")
     return uniq
 
 
