@@ -39,7 +39,7 @@ const LENS_HINT: Record<TickerLens, string> = {
 };
 
 // --- legend ------------------------------------------------------------------------ //
-function FdrLegend({ lens }: { lens: TickerLens }) {
+function FdrLegend({ lens, hasMarket }: { lens: TickerLens; hasMarket: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border border-black/10 px-3 py-2.5 shadow-sm dark:border-white/10">
       <div className="flex items-center gap-1.5">
@@ -74,6 +74,17 @@ function FdrLegend({ lens }: { lens: TickerLens }) {
       </div>
 
       <span className="text-[11px] text-black/35 dark:text-white/35">{LENS_HINT[lens]}</span>
+
+      {/* Two different sources produce these bands and the cells look identical, so the grid
+          has to say so somewhere a reader will actually see. Per-cell provenance is in the
+          tooltip; this is the standing rule — and it is read off the payload rather than
+          asserted, because for four months a parse bug meant NO cell was market-priced while
+          the design said otherwise. A claim about the data belongs in the data. */}
+      <span className="text-[11px] text-black/35 dark:text-white/35">
+        {hasMarket
+          ? "near gameweeks are priced from the betting market where a line exists, later ones from the match model — each cell says which"
+          : "every cell is from the match model — no betting lines are available for this window"}
+      </span>
     </div>
   );
 }
@@ -176,7 +187,7 @@ function FixtureCell({
           return (
             <span
               key={`${f.opp}-${f.home}`}
-              title={`GW${f.gw} vs ${f.opp} (${f.home ? "H" : "A"}) — att ${f.attack_fdr} / def ${f.defence_fdr} · λ ${f.lam_for.toFixed(1)} / ${f.lam_against.toFixed(1)}`}
+              title={`GW${f.gw} vs ${f.opp} (${f.home ? "H" : "A"}) — att ${f.attack_fdr} / def ${f.defence_fdr} · λ ${f.lam_for.toFixed(1)} / ${f.lam_against.toFixed(1)} · ${f.source === "market" ? "priced from the betting market" : "from the match model"}`}
               className="flex flex-col overflow-hidden rounded-lg border border-black/[.06] dark:border-white/[.06]"
             >
               {/* who they play — opponent colour + code + venue */}
@@ -342,6 +353,13 @@ export function FixtureTicker({ data }: { data: FixturesResponse }) {
   }, [data.teams]);
   const horizon = data.meta.horizon ?? Math.max(lastServed - startGw + 1, 0);
 
+  // Whether ANY cell in this payload came from a betting line. Drives the legend, so the page
+  // describes the artifact it is actually rendering.
+  const hasMarket = useMemo(
+    () => data.teams.some((t) => t.fixtures.some((f) => f.source === "market")),
+    [data.teams],
+  );
+
   // Ranked by the mean FDR over the VISIBLE window, so the order follows the window too.
   // Overall ranks on both tracks at once; ties break alphabetically.
   const rows = useMemo(() => {
@@ -372,7 +390,7 @@ export function FixtureTicker({ data }: { data: FixturesResponse }) {
 
   return (
     <div className="flex flex-col gap-3.5">
-      <FdrLegend lens={lens} />
+      <FdrLegend lens={lens} hasMarket={hasMarket} />
       <TickerControls win={win} setWin={setWin} lens={lens} setLens={setLens} />
       <TickerGrid
         rows={rows}

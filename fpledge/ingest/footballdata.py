@@ -70,6 +70,27 @@ def _closing_odds(row: dict):
     return None, None, None
 
 
+def _decode(resp) -> str:
+    """Decode a Football-Data CSV response, byte-order mark and all.
+
+    These files begin with a UTF-8 BOM and are served as `text/csv` with NO charset, so
+    `requests` falls back to ISO-8859-1 (the HTTP default for `text/*`) and `resp.text` hands
+    back the BOM as the mojibake `\xef\xbb\xbf` glued to the first header field. `csv.DictReader`
+    then names that column `\xef\xbb\xbfDiv` and every `row["Div"]` lookup misses.
+
+    Only the FIRST column is affected, which is why this went unseen for four months:
+    `parse_csv` reads HomeTeam/FTHG and never touches it, while `fetch_upcoming` filters on
+    `Div` — so the historical fit was fine and the market-lambda path was dead. `utf-8-sig`
+    decodes correctly AND strips the mark, which is the whole fix.
+    """
+    try:
+        return resp.content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # Some older season files carry stray Windows-1252 bytes. Losing a season to one bad
+        # character is worse than replacing it; the BOM still goes.
+        return resp.content.decode("cp1252", errors="replace").lstrip("\ufeff")
+
+
 def season_label(code: str) -> str:
     """'2425' -> '2024-25'."""
     return f"20{code[:2]}-{code[2:]}"
@@ -82,8 +103,9 @@ def download_season(code: str, division: str = "E0") -> str:
     url = f"{FD_BASE}/{code}/{division}.csv"
     resp = get_with_retries(requests.Session(), url, timeout=config.HTTP_TIMEOUT)
     resp.raise_for_status()
-    landing.land(resp.text, source="football_data", endpoint=division, season=code)
-    return resp.text
+    text = _decode(resp)
+    landing.land(text, source="football_data", endpoint=division, season=code)
+    return text
 
 
 def cached_season(code: str, division: str = "E0"):
@@ -153,11 +175,15 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
 
     resp = get_with_retries(requests.Session(), FD_FIXTURES_URL, timeout=config.HTTP_TIMEOUT)
     resp.raise_for_status()
-    landing.land(resp.text, source="football_data", endpoint="fixtures", season=config.SEASON)
+    text = _decode(resp)
+    landing.land(text, source="football_data", endpoint="fixtures", season=config.SEASON)
+    rows = list(csv.DictReader(io.StringIO(text)))
+    n_in_division = 0
     out: list[dict] = []
-    for row in csv.DictReader(io.StringIO(resp.text)):
+    for row in rows:
         if row.get("Div") != division or not row.get("HomeTeam"):
             continue
+        n_in_division += 1
         oh, od, oa = _closing_odds(row)   # falls through to pre-match Avg/PS/B365 for upcoming
         oo, uu = _ou_odds(row)
         if None in (oh, od, oa, oo, uu):
@@ -166,6 +192,19 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
             "home": row["HomeTeam"].strip(), "away": row["AwayTeam"].strip(),
             "o_h": oh, "o_d": od, "o_a": oa, "o_over": oo, "o_under": uu,
         })
+
+    # THE GUARD THIS FUNCTION EXISTS TO CARRY. Returning [] is legitimate — out of season,
+    # or before the books post. Parsing a file that HAS fixtures and finding none in our own
+    # division is not: this file is pan-European and always carries E0 in season. The two
+    # states were indistinguishable, and that is exactly how a BOM-renamed `Div` column went
+    # unnoticed for four months while every precompute silently used the engine where a
+    # betting line was sitting in the file. A blind parse must not look like a quiet week.
+    if rows and n_in_division == 0:
+        raise ValueError(
+            f"fixtures.csv parsed {len(rows)} rows but none in division {division!r} — "
+            f"first columns seen: {list(rows[0])[:4]}. That is a parse failure, not an "
+            "empty fixture list."
+        )
     return out
 
 

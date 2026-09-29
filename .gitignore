@@ -32,3 +32,13 @@ infra/.terraform/
 infra/*.tfstate
 infra/*.tfstate.*
 infra/*.tfplan
+
+# Secrets. ODDS_API_KEY and friends live in the environment (and in the Lambda config),
+# never in the tree — this repo is public. See docs/OPERATIONS.md.
+.env
+.env.*
+!.env.example
+# Local credentials, in the project but never in the tree, the Lambda zips or the image.
+# NOT inside fpledge/: build_lambda.sh rsyncs that whole directory into both deployment
+# packages and rsync does not read this file.
+.secrets/

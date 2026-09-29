@@ -13,7 +13,7 @@ export default async function FixturesPage() {
   return (
     <PageShell
       title="Fixture ticker"
-      subtitle="True difficulty from the match model, not FPL's static FDR — attack and defence side by side."
+      subtitle="True difficulty from the betting market and the match model, not FPL's static FDR — attack and defence side by side."
       meta={<span className="rounded-full bg-black/5 px-2 py-1 font-mono text-[11px] text-black/50 dark:bg-white/10 dark:text-white/50">{data.meta.model_ver}</span>}
     >
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
@@ -21,8 +21,10 @@ export default async function FixturesPage() {
       <FixtureTicker data={data} />
       {/* affiliation + kit notices live in the global footer */}
       <p className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">
-        Difficulty is banded from the match model&apos;s expected goals for each side, so it moves
-        with form and opponent — it is not FPL&apos;s fixed preseason rating.
+        Difficulty is banded from the expected goals for each side, so it moves with form and
+        opponent — it is not FPL&apos;s fixed preseason rating. Where a fixture has a de-vigged
+        betting line the market’s expected goals are used in place of the model’s; the legend
+        says whether any in this window do, and each cell says which it used.
       </p>
     </PageShell>
   );

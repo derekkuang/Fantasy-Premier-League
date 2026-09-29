@@ -68,7 +68,10 @@ def main() -> None:
         print("  " + f"{fpl_teams[tid]:<16}" + "  ".join(f"{c:<9}" for c in cells))
 
     print("\n  cell = opponent(H/A)·attack-FDR (1=easy … 5=hard); sorted by easiest attack run.")
-    best_cs = sorted(ticker.items(), key=lambda kv: sum(f["lam_against"] for f in kv[1]) / len(kv[1]))
+    # Teams blank for the whole window carry an empty list — they have no average to rank on,
+    # and dividing by len() would raise rather than sort them last.
+    played = [(tid, fxs) for tid, fxs in ticker.items() if fxs]
+    best_cs = sorted(played, key=lambda kv: sum(f["lam_against"] for f in kv[1]) / len(kv[1]))
     print("  best clean-sheet runs (lowest avg expected goals-against):")
     for tid, fxs in best_cs[:5]:
         print(f"    {fpl_teams[tid]:<16} avg λ-against {sum(f['lam_against'] for f in fxs) / len(fxs):.2f}")

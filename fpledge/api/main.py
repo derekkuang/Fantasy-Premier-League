@@ -14,7 +14,6 @@ functions expect id/name/team dicts, so `_pool_dict`/`_balance_dict` translate.
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
@@ -24,7 +23,6 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from .. import config
 from ..balance import check_balance
 from ..differentials import find_differentials
 from ..models.optimizer import best_xi
@@ -321,14 +319,24 @@ def model_card(response: Response) -> dict:
     404 rather than a placeholder when it hasn't been generated: a page claiming to publish
     the model's accuracy must not invent it.
     """
-    path = config.DATA_DIR / "eval" / "model_card.json"
-    if not path.exists():
+    # Through the store, not a path under DATA_DIR. It read `data/eval/model_card.json` from
+    # local disk, which exists on the laptop that ran the card and nowhere else — so on Lambda
+    # this 404'd from launch day, and the page whose whole job is earning trust said "No model
+    # card" in production while every local check passed.
+    try:
+        card = store.read_artifact("model_card.json")
+    except store.ArtifactUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Serving store temporarily unreachable — try again shortly.",
+        ) from exc
+    if card is None:
         raise HTTPException(
             status_code=404,
             detail="No model card yet — run `python scripts/build_model_card.py`.",
         )
     response.headers["Cache-Control"] = _WEEKLY_CACHE
-    return json.loads(path.read_text())
+    return card
 
 
 @app.get("/predictions/{gw}")
