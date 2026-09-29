@@ -87,6 +87,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **29** | **the team-news feed: what exists, what is built, and the extraction design** |
 | 30-31 | three feeds per club; the PL content API — best single source, all 20 clubs |
 | **32** | **the market-lambda path had never run: a BOM, and the two guards that hid it** |
+| 33 | two production-only failures: the news digest's memory, and `/model` reading local disk |
 
 ---
 
@@ -2447,3 +2448,57 @@ same story into the artifact for the publish gate to read later.
 
 Caveat on the numbers above: the engine side was fitted on landed copies as of 2026-08-22
 because football-data was down for results too, so read 48% as an upper bound.
+
+## 33. Two failures that only production could have (2026-09-28)
+
+Found in a read-only audit of the live stack after three quiet weeks. Neither was visible from a
+laptop, and both had a green test suite the whole time.
+
+### The news digest outgrew its Lambda
+
+Every `fpledge-news` run from **2026-09-26 12:00 UTC** timed out at 600s with 511 of 512 MB in
+use. `load_corpus` read every capture ever landed, collected all their items, and only then
+deduped. The corpus is ~150 re-reads of the same rolling feeds, so it held ~20x the unique items
+at its peak. Reproduced against the production bucket before fixing:
+
+| | unique items | peak RSS | time |
+|---|---|---|---|
+| before | 7,907 | **689 MB** | 46.8s |
+| after (dedupe while reading, 8 captures at a time) | 7,907 | **183 MB** | 9.3s |
+
+**Nothing was lost.** The raw capture and its index entry land *before* the digest step, so every
+feed item from those runs is in S3. What broke was `serving/news.json`, frozen at 26 Sep 06:00
+UTC. And the failure fed itself: EventBridge invokes asynchronously, Lambda retries a failed async
+invocation twice, and each retry landed another full capture, so the next read was larger.
+
+The alarm did fire, three times a day, and cleared itself an hour later each time. An alarm that
+flaps on the one-hour window reads like noise in an inbox. That is worth a separate look.
+
+**Runway:** 4.6 KB per unique item, ~160 new items a day. By the end of the season that is
+~210 MB retained, ~360 MB peak with interpreter and batch overhead, inside 512 MB but not by
+much. If the corpus has to outlive a season, bound the digest to a window or keep a rolling
+deduped object rather than re-reading history.
+
+The regression test asserts on what is **alive at the peak**, not on the output. The output was
+correct all along, which is exactly why this shipped.
+
+### `/model` had 404'd since launch
+
+`GET /model` read `DATA_DIR/eval/model_card.json` straight off local disk. That file existed on
+the laptop that built it and nowhere else, so on Lambda the honesty page — the page whose job is
+earning trust for every other number on the site — said "No model card" from launch day. Its
+test wrote the file to that same local path and passed.
+
+Now the card is a serving artifact like `news.json`: written through `store.write_artifact`,
+read through `store.read_artifact`, 503 when the store is unreachable. The card was regenerated
+with current code (the only local one dated from 2026-08-04, before the September minutes-model
+change) and published once. The precompute does not rebuild it: a walk-forward over a completed
+season does not change week to week.
+
+Measured 2025-26, played-only per-GW Spearman **0.378 vs FPL 0.284**; MAE 2.077 vs 2.280.
+
+### The family
+
+Both are the same shape as §32 and the capture schedule before it: a path that behaved perfectly
+on the machine it was written on, checked by tests that ran on that machine. The CI deploy
+smoke-tests `/health`, CORS and `/team/0`, and now `/model` too: a missing card fails the deploy.
