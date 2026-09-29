@@ -2495,7 +2495,11 @@ with current code (the only local one dated from 2026-08-04, before the Septembe
 change) and published once. The precompute does not rebuild it: a walk-forward over a completed
 season does not change week to week.
 
-Measured 2025-26, played-only per-GW Spearman **0.378 vs FPL 0.284**; MAE 2.077 vs 2.280.
+**It is built on 2024-25, not 2025-26, and the script's default now says so.** On 2025-26 the
+clean pre-deadline FPL baseline covers 4 of 30 gameweeks (1,211 player-GWs), so the card would
+set our 30-gameweek 0.378 against FPL's 4-gameweek 0.284. On 2024-25 it covers 29 of 30. With
+current code: played-only per-GW Spearman **0.374 vs FPL 0.299**, MAE **2.013 vs 2.244**, ours
+lower in 29/29 gameweeks — identical to §16.
 
 ### The family
 

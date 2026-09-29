@@ -15,7 +15,7 @@ Two kinds of content, kept separate on purpose:
               redo on every card build, but an experiment that happened is still evidence.
               It is labelled as recorded rather than dressed up as fresh.
 
-Usage: python scripts/build_model_card.py [season]      (default 2025-26)
+Usage: python scripts/build_model_card.py [season]      (default 2024-25)
 
 Writes through the serving store, so it lands wherever `FPLEDGE_SERVING_URI` points. To publish
 to production, run it with that set to the production bucket — the precompute does not rebuild
@@ -34,7 +34,11 @@ from fpledge.api import MODEL_VER, store
 from fpledge.eval.fpl_backtest import validate_xp
 from fpledge.ingest import vaastav
 
-SEASON = sys.argv[1] if len(sys.argv) > 1 else "2025-26"
+# 2024-25, not the latest season, because the comparison is only as good as FPL's side of it.
+# The clean pre-deadline baseline covers 29 of 30 scored gameweeks there and 4 in 2025-26
+# (1,211 player-GWs), which would set our 30-gameweek number against FPL's 4-gameweek one.
+# Rebuild on a newer season once the snapshots give it a full baseline.
+SEASON = sys.argv[1] if len(sys.argv) > 1 else "2024-25"
 # A serving artifact, read by GET /model. It was a file under data/eval/, which the API read
 # straight off local disk — present on the machine that built it and nowhere else.
 ARTIFACT = "model_card.json"
