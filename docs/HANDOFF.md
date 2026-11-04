@@ -88,6 +88,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | 30-31 | three feeds per club; the PL content API — best single source, all 20 clubs |
 | **32** | **the market-lambda path had never run: a BOM, and the two guards that hid it** |
 | 33 | two production-only failures: the news digest's memory, and `/model` reading local disk |
+| **34** | **§32's guard was wrong: how often the odds file really has Premier League rows, and the standby** |
 
 ---
 
@@ -2396,6 +2397,9 @@ report" from "I could not tell."** Here the distinguishing test was local and fr
 held 165 rows across 20 divisions, and a division filter matching zero of them is a parse
 failure, not an out-of-season condition. `fetch_upcoming` now raises on exactly that.
 
+> **Corrected by §34.** The rule above stands; this example of it does not. A division filter
+> matching zero rows is a normal day: 32 of 70 in-season copies have no Premier League rows.
+
 ### What else the investigation turned up
 
 **Promoted clubs could never be priced.** `_market_lambda_map` resolved feed names through the
@@ -2471,13 +2475,14 @@ feed item from those runs is in S3. What broke was `serving/news.json`, frozen a
 UTC. And the failure fed itself: EventBridge invokes asynchronously, Lambda retries a failed async
 invocation twice, and each retry landed another full capture, so the next read was larger.
 
-The alarm did fire, three times a day, and cleared itself an hour later each time. An alarm that
-flaps on the one-hour window reads like noise in an inbox. That is worth a separate look.
+The alarm did fire, three times a day, and cleared itself about three hours later each time. An
+alarm that flaps like that reads like noise in an inbox. That is worth a separate look.
 
-**Runway:** 4.6 KB per unique item, ~160 new items a day. By the end of the season that is
-~210 MB retained, ~360 MB peak with interpreter and batch overhead, inside 512 MB but not by
-much. If the corpus has to outlive a season, bound the digest to a window or keep a rolling
-deduped object rather than re-reading history.
+**Runway:** 4.6 KB per unique item. Re-measured 2026-11-04 with five more weeks of captures:
+12,661 items, 173 MB peak RSS, so ~130 new items a day. By the end of the season that is ~175 MB
+retained and ~330 MB peak with interpreter and batch overhead, inside 512 MB but not by much. If
+the corpus has to outlive a season, bound the digest to a window or keep a rolling deduped object
+rather than re-reading history.
 
 The regression test asserts on what is **alive at the peak**, not on the output. The output was
 correct all along, which is exactly why this shipped.
@@ -2506,3 +2511,74 @@ lower in 29/29 gameweeks — identical to §16.
 Both are the same shape as §32 and the capture schedule before it: a path that behaved perfectly
 on the machine it was written on, checked by tests that ran on that machine. The CI deploy
 smoke-tests `/health`, CORS and `/team/0`, and now `/model` too: a missing card fails the deploy.
+
+## 34. §32's guard was wrong, and half the market path was still dark (2026-11-04)
+
+§32 made `fetch_upcoming` raise when a file had rows but none in our division, reasoning that the
+file "always carries E0 in season". That was asserted from one morning's file. The first time the
+check met a later file, eight weeks on, it raised on a file that had parsed perfectly.
+
+Every refit lands `fixtures.csv`, so the assumption could simply be measured. **32 of the 70 refits
+since GW1 landed a copy with other leagues' fixtures and no Premier League rows**, on top of all 15
+preseason copies. It is mostly midweek: Wednesday 9 of 10 and Thursday 8 of 9 empty, against 6 of
+31 from Saturday to Monday. The file carries PL rows for part of each week, not all of it.
+
+The copy that matters most is the last one before each deadline:
+
+| GW | deadline (UTC) | last landed | PL rows priced |
+|---|---|---|---|
+| 1 | Fri 08-21 17:30 | Fri 05:04 | **0** |
+| 2 | Fri 08-28 17:30 | Fri 16:49 | 10 |
+| 3 | Fri 09-04 17:30 | Fri 08:59 | **0** |
+| 4 | Sat 09-12 12:30 | Sat 08:45 | 10 |
+| 5 | Fri 09-18 17:30 | Fri 09:07 | **0** |
+| 6 | Sat 10-10 10:00 | Fri 11:27 | 10 |
+| 7 | Sat 10-17 10:00 | Sat 08:43 | 10 |
+| 8 | Fri 10-23 17:30 | Fri 09:29 | **0** |
+| 9 | Sat 10-31 11:00 | Sat 10:31 | 10 |
+
+Every Saturday deadline had prices, with rows already there on the Friday morning. Four of five
+Friday deadlines did not. GW2 did, from a run 40 minutes before its deadline.
+
+**It is not clock time.** Friday 09-11 at 09:02 had PL rows and Friday 09-18 at 09:07 did not; what
+differs is whether the round starts on the Friday. When rows appear on those days is unknown, with
+GW2 the only data point, so a later refit might or might not help. The standby makes it not matter.
+
+### What §32 would have shipped
+
+Two faults, neither visible in its own tests:
+
+1. **A false alarm.** On nearly half of in-season runs `meta.market.errors` would have told the
+   public artifact "parse failure" about a file that parsed perfectly.
+2. **A standby that could not stand by.** §32 verified the Odds API fallback live with a key in a
+   local shell. The refit workflow passes no such key, so in production every one of those days fell
+   back to the engine, and the report would have said only "no ODDS_API_KEY configured".
+
+### The fix
+
+The guard now raises only when the `Div` column is missing, which is what the BOM actually did. No
+PL rows returns `[]` and falls through. `ODDS_API_KEY` is a GitHub Actions secret passed to the
+fit step alone, at ~2 credits a call and roughly 30 a month.
+
+**That key now runs beside a public artifact.** `_upcoming_odds` copies exception text into
+`meta.market`, `requests` puts the full URL in its exception text, and the key travels in the query
+string. `OddsApiClient._get` already built its messages without the URL, for an unrelated reason,
+so a test now pins it. That test was checked by injecting the leak and watching it fail.
+
+### Why this sat unmerged for five weeks: PuLP
+
+`pulp>=2.8` had no ceiling and there is no lockfile, so CI installs the newest release on every run.
+PuLP 4.0.0 removed `LpVariable.dicts`. Nine tests in `test_optimizer` and `test_season_sim` failed
+with no change in this repo, and a red Python job blocks the deploy.
+
+Production was not at risk: the API zip does not contain PuLP and `/team` uses `best_xi`, which is
+plain Python. The ILP is offline-only. Capped at `<4`. The lockfile is still the real answer, since
+any other dependency can do the same thing.
+
+### The rule, refined
+
+§32's rule stands: distinguish "nothing to report" from "I could not tell". The refinement is that
+the test for "could not tell" must be derived from what the failure looks like, not from a belief
+about what normal looks like. The BOM removed a column. Checking for the column cannot be wrong on a
+normal day. Checking for "our rows are in the file" encoded an assumption nobody had measured, in a
+project whose whole method is measuring those.

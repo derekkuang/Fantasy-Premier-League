@@ -68,12 +68,15 @@ AWS_PROFILE=fpledge aws lambda update-function-code --function-name fpledge-news
   --zip-file fileb://build/fpledge-captures.zip
 ```
 
-`ODDS_API_KEY` lives ONLY in the fpledge-props Lambda environment — never in the repo (public)
-and never in the Terraform (`ignore_changes = [environment]` keeps it out of state). Rotate with:
+`ODDS_API_KEY` lives in two places: the fpledge-props Lambda environment, and a GitHub Actions
+secret the daily refit uses as its standby for market odds (HANDOFF §34). Never in the repo (public)
+and never in the Terraform (`ignore_changes = [environment]` keeps it out of state). Both draw on
+the same 500 credits a month. Rotate BOTH:
 
 ```bash
 AWS_PROFILE=fpledge aws lambda update-function-configuration --function-name fpledge-props \
   --environment "Variables={FPLEDGE_RAW_URI=...,FPLEDGE_SERVING_URI=...,ODDS_API_KEY=<new>}"
+tr -d '[:space:]' < .secrets/odds_api_key | gh secret set ODDS_API_KEY
 ```
 
 Smoke-test without waiting for a schedule or a deadline window:

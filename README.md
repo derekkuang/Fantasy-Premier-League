@@ -143,7 +143,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 552 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 560 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -268,7 +268,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 552 tests
+make test       # 560 tests
 make lint
 ```
 
@@ -301,7 +301,7 @@ Optional extras: `.[llm]` (the `anthropic` package, for live briefings and the a
 | `FPLEDGE_SERVING_URI` | precompute, API, news | local `data/serving/`. **Setting it to the production bucket locally publishes to production** |
 | `FPLEDGE_SERVING_DIR` · `FPLEDGE_SERVING_CACHE_TTL` | API store | local serving-dir override · cache seconds (60) |
 | `FPLEDGE_CORS_ORIGINS` | API | `*` |
-| `ODDS_API_KEY` | props capture, odds standby | locally from `.secrets/odds_api_key`; in production only in the Lambda environment |
+| `ODDS_API_KEY` | props capture, odds standby | locally from `.secrets/odds_api_key`; in production in the props Lambda environment and a GitHub Actions secret for the refit |
 | `ANTHROPIC_API_KEY` | briefings, advisor | unset means template briefings and the advisor reporting itself off. This is the production state |
 | `FPLEDGE_ADVISOR_STUB` | API | `1` runs the advisor on scripted prose over real tools, for UI work. Never in production |
 
@@ -371,18 +371,19 @@ start and +2.1/gw across eighteen (§23–§24).
 
 ---
 
-## Status — 2026-09-28
+## Status — 2026-11-04
 
-Season 2026-27. Gameweek 5 is complete; the GW6 deadline is **10 October** (international break).
+Season 2026-27. Gameweek 9 is complete; the GW10 deadline is **6 November**.
 
-**Working:** the daily precompute has been green for weeks, and GWs 1–6 are served. Snapshots
+**Working:** the daily precompute has been green for weeks, and GWs 1–10 are served. Snapshots
 and props were captured before every deadline so far. CI deploys on green `main`. The advisor is
 switched off deliberately, and briefings render from the template because the workflow carries
 no Anthropic key.
 
-**Fixed on 2026-09-28** (HANDOFF §32–§33): the news Lambda, which had timed out on every run
+**Fixed on 2026-11-04** (HANDOFF §32–§34): the news Lambda, which had timed out on every run
 since 26 Sep and frozen `/news`; `/model`, which had 404'd in production since launch; and the
-market-λ path, which had never run.
+market-λ path, which had never run. Market odds now fall back to The Odds API on the days
+football-data's file has no Premier League rows.
 
 **Needs attention:**
 
@@ -394,7 +395,9 @@ market-λ path, which had never run.
 2. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
 3. The contact email and governing jurisdiction are still placeholders in `/privacy` and
-   `/terms`.
+   `/terms`, and those pages are live.
+4. **Dependencies have no lockfile.** PuLP 4 turned CI red with no change here and blocked deploys
+   for five weeks (§34). It is capped now, but any other package can do the same.
 
 **Roadmap** (agreed 2026-09-06):
 
@@ -423,6 +426,6 @@ market-λ path, which had never run.
 
 | doc | read it for | note |
 | --- | --- | --- |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 33 numbered sections | Start with its section map, then §16, §24, §27, §32 and §33. Its header and §1–§4 describe the pre-deploy state of early August |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 34 numbered sections | Start with its section map, then §16, §24, §27 and §32–§34. Its header and §1–§4 describe the pre-deploy state of early August |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | The runbook: schedules, alarms, smoke tests, key rotation | The cloud section is current; the launchd and cron sections are from the laptop era |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | The live API's configuration and how to ship it | The "blocking list" at the top predates the deploy |
