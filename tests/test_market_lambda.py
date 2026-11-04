@@ -124,12 +124,10 @@ def test_fetch_upcoming_without_a_bom_is_unchanged(monkeypatch):
     assert len(fetch_upcoming()) == 2
 
 
-def test_a_file_with_no_row_in_our_division_is_a_parse_failure(monkeypatch):
-    """Empty must never be indistinguishable from blind. Out of season the file is empty and []
-    is right; a file full of other divisions' fixtures and none of ours means the parse missed,
-    and that has to raise rather than read as a quiet week."""
-    import pytest
-
+def test_a_file_with_no_row_in_our_division_is_a_normal_day(monkeypatch):
+    """This used to raise, on the belief that the file always carries E0 in season. It does not:
+    32 of 70 in-season copies held other leagues' fixtures and no Premier League rows (HANDOFF
+    §34), so a normal midweek day would have been reported as a parse failure in public."""
     from fpledge.ingest.footballdata import fetch_upcoming
 
     only_belgium = (
@@ -137,8 +135,60 @@ def test_a_file_with_no_row_in_our_division_is_a_parse_failure(monkeypatch):
         "B1,21/08/2026,19:45,Standard,RAAL La Louviere,1.92,3.37,3.79,2.05,1.75\n"
     )
     _patch_fetch(monkeypatch, only_belgium.encode("utf-8"))
+    assert fetch_upcoming() == []
+
+
+def test_a_file_with_no_division_column_is_a_parse_failure(monkeypatch):
+    """Empty must never be indistinguishable from blind. This is the shape the BOM produced: a
+    renamed first column and every row skipped, even with Premier League fixtures in the file."""
+    import pytest
+
+    from fpledge.ingest.footballdata import fetch_upcoming
+
+    renamed = (
+        "\u00ef\u00bb\u00bfDiv,Date,Time,HomeTeam,AwayTeam,AvgH,AvgD,AvgA,Avg>2.5,Avg<2.5\n"
+        "E0,21/08/2026,19:45,Everton,Arsenal,2.23,3.4,3.1,1.93,1.87\n"
+    )
+    _patch_fetch(monkeypatch, renamed.encode("utf-8"))
     with pytest.raises(ValueError, match="parse failure"):
         fetch_upcoming()
+
+
+def test_no_premier_league_rows_falls_through_to_the_standby_without_an_error(monkeypatch):
+    """The normal path on nearly half of in-season days, so it must not record a failure."""
+    from fpledge import gw
+
+    row = {"home": "Arsenal", "away": "Everton", "o_h": 1.5, "o_d": 4.0, "o_a": 6.0,
+           "o_over": 1.8, "o_under": 2.0}
+    monkeypatch.setattr(gw.footballdata, "fetch_upcoming", list)
+    monkeypatch.setattr(gw.oddsapi, "upcoming_1x2_ou", lambda: [row])
+    assert gw._upcoming_odds() == ([row], "the_odds_api", {})
+
+
+def test_the_odds_key_never_reaches_the_public_error_report(monkeypatch):
+    """`requests` puts the full URL, query string included, in its exception text, and the Odds
+    API key travels in that query string. These errors are published through `meta.market`, so
+    this is the difference between a logged outage and a leaked credential."""
+    import json
+
+    import requests
+
+    from fpledge import gw
+    from fpledge.ingest import oddsapi
+
+    def leaky_get(self, url, params=None, **kwargs):
+        raise requests.ConnectionError(f"Max retries exceeded: {url}?apiKey={params['apiKey']}")
+
+    monkeypatch.setenv("ODDS_API_KEY", "SECRETKEY")
+    monkeypatch.setattr(oddsapi, "MIN_INTERVAL_S", 0)
+    monkeypatch.setattr(requests.Session, "get", leaky_get)
+    monkeypatch.setattr(gw.footballdata, "fetch_upcoming", list)
+
+    rows, source, errors = gw._upcoming_odds()
+
+    assert (rows, source) == ([], "none")
+    assert "the_odds_api" in errors                 # the failure is reported ...
+    assert "SECRETKEY" not in json.dumps(errors)    # ... and the key is not
 
 
 def test_an_empty_file_still_returns_nothing(monkeypatch):

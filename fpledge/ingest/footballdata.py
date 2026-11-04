@@ -178,12 +178,10 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
     text = _decode(resp)
     landing.land(text, source="football_data", endpoint="fixtures", season=config.SEASON)
     rows = list(csv.DictReader(io.StringIO(text)))
-    n_in_division = 0
     out: list[dict] = []
     for row in rows:
         if row.get("Div") != division or not row.get("HomeTeam"):
             continue
-        n_in_division += 1
         oh, od, oa = _closing_odds(row)   # falls through to pre-match Avg/PS/B365 for upcoming
         oo, uu = _ou_odds(row)
         if None in (oh, od, oa, oo, uu):
@@ -193,17 +191,18 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
             "o_h": oh, "o_d": od, "o_a": oa, "o_over": oo, "o_under": uu,
         })
 
-    # THE GUARD THIS FUNCTION EXISTS TO CARRY. Returning [] is legitimate — out of season,
-    # or before the books post. Parsing a file that HAS fixtures and finding none in our own
-    # division is not: this file is pan-European and always carries E0 in season. The two
-    # states were indistinguishable, and that is exactly how a BOM-renamed `Div` column went
-    # unnoticed for four months while every precompute silently used the engine where a
-    # betting line was sitting in the file. A blind parse must not look like a quiet week.
-    if rows and n_in_division == 0:
+    # THE GUARD THIS FUNCTION EXISTS TO CARRY. A blind parse must not look like a quiet week: a
+    # BOM-renamed `Div` column went unnoticed for four months while every precompute silently
+    # used the engine where a betting line was sitting in the file. So a file with rows and no
+    # `Div` column raises.
+    #
+    # NOT "no row in our division", which is what this first checked, on the belief that the file
+    # always carries E0 in season. It does not: 32 of 70 in-season copies held other leagues'
+    # fixtures and no Premier League rows (HANDOFF §34). That is a normal day and returns [].
+    if rows and "Div" not in rows[0]:
         raise ValueError(
-            f"fixtures.csv parsed {len(rows)} rows but none in division {division!r} — "
-            f"first columns seen: {list(rows[0])[:4]}. That is a parse failure, not an "
-            "empty fixture list."
+            f"fixtures.csv parsed {len(rows)} rows but has no 'Div' column — first columns "
+            f"seen: {list(rows[0])[:4]}. That is a parse failure, not an empty fixture list."
         )
     return out
 

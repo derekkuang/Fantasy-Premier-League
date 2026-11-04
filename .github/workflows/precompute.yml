@@ -81,6 +81,10 @@ jobs:
         run: python scripts/build_db.py
 
       - name: Fit, gate, publish
+        # The key is the standby for market odds when football-data's file has no Premier League
+        # rows (HANDOFF §34). Scoped to this step: nothing else in the job calls the Odds API.
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python scripts/precompute.py
 
       - name: The live API serves the new artifact

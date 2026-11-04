@@ -33,9 +33,15 @@ def _upcoming_odds() -> tuple[list[dict], str, dict]:
     those days silently degraded. The Odds API is the standby — an existing client, an existing
     key, and 2 credits for the whole slate on the bulk endpoint against a 500/month free tier.
 
-    A legitimately EMPTY football-data file still falls through to the standby. That costs ~2
-    credits on a genuinely quiet week, which is the cheap side of the trade: the expensive side
-    was four months of the engine standing in for a market nobody knew was missing.
+    A football-data file with no Premier League rows falls through to the standby. That is not
+    a rare case: it was 32 of 70 in-season refits, including the last one before four of the five
+    Friday deadlines so far (HANDOFF §34). At ~2 credits a call that is roughly 30 a month, the
+    cheap side of the trade: the expensive side was four months of the engine standing in for a
+    market nobody knew was missing. The standby only exists where ODDS_API_KEY is set, which is
+    why precompute.yml passes it.
+
+    These error strings reach the public artifact through `meta.market`, so a client must never
+    put the request URL in one: the Odds API key travels in its query string.
     """
     errors: dict = {}
     try:
