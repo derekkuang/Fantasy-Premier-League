@@ -2478,11 +2478,12 @@ invocation twice, and each retry landed another full capture, so the next read w
 The alarm did fire, three times a day, and cleared itself about three hours later each time. An
 alarm that flaps like that reads like noise in an inbox. That is worth a separate look.
 
-**Runway:** 4.6 KB per unique item. Re-measured 2026-11-04 with five more weeks of captures:
-12,661 items, 173 MB peak RSS, so ~130 new items a day. By the end of the season that is ~175 MB
-retained and ~330 MB peak with interpreter and batch overhead, inside 512 MB but not by much. If
-the corpus has to outlive a season, bound the digest to a window or keep a rolling deduped object
-rather than re-reading history.
+**Runway, from the first real run on Lambda (2026-11-04): 12,665 items, 286 MB peak of 512, 129s
+of 600.** The corpus load alone is 173 MB, measured from a laptop; a full run also fetches the feeds
+and builds the digest. At 4.6 KB per item and ~130 new items a day, the end of the season is ~38,000
+items and ~400 MB, inside 512 MB but not by much, with the runtime also growing with the capture
+count. If the corpus has to outlive a season, bound the digest to a window or keep a rolling deduped
+object rather than re-reading history.
 
 The regression test asserts on what is **alive at the peak**, not on the output. The output was
 correct all along, which is exactly why this shipped.
@@ -2564,6 +2565,13 @@ fit step alone, at ~2 credits a call and roughly 30 a month.
 `meta.market`, `requests` puts the full URL in its exception text, and the key travels in the query
 string. `OddsApiClient._get` already built its messages without the URL, for an unrelated reason,
 so a test now pins it. That test was checked by injecting the leak and watching it fail.
+
+### The first run
+
+A refit triggered by hand on 2026-11-04, a Wednesday with no PL rows in football-data's file:
+`market odds [the_odds_api]: 20/20 upcoming fixtures priced from the market (0 unmapped, 0
+malformed)`, `meta.market.errors` empty, publish gate passed. GW10 and GW11 are priced from the
+market and GW12-17 from the engine. It cost 2 credits, as the bulk endpoint promises.
 
 ### Why this sat unmerged for five weeks: PuLP
 
