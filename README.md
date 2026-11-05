@@ -9,7 +9,7 @@ and a live web app — plus an unusually complete record of what it can and cann
 A from-scratch Dixon-Coles match engine produces a scoreline probability matrix for every
 fixture. A structured expected-points (xP) model turns that into per-player projections, and an
 optimiser, transfer suggester and fixture ticker turn those into decisions a manager can make
-before a deadline. It runs on AWS, refits daily, and serves a Next.js front end branded
+before a deadline. It runs on AWS, recomputes projections daily, and serves a Next.js front end branded
 **FPL Edge**.
 
 | | |
@@ -114,6 +114,10 @@ flowchart LR
 | **api** | Lambda + API Gateway | per request | reads `serving/` only |
 | **web** | Vercel | per request, ISR | — |
 
+The daily fit uses three completed seasons, so team strengths and player attacking rates do not
+change in-season. What changes daily is prices, ownership, availability, market odds and recent
+minutes (§35).
+
 From a new artifact to a visible page takes up to ~16 minutes: the API's store caches for 60s
 and Vercel revalidates within 5–15 min. The precompute refuses to publish a degraded fit (see
 `health_check` and `publish_gate` in `fpledge/api/precompute.py`). When it refuses, the
@@ -143,7 +147,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 560 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 585 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -268,7 +272,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 560 tests
+make test       # 589 tests
 make lint
 ```
 
@@ -332,6 +336,7 @@ A model change ships with a measured before/after, or it doesn't ship.
 .venv/bin/python scripts/validate_xp.py   # played-only per-GW Spearman vs realised points and FPL
 make simulate-season                      # decisions, not ranking — slow
 make backtest                             # the match engine vs the de-vigged market
+make season-fit                           # should the engine fit include the current season?
 make model-card                           # regenerate the numbers /model publishes
 ```
 
@@ -390,8 +395,9 @@ football-data's file has no Premier League rows.
 1. **The engine ignores the current season.** `gw.SEASONS` fits 2023-24 to 2025-26, and
    2026-27 results are published but unused. Player xG/xA shares also come from last season's
    totals, so in-season the model updates only minutes, availability and market odds.
-   Promoted Coventry and Hull stay unmapped. Adding the season is a model change, so it
-   needs measuring first.
+   Promoted Coventry and Hull stay unmapped. Replaying three seasons (§35) shows adding it as-is
+   fails: a club with no history gets an extreme rating from its first games. Established clubs
+   improve clearly, so a version that protects new clubs is the next candidate.
 2. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
 3. The contact email and governing jurisdiction are still placeholders in `/privacy` and
@@ -426,6 +432,6 @@ football-data's file has no Premier League rows.
 
 | doc | read it for | note |
 | --- | --- | --- |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 34 numbered sections | Start with its section map, then §16, §24, §27 and §32–§34. Its header and §1–§4 describe the pre-deploy state of early August |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 35 numbered sections | Start with its section map, then §16, §24, §27 and §32–§35. Its header and §1–§4 describe the pre-deploy state of early August |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | The runbook: schedules, alarms, smoke tests, key rotation | The cloud section is current; the launchd and cron sections are from the laptop era |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | The live API's configuration and how to ship it | The "blocking list" at the top predates the deploy |
