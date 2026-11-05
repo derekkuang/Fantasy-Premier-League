@@ -2677,7 +2677,7 @@ match are noisy and club quality moves slowly, so a shorter memory mostly fits n
 seasons**, including the line that failed at 180: rounds 5-10 at six weeks goes from +0.0027 to
 -0.0025. This does not count as a pass. These seasons chose the setting, so they cannot also prove it.
 
-### Next
+### The held-out test
 
 Fixed before looking: guard at 10 games, half-life 270 days, chosen over 365 because it gives up almost
 nothing and reacts faster. The earlier idea of ignoring results until clubs have played about 5 games is
@@ -2689,10 +2689,62 @@ five seasons have 380 matches with Pinnacle closing 1X2 prices, so the market ga
 match. 2018-19 has no closing over/under, so the expected-goals gap, which does not decide, skips it.
 
 "Untouched" means this: no replay has scored these seasons and no setting was chosen from them. They are
-not unseen in every sense. 2020-21 to 2022-23 were training data for the development replays, and §27
-scored players on 2022-23 under a different configuration.
+not unseen in every sense. 2020-21 to 2022-23 were training data for the development replays, and §26
+and §27 scored players on 2022-23 under a different configuration.
 
 Only SHIP moves the candidate forward, and then to a live comparison rather than to `gw.SEASONS`. Any
 other verdict rejects it: changing a setting and re-running would make these development seasons too.
+
+### Result: SHIP
+
+Run once on 2026-11-04 from commit `0b9b50b`, which holds the candidate and the rule. 1,900 matches, each
+forecast against production on the same match. Negative is better. The output is in
+`data/eval/season_fit_held_out.json`, which git ignores, so this section is the record.
+
+| | production | three weeks ahead | six weeks ahead |
+|---|---|---|---|
+| market gap | 0.0426 | 0.0230, −0.0197 [−0.0225, −0.0168] | 0.0258, −0.0169 [−0.0196, −0.0142] |
+| log-loss | 0.9922 | 0.9696, −0.0226 [−0.0311, −0.0135] | 0.9727, −0.0195 [−0.0274, −0.0114] |
+
+Change in the market gap, whose interval excludes zero in every cell below:
+
+| | 2018-19 | 2019-20 | 2020-21 | 2021-22 | 2022-23 |
+|---|---|---|---|---|---|
+| three weeks | −0.0134 | −0.0113 | −0.0282 | −0.0204 | −0.0251 |
+| six weeks | −0.0110 | −0.0088 | −0.0240 | −0.0178 | −0.0229 |
+
+| rounds | 1-4 | 5-10 | 11-19 | 20-38 |
+|---|---|---|---|---|
+| three weeks | −0.0024 | −0.0049 | −0.0179 | −0.0286 |
+| six weeks | −0.0026 | −0.0031 | −0.0136 | −0.0256 |
+
+New clubs improved too: three weeks ahead the gap moved −0.0203 [−0.0285, −0.0123] and log-loss −0.0553
+[−0.0934, −0.0189]. Nothing was worse in any stage on either metric.
+
+Most of the gain is this season's results rather than the half-life. On the development seasons 270 days
+alone took the frozen fit from 0.0317 to 0.0283, against 0.0188 with results added. Rounds 1-4 at six weeks
+point the same way: those forecasts see almost none of the season, and the gap moves only −0.0026.
+
+What this does not show:
+
+- **Anything about players or points.** It scores match forecasts. Whether player rankings improve has not
+  been measured, and market odds set the next two gameweeks, so the direct effect is on GW3+ of the ticker.
+- **A gain in log-loss early in the season.** Rounds 1-4 and 5-10 do not separate from zero on log-loss at
+  either horizon. The gain builds as results arrive.
+- **Parity with the market.** The market's own log-loss here is 0.9518. It prices at kickoff and these
+  forecasts are made weeks earlier, so this is not like for like, but the candidate is still behind it.
+- **The production path.** The replay uses football-data's names directly and never runs `_load_inputs`.
+
+### Next
+
+The live comparison: the weekly scorecard, with the candidate run beside production and not published. Four
+gameweeks are about 40 matches, which cannot re-prove this result. They are there to catch what a replay
+cannot, which is the production path and the effect on players.
+
+Going live changes `gw.SEASONS` and the fit in `_load_inputs`, and `scripts/fixture_ticker.py` carries its
+own copy of both. The daily refit then picks up each new result with no other change. Adding 2026-27 also
+maps Coventry and Hull, because `build_team_map` reads names from the matches. `knows()` then returns true
+for a club still on the default rating, so `fallback_fixtures` would stop counting it.
+
 Separately, the player-rate test (`validate_xp` extended to the production configuration) is what could
 change next week's picks.

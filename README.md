@@ -147,7 +147,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 585 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 589 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -395,9 +395,10 @@ football-data's file has no Premier League rows.
 1. **The engine ignores the current season.** `gw.SEASONS` fits 2023-24 to 2025-26, and
    2026-27 results are published but unused. Player xG/xA shares also come from last season's
    totals, so in-season the model updates only minutes, availability and market odds.
-   Promoted Coventry and Hull stay unmapped. Replaying three seasons (§35) shows adding it as-is
-   fails: a club with no history gets an extreme rating from its first games. Established clubs
-   improve clearly, so a version that protects new clubs is the next candidate.
+   Promoted Coventry and Hull stay unmapped. Replaying past seasons (§35) shows adding it as-is
+   fails: a club with no history gets an extreme rating from its first games. A version with a
+   10-game guard and a 270-day half-life passed the pre-registered rule on five held-out seasons.
+   It is not live: it runs beside production first, and its effect on players is unmeasured.
 2. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
 3. The contact email and governing jurisdiction are still placeholders in `/privacy` and
