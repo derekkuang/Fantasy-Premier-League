@@ -112,7 +112,21 @@ def _market_lambda_map(fpl_teams: dict) -> tuple[dict, dict]:
           f"{report['malformed']} malformed)")
     return out, report
 
-SEASONS = ["2324", "2425", "2526"]
+# The engine's fit: three completed seasons plus the current one, so each daily refit learns from
+# this season's results (HANDOFF §35). At rollover, add the new season's code once football-data
+# publishes its file (a missing season blocks the publish) and drop the oldest. `config.SEASON`
+# names the same season, and a test holds the two together.
+SEASONS = ["2324", "2425", "2526", "2627"]
+# Measured, not chosen: a 270-day half-life with a 10-game guard passed the pre-registered replay
+# on five held-out seasons (HANDOFF §35). The previous 180 days had never been tested.
+ENGINE_HALF_LIFE_DAYS = 270.0
+ENGINE_MIN_GAMES = 10
+
+
+def fit_engine(matches: list[dict]) -> DixonColesModel:
+    return DixonColesModel(half_life_days=ENGINE_HALF_LIFE_DAYS,
+                           min_games=ENGINE_MIN_GAMES).fit(matches)
+
 PLAYER_COLS = [
     "code", "element_id", "team_id", "position", "web_name", "minutes", "starts",
     "xg", "xa", "dc", "bonus", "ownership",
@@ -219,7 +233,7 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
             "no training matches from any source — football-data.co.uk is unreachable and "
             f"no landed copy exists to fall back on (failed: {source_report['failed']})"
         )
-    engine = DixonColesModel(half_life_days=180).fit(matches)
+    engine = fit_engine(matches)
     fd_names = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
     tmap = build_team_map(list(fpl_teams.values()), fd_names)
     # Carried so the precompute can refuse to publish a degraded fit. A dropped season used to

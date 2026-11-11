@@ -5,7 +5,7 @@ Implements the Dixon & Coles (1997) time-weighted maximum-likelihood fit:
     log λ_home = μ + home_adv + attack[home] + defence[away]
     log λ_away = μ +           attack[away] + defence[home]
     goals ~ Poisson, with the low-score dependence correction τ, and each match
-    weighted by exp(-ξ · age) so recent form dominates (ξ from a half-life in days).
+    weighted by exp(-ξ · age) so older matches count for less (ξ from a half-life in days).
 
 Attack/defence are mean-centred inside the objective for identifiability. Fitting is
 `scipy.optimize.minimize` (L-BFGS-B) over the weighted negative log-likelihood.
@@ -15,6 +15,8 @@ importable; the recovery test uses `pytest.importorskip`.
 """
 
 from __future__ import annotations
+
+from collections import Counter
 
 from .. import config
 from .match_engine import MatchProbabilities, derive
@@ -27,8 +29,12 @@ class DixonColesModel:
     PROMOTED_ATTACK = -0.25
     PROMOTED_DEFENCE = 0.25
 
-    def __init__(self, half_life_days: float = 180.0):
+    def __init__(self, half_life_days: float = 180.0, min_games: int = 0):
+        """`min_games`: a club with fewer results than this in the fit keeps the promoted-side
+        prior. Rated from a handful of results, a promoted club's rating is extreme (HANDOFF §35)."""
         self.half_life_days = half_life_days
+        self.min_games = min_games
+        self.games: Counter = Counter()
         self.teams: list[str] = []
         self.idx: dict[str, int] = {}
         self.params = None          # numpy array once fitted
@@ -36,7 +42,9 @@ class DixonColesModel:
         self._n = 0
 
     def knows(self, team: str) -> bool:
-        return team in self.idx
+        """Whether the fit rates this club itself. False below `min_games`, so callers count the
+        club among fixtures priced from the prior, which is what they are."""
+        return team in self.idx and self.games[team] >= self.min_games
 
     def fit(self, matches):
         import numpy as np
@@ -50,6 +58,7 @@ class DixonColesModel:
         if not rows:
             raise ValueError("no training matches with results")
 
+        self.games = Counter(team for m in rows for team in (m["home"], m["away"]))
         teams = sorted({m["home"] for m in rows} | {m["away"] for m in rows})
         idx = {t: i for i, t in enumerate(teams)}
         n = len(teams)
@@ -114,7 +123,7 @@ class DixonColesModel:
 
     def _strength(self, team: str, a, d):
         """(attack, defence) for a team — real if known, else the promoted-side prior."""
-        if team in self.idx:
+        if self.knows(team):
             i = self.idx[team]
             return float(a[i]), float(d[i])
         return self.PROMOTED_ATTACK, self.PROMOTED_DEFENCE

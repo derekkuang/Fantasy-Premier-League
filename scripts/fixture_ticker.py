@@ -11,14 +11,12 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from fpledge import config
+from fpledge import config, gw
 from fpledge.fdr import fixture_ticker
 from fpledge.ingest import footballdata
-from fpledge.models.dixon_coles import DixonColesModel
 from fpledge.models.teammap import build_team_map
 from fpledge.storage import duck
 
-SEASONS = ["2324", "2425", "2526"]
 START_GW = 1
 HORIZON = 5
 
@@ -43,8 +41,8 @@ def main() -> None:
         print("no teams — run scripts/build_db.py first.")
         return
 
-    matches = footballdata.load_seasons(SEASONS)
-    engine = DixonColesModel(180).fit(matches)
+    matches = footballdata.load_seasons(gw.SEASONS)
+    engine = gw.fit_engine(matches)
     fd = sorted({m["home"] for m in matches} | {m["away"] for m in matches})
     tmap = build_team_map(list(fpl_teams.values()), fd)
     ticker = fixture_ticker(engine, fixtures, fpl_teams, tmap, START_GW, HORIZON)

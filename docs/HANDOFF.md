@@ -2748,3 +2748,34 @@ for a club still on the default rating, so `fallback_fixtures` would stop counti
 
 Separately, the player-rate test (`validate_xp` extended to the production configuration) is what could
 change next week's picks.
+
+### Going live without the side-by-side run (2026-11-11)
+
+The owner chose to ship after the held-out pass instead of running the candidate beside production for
+four gameweeks. The rule's verdict was SHIP. The side-by-side was an extra step meant for the production
+path, so that was checked once instead. The guard moved into `DixonColesModel(min_games=)`, and
+production fits `gw.fit_engine`. The candidate's development numbers reproduce exactly after the move.
+
+Both engines built GW11 through `build_payload` from a fresh bootstrap, sharing one market fetch:
+
+- **Both pass `health_check` and `publish_gate`** against the live GW11 artifact. The candidate fits 100
+  results from 2026-27. It maps Coventry and Hull, and fallback fixtures go from 2 to 0 because both clubs
+  have 10 games, so the guard has already lifted.
+- **Projections move.** Next-three-gameweek xP changes by 0.165 per player on average, and 15 of the top 20
+  stay. The largest falls are Crystal Palace and Forest players, about 2 points over three gameweeks. The
+  largest rises are Liverpool and Chelsea, about 1 point.
+- **Hull is the one to watch.** Their expected goals against fall from 2.02 to 1.14 a game across the
+  ticker, because they conceded 11 in 10. The market priced them weaker: Arsenal 2.89-0.54 at home to
+  them in GW10, Brentford 1.99 away at Hull in GW8. A hard switch at 10 games is what was tested.
+  Shrinking a new club towards the default would be a different candidate.
+- **This season so far, direction only:** the market gap is 0.0221 for production against 0.0146 for the
+  candidate on the next match, and 0.0156 three weeks ahead. Log-loss does not separate from zero on 100
+  matches.
+
+**Found on the way, not fixed here.** In the international break football-data's `fixtures.csv` still
+listed GW10, played on 6 to 8 November. `_market_lambda_map` reported 10 of 10 "upcoming fixtures priced",
+none of which is a GW11 fixture. Because the file had Premier League rows, the Odds API standby was never
+asked. Every GW11 match and ticker row in the local build of the current engine came from the model, and
+production ran the same code on the same file while its public `meta.market` says otherwise. Fix: drop
+rows dated before today in `fetch_upcoming`, so a stale file falls through like an empty one. Until then
+the engine prices next week too during a break, so this change moves GW11 xP by up to 1.03 points.

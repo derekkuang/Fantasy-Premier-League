@@ -40,7 +40,7 @@ from __future__ import annotations
 import math
 import random
 from bisect import bisect_left
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 
 from ..betting.market_lambda import market_lambdas
@@ -63,26 +63,13 @@ class CandidateEngine(DixonColesModel):
 
     New clubs are why the plain rolling fit failed. Rated from a few results, Hull reached Chelsea
     away at 0.01-0.93 expected goals against a market of 2.75-0.71. A club below `min_games` keeps
-    the default rating that production already gives a club it has never seen.
+    the default rating that production already gives a club it has never seen. The guard itself is
+    `DixonColesModel(min_games=)`, so production runs the same code that was tested here.
     """
 
     def __init__(self, half_life_days: float = CANDIDATE_HALF_LIFE,
                  min_games: int = CANDIDATE_MIN_GAMES):
-        super().__init__(half_life_days)
-        self.min_games = min_games
-        self.games: Counter = Counter()
-
-    def fit(self, matches):
-        self.games = Counter(
-            team for m in matches
-            if m.get("home_goals") is not None and m.get("away_goals") is not None
-            for team in (m["home"], m["away"]))
-        return super().fit(matches)
-
-    def _strength(self, team: str, a, d):
-        if self.games[team] < self.min_games:
-            return self.PROMOTED_ATTACK, self.PROMOTED_DEFENCE
-        return super()._strength(team, a, d)
+        super().__init__(half_life_days, min_games)
 
 
 def rounds(matches: Sequence[dict]) -> list[int]:

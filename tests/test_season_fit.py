@@ -244,3 +244,20 @@ def test_the_guard_leaves_established_clubs_exactly_as_the_engine_rates_them():
     guarded = season_fit.CandidateEngine().fit(games)
     plain = DixonColesModel(half_life_days=270.0).fit(games)
     assert guarded.expected_goals("A", "B") == plain.expected_goals("A", "B")
+
+
+# --- production runs what was tested -------------------------------------------------------- #
+def test_production_runs_the_candidate_that_passed():
+    from fpledge import gw
+    assert (gw.ENGINE_HALF_LIFE_DAYS, gw.ENGINE_MIN_GAMES) == (
+        season_fit.CANDIDATE_HALF_LIFE, season_fit.CANDIDATE_MIN_GAMES)
+    assert not gw.fit_engine(_new_club_league(9)).knows("N")
+    assert gw.fit_engine(_new_club_league(10)).knows("N")
+
+
+def test_production_fits_three_completed_seasons_and_the_current_one():
+    """As replayed. Fails at rollover until `gw.SEASONS` moves with `config.SEASON`."""
+    from fpledge import config, gw
+    assert gw.SEASONS[-1] == config.SEASON[2:4] + config.SEASON[5:7]
+    starts = [int(code[:2]) for code in gw.SEASONS]
+    assert starts == list(range(starts[0], starts[0] + season_fit.PRIOR_SEASONS + 1))
