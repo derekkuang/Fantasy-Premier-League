@@ -89,6 +89,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **32** | **the market-lambda path had never run: a BOM, and the two guards that hid it** |
 | 33 | two production-only failures: the news digest's memory, and `/model` reading local disk |
 | **34** | **§32's guard was wrong: how often the odds file really has Premier League rows, and the standby** |
+| **35** | **the daily refit learns nothing, and why adding the current season as-is fails** |
 
 ---
 
@@ -2590,3 +2591,191 @@ the test for "could not tell" must be derived from what the failure looks like, 
 about what normal looks like. The BOM removed a column. Checking for the column cannot be wrong on a
 normal day. Checking for "our rows are in the file" encoded an assumption nobody had measured, in a
 project whose whole method is measuring those.
+
+## 35. The daily refit learns nothing, and adding the current season as-is fails (2026-11-04)
+
+**The refit is scheduled recomputation, not learning.** `gw.SEASONS` is three completed seasons, so
+the Dixon-Coles fit gets the same data every day. Compared across published artifacts from 2026-08-21
+to 2026-11-04, the same future fixture moved by at most 0.0004 expected goals. Player xG/xA, defensive
+and bonus rates come from last season's totals and do not move either. What does change daily is
+prices, ownership, availability and market odds, plus recent minutes once a player has four gameweeks.
+
+Nothing scores live predictions against what happened. The publish gates catch broken, not worse.
+Snapshots, news and props are collected and feed nothing. MLflow is a dependency that nothing logs to:
+`experiment=` is never passed. And since the validation harness fits the current season alone, the
+production configuration had never been measured at all.
+
+### The replay
+
+`fpledge/eval/season_fit.py`, run with `make season-fit`. It predicts 2023-24 to 2025-26 (1,140
+matches) frozen, as production does, and rolling, with results to date. It is offline and changes
+nothing. The decision rule is in the module docstring and was written before the first run. As a check
+on the replay itself, 2025-26 next-match log-loss is 1.0484 here and 1.0482 from `walk_forward`.
+
+Three and six weeks ahead decide, because market odds now cover the next two gameweeks:
+
+| | cut-off | frozen | rolling | rolling, new-club guard |
+|---|---|---|---|---|
+| market gap (KL), all | 3 weeks | 0.0317 | 0.0257 | 0.0209 |
+| | 6 weeks | 0.0317 | 0.0298 | 0.0234 |
+| log-loss, all | 3 weeks | 0.9964 | 0.9826 | 0.9836 |
+| | 6 weeks | 0.9964 | 0.9897 | 0.9873 |
+| market gap, clubs with no history | 3 weeks | 0.0273 | **0.0755** | 0.0267 |
+| | 6 weeks | 0.0273 | **0.0925** | 0.0287 |
+
+For reference, the market's own log-loss on these matches is 0.9599.
+
+**Verdict under the rule: DO NOT SHIP.** Plain rolling is worse on the market gap at six weeks in
+rounds 5-10 (+0.0406, interval excludes zero), and its pooled gap does not clear zero.
+
+### Why: a club with no history
+
+The fit has no prior on a club it has barely seen, so a promoted side's rating comes from a handful
+of games, up to the optimiser's bounds. Replaying this season's first rounds at next-match cut-off:
+
+| match | rolling λ | frozen λ | market λ |
+|---|---|---|---|
+| Coventry v Hull, round 2 | 0.00-2.69 | 1.49-1.24 | 1.85-1.05 |
+| Chelsea v Hull, round 4 | 0.01-0.93 | 2.24-0.90 | 2.75-0.71 |
+| Hull v Aston Villa, round 3 | 1.50-0.01 | 1.05-1.94 | 1.06-1.71 |
+
+**For clubs with history, rolling is clearly better at every horizon**: market gap 0.0322 to 0.0202 at
+three weeks and 0.0228 at six, log-loss down 0.013 and 0.012, every interval excluding zero. Expected
+goals land about a fifth closer to the closing line. This is a real signal hidden by a real defect.
+
+Caveat: "no history" is few clubs. Luton, Ipswich and Sunderland in the verdict, Coventry and Hull in
+2026-27 (direction only, 90 matches).
+
+### The guard, tried once
+
+Default rating until a club has 10 games in the fit. One value, chosen before running, not tuned, in a
+throwaway script. It removes the new-club damage and passes everything except one line: at six weeks in
+rounds 5-10 the market gap is still worse, by +0.0027 against -0.0151 in rounds 20-38. In all three
+seasons individually the gap narrows at both deciding horizons, and 2026-27 agrees in direction.
+
+**So under the rule it is still DO NOT SHIP, and the rule stands.** It was written to stop this being
+argued away afterwards. This was also a second look at the same seasons, so even a pass would have been
+exploratory.
+
+### Weighting recent results more makes it worse
+
+`half_life_days=180` was never tested: it appears in the code and nowhere in this record. Replayed at
+60, 90, 120, 180, 270 and 365 days on the same three seasons, all with the guard. Gap to the market,
+rolling, three weeks ahead:
+
+| half-life | 60d | 90d | 120d | 180d | 270d | 365d |
+|---|---|---|---|---|---|---|
+| market gap | 0.0425 | 0.0312 | 0.0256 | 0.0209 | 0.0188 | 0.0184 |
+| log-loss | 1.0069 | 0.9946 | 0.9885 | 0.9836 | 0.9818 | 0.9816 |
+
+Shorter is worse at every horizon and in every season, with intervals excluding zero on both metrics
+for 60, 90 and 120 days. Longer narrows the market gap with intervals excluding zero; its log-loss gain
+over 180 does not clear zero. The gain flattens by 270. The likely reason is that goals in a single
+match are noisy and club quality moves slowly, so a shorter memory mostly fits noise.
+
+**Against production (frozen, 180 days), the guard with 270 or 365 days passes the rule on these
+seasons**, including the line that failed at 180: rounds 5-10 at six weeks goes from +0.0027 to
+-0.0025. This does not count as a pass. These seasons chose the setting, so they cannot also prove it.
+
+### The held-out test
+
+Fixed before looking: guard at 10 games, half-life 270 days, chosen over 365 because it gives up almost
+nothing and reacts faster. The earlier idea of ignoring results until clubs have played about 5 games is
+dropped as unnecessary. It is committed as `season_fit.CandidateEngine`, which reproduces the numbers
+above exactly, and `scripts/compare_season_fit.py --held-out` runs it once, refusing if a result exists.
+
+The test is against production on 2018-19 to 2022-23, under the same rule, with nothing dropped. All
+five seasons have 380 matches with Pinnacle closing 1X2 prices, so the market gap and log-loss cover every
+match. 2018-19 has no closing over/under, so the expected-goals gap, which does not decide, skips it.
+
+"Untouched" means this: no replay has scored these seasons and no setting was chosen from them. They are
+not unseen in every sense. 2020-21 to 2022-23 were training data for the development replays, and §26
+and §27 scored players on 2022-23 under a different configuration.
+
+Only SHIP moves the candidate forward, and then to a live comparison rather than to `gw.SEASONS`. Any
+other verdict rejects it: changing a setting and re-running would make these development seasons too.
+
+### Result: SHIP
+
+Run once on 2026-11-04 from commit `0b9b50b`, which holds the candidate and the rule. 1,900 matches, each
+forecast against production on the same match. Negative is better. The output is in
+`data/eval/season_fit_held_out.json`, which git ignores, so this section is the record.
+
+| | production | three weeks ahead | six weeks ahead |
+|---|---|---|---|
+| market gap | 0.0426 | 0.0230, −0.0197 [−0.0225, −0.0168] | 0.0258, −0.0169 [−0.0196, −0.0142] |
+| log-loss | 0.9922 | 0.9696, −0.0226 [−0.0311, −0.0135] | 0.9727, −0.0195 [−0.0274, −0.0114] |
+
+Change in the market gap, whose interval excludes zero in every cell below:
+
+| | 2018-19 | 2019-20 | 2020-21 | 2021-22 | 2022-23 |
+|---|---|---|---|---|---|
+| three weeks | −0.0134 | −0.0113 | −0.0282 | −0.0204 | −0.0251 |
+| six weeks | −0.0110 | −0.0088 | −0.0240 | −0.0178 | −0.0229 |
+
+| rounds | 1-4 | 5-10 | 11-19 | 20-38 |
+|---|---|---|---|---|
+| three weeks | −0.0024 | −0.0049 | −0.0179 | −0.0286 |
+| six weeks | −0.0026 | −0.0031 | −0.0136 | −0.0256 |
+
+New clubs improved too: three weeks ahead the gap moved −0.0203 [−0.0285, −0.0123] and log-loss −0.0553
+[−0.0934, −0.0189]. Nothing was worse in any stage on either metric.
+
+Most of the gain is this season's results rather than the half-life. On the development seasons 270 days
+alone took the frozen fit from 0.0317 to 0.0283, against 0.0188 with results added. Rounds 1-4 at six weeks
+point the same way: those forecasts see almost none of the season, and the gap moves only −0.0026.
+
+What this does not show:
+
+- **Anything about players or points.** It scores match forecasts. Whether player rankings improve has not
+  been measured, and market odds set the next two gameweeks, so the direct effect is on GW3+ of the ticker.
+- **A gain in log-loss early in the season.** Rounds 1-4 and 5-10 do not separate from zero on log-loss at
+  either horizon. The gain builds as results arrive.
+- **Parity with the market.** The market's own log-loss here is 0.9518. It prices at kickoff and these
+  forecasts are made weeks earlier, so this is not like for like, but the candidate is still behind it.
+- **The production path.** The replay uses football-data's names directly and never runs `_load_inputs`.
+
+### Next
+
+The live comparison: the weekly scorecard, with the candidate run beside production and not published. Four
+gameweeks are about 40 matches, which cannot re-prove this result. They are there to catch what a replay
+cannot, which is the production path and the effect on players.
+
+Going live changes `gw.SEASONS` and the fit in `_load_inputs`, and `scripts/fixture_ticker.py` carries its
+own copy of both. The daily refit then picks up each new result with no other change. Adding 2026-27 also
+maps Coventry and Hull, because `build_team_map` reads names from the matches. `knows()` then returns true
+for a club still on the default rating, so `fallback_fixtures` would stop counting it.
+
+Separately, the player-rate test (`validate_xp` extended to the production configuration) is what could
+change next week's picks.
+
+### Going live without the side-by-side run (2026-11-11)
+
+The owner chose to ship after the held-out pass instead of running the candidate beside production for
+four gameweeks. The rule's verdict was SHIP. The side-by-side was an extra step meant for the production
+path, so that was checked once instead. The guard moved into `DixonColesModel(min_games=)`, and
+production fits `gw.fit_engine`. The candidate's development numbers reproduce exactly after the move.
+
+Both engines built GW11 through `build_payload` from a fresh bootstrap, sharing one market fetch:
+
+- **Both pass `health_check` and `publish_gate`** against the live GW11 artifact. The candidate fits 100
+  results from 2026-27. It maps Coventry and Hull, and fallback fixtures go from 2 to 0 because both clubs
+  have 10 games, so the guard has already lifted.
+- **Projections move.** Next-three-gameweek xP changes by 0.165 per player on average, and 15 of the top 20
+  stay. The largest falls are Crystal Palace and Forest players, about 2 points over three gameweeks. The
+  largest rises are Liverpool and Chelsea, about 1 point.
+- **Hull is the one to watch.** Their expected goals against fall from 2.02 to 1.14 a game across the
+  ticker, because they conceded 11 in 10. The market priced them weaker: Arsenal 2.89-0.54 at home to
+  them in GW10, Brentford 1.99 away at Hull in GW8. A hard switch at 10 games is what was tested.
+  Shrinking a new club towards the default would be a different candidate.
+- **This season so far, direction only:** the market gap is 0.0221 for production against 0.0146 for the
+  candidate on the next match, and 0.0156 three weeks ahead. Log-loss does not separate from zero on 100
+  matches.
+
+**Found on the way, not fixed here.** In the international break football-data's `fixtures.csv` still
+listed GW10, played on 6 to 8 November. `_market_lambda_map` reported 10 of 10 "upcoming fixtures priced",
+none of which is a GW11 fixture. Because the file had Premier League rows, the Odds API standby was never
+asked. Every GW11 match and ticker row in the local build of the current engine came from the model, and
+production ran the same code on the same file while its public `meta.market` says otherwise. Fix: drop
+rows dated before today in `fetch_upcoming`, so a stale file falls through like an empty one. Until then
+the engine prices next week too during a break, so this change moves GW11 xP by up to 1.03 points.

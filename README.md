@@ -9,7 +9,7 @@ and a live web app — plus an unusually complete record of what it can and cann
 A from-scratch Dixon-Coles match engine produces a scoreline probability matrix for every
 fixture. A structured expected-points (xP) model turns that into per-player projections, and an
 optimiser, transfer suggester and fixture ticker turn those into decisions a manager can make
-before a deadline. It runs on AWS, refits daily, and serves a Next.js front end branded
+before a deadline. It runs on AWS, recomputes projections daily, and serves a Next.js front end branded
 **FPL Edge**.
 
 | | |
@@ -50,7 +50,7 @@ fits anything, so requests are fast and cost stays flat as users grow.
 ### The model, end to end
 
 ```text
-football-data.co.uk results, 3 seasons ──► Dixon-Coles MLE (180-day half-life, τ low-score correction)
+football-data.co.uk results, 3 seasons + this one ──► Dixon-Coles MLE (270-day half-life, 10-game guard, τ correction)
 betting odds (football-data, The Odds API) ──► de-vig ──► market λ, used instead of the engine where a line exists
                                                    │
                                                    ▼
@@ -114,6 +114,10 @@ flowchart LR
 | **api** | Lambda + API Gateway | per request | reads `serving/` only |
 | **web** | Vercel | per request, ISR | — |
 
+The daily fit uses three completed seasons plus this one, so team strengths move as results come
+in. A club with fewer than 10 games in the fit keeps a default rating until it has them (§35).
+Player attacking rates come from last season's totals and do not change in-season.
+
 From a new artifact to a visible page takes up to ~16 minutes: the API's store caches for 60s
 and Vercel revalidates within 5–15 min. The precompute refuses to publish a degraded fit (see
 `health_check` and `publish_gate` in `fpledge/api/precompute.py`). When it refuses, the
@@ -143,7 +147,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 560 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 593 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -268,7 +272,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 560 tests
+make test       # 593 tests
 make lint
 ```
 
@@ -332,6 +336,7 @@ A model change ships with a measured before/after, or it doesn't ship.
 .venv/bin/python scripts/validate_xp.py   # played-only per-GW Spearman vs realised points and FPL
 make simulate-season                      # decisions, not ranking — slow
 make backtest                             # the match engine vs the de-vigged market
+make season-fit                           # should the engine fit include the current season?
 make model-card                           # regenerate the numbers /model publishes
 ```
 
@@ -387,16 +392,19 @@ football-data's file has no Premier League rows.
 
 **Needs attention:**
 
-1. **The engine ignores the current season.** `gw.SEASONS` fits 2023-24 to 2025-26, and
-   2026-27 results are published but unused. Player xG/xA shares also come from last season's
-   totals, so in-season the model updates only minutes, availability and market odds.
-   Promoted Coventry and Hull stay unmapped. Adding the season is a model change, so it
-   needs measuring first.
-2. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
+1. **Market odds can go unused while the artifact says they were used.** In the November
+   international break football-data's fixtures file still listed GW10 after it was played. All
+   10 rows were reported as "upcoming fixtures priced", none matched GW11, and the Odds API
+   standby was never asked because the file had Premier League rows. GW11 ran on the engine (§35).
+2. **Player rates do not update in-season.** Team strengths do since §35, which passed a
+   pre-registered replay on five held-out seasons but went live without the planned side-by-side
+   run. Player xG/xA shares still come from last season's totals, and the engine change's effect
+   on player rankings is unmeasured.
+3. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
-3. The contact email and governing jurisdiction are still placeholders in `/privacy` and
+4. The contact email and governing jurisdiction are still placeholders in `/privacy` and
    `/terms`, and those pages are live.
-4. **Dependencies have no lockfile.** PuLP 4 turned CI red with no change here and blocked deploys
+5. **Dependencies have no lockfile.** PuLP 4 turned CI red with no change here and blocked deploys
    for five weeks (§34). It is capped now, but any other package can do the same.
 
 **Roadmap** (agreed 2026-09-06):
@@ -426,6 +434,6 @@ football-data's file has no Premier League rows.
 
 | doc | read it for | note |
 | --- | --- | --- |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 34 numbered sections | Start with its section map, then §16, §24, §27 and §32–§34. Its header and §1–§4 describe the pre-deploy state of early August |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 35 numbered sections | Start with its section map, then §16, §24, §27 and §32–§35. Its header and §1–§4 describe the pre-deploy state of early August |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | The runbook: schedules, alarms, smoke tests, key rotation | The cloud section is current; the launchd and cron sections are from the laptop era |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | The live API's configuration and how to ship it | The "blocking list" at the top predates the deploy |

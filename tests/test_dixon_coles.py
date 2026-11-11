@@ -58,3 +58,22 @@ def test_unknown_team_uses_promoted_prior():
     # predict() no longer raises on an unknown team, and stays a valid distribution
     p = model.predict("ZZ_promoted", "B")
     assert abs(p.home_win + p.draw + p.away_win - 1.0) < 1e-9
+
+
+def _with_a_newcomer(n_games):
+    games = _synthetic_matches()
+    last = games[-1]["date_ord"]
+    return games + [{"home": "N", "away": "C", "home_goals": 4, "away_goals": 0, "date_ord": last + 3 + i}
+                    for i in range(n_games)]
+
+
+def test_by_default_every_club_in_the_fit_is_known():
+    assert DixonColesModel(half_life_days=1e6).fit(_with_a_newcomer(1)).knows("N")
+
+
+def test_a_club_below_min_games_is_unknown_and_priced_from_the_prior():
+    """Unknown, not just re-rated: callers count these fixtures as priced without history."""
+    model = DixonColesModel(half_life_days=1e6, min_games=3).fit(_with_a_newcomer(2))
+    assert not model.knows("N") and model.knows("A")
+    assert model.expected_goals("N", "C") == model.expected_goals("Never seen", "C")
+    assert DixonColesModel(half_life_days=1e6, min_games=3).fit(_with_a_newcomer(3)).knows("N")

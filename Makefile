@@ -1,4 +1,4 @@
-.PHONY: setup test lint ci web-check docker-check pull backtest precompute serve eval-brief snapshot capture-props capture-news eval-news simulate-season model-card clean
+.PHONY: setup test lint ci web-check docker-check pull backtest precompute serve eval-brief snapshot capture-props capture-news eval-news simulate-season season-fit model-card clean
 
 # Full setup: venv + editable install with dev extras (heavy deps).
 setup:
@@ -75,6 +75,11 @@ eval-news:
 # DECISIONS rather than ranking. Slow (a walk-forward plus a simulation per policy).
 simulate-season:
 	.venv/bin/python scripts/simulate_season.py $(SEASON)
+
+# Should the engine fit include the current season? Replays past seasons both ways and applies
+# the rule written in fpledge/eval/season_fit.py. Offline; changes nothing in production.
+season-fit:
+	.venv/bin/python scripts/compare_season_fit.py
 
 # Regenerate the measured accuracy the /model page reads. Slow (full walk-forward).
 model-card:
