@@ -92,6 +92,10 @@ _FIXTURES_CSV = (
 )
 
 
+# The day before `_FIXTURES_CSV`'s rows, so they are upcoming whatever the real date is.
+_BEFORE_THEM = __import__("datetime").date(2026, 8, 21)
+
+
 def _patch_fetch(monkeypatch, content: bytes):
     from fpledge.ingest import footballdata
 
@@ -110,7 +114,7 @@ def test_fetch_upcoming_survives_a_byte_order_mark(monkeypatch):
     from fpledge.ingest.footballdata import fetch_upcoming
 
     _patch_fetch(monkeypatch, b"\xef\xbb\xbf" + _FIXTURES_CSV.encode("utf-8"))
-    got = fetch_upcoming()
+    got = fetch_upcoming(today=_BEFORE_THEM)
 
     assert [m["home"] for m in got] == ["Everton", "Man City"]   # E0 only, BOM notwithstanding
     assert got[0]["o_h"] == 2.23 and got[0]["o_over"] == 1.93
@@ -121,7 +125,7 @@ def test_fetch_upcoming_without_a_bom_is_unchanged(monkeypatch):
     from fpledge.ingest.footballdata import fetch_upcoming
 
     _patch_fetch(monkeypatch, _FIXTURES_CSV.encode("utf-8"))
-    assert len(fetch_upcoming()) == 2
+    assert len(fetch_upcoming(today=_BEFORE_THEM)) == 2
 
 
 def test_a_file_with_no_row_in_our_division_is_a_normal_day(monkeypatch):
@@ -152,6 +156,39 @@ def test_a_file_with_no_division_column_is_a_parse_failure(monkeypatch):
     _patch_fetch(monkeypatch, renamed.encode("utf-8"))
     with pytest.raises(ValueError, match="parse failure"):
         fetch_upcoming()
+
+
+def test_rows_dated_before_today_are_not_upcoming(monkeypatch):
+    """The file can keep a gameweek after it has been played. Today's games still count."""
+    from datetime import date
+
+    from fpledge.ingest.footballdata import fetch_upcoming
+
+    mixed = (
+        "Div,Date,Time,HomeTeam,AwayTeam,AvgH,AvgD,AvgA,Avg>2.5,Avg<2.5\n"
+        "E0,08/11/2026,14:00,Brighton,Brentford,2.0,3.5,3.6,1.8,2.0\n"
+        "E0,13/11/2026,20:00,Leeds,Spurs,2.6,3.4,2.7,1.9,1.9\n"
+        "E0,21/11/2026,15:00,Chelsea,Leeds,1.5,4.3,6.0,1.7,2.1\n"
+    )
+    _patch_fetch(monkeypatch, mixed.encode("utf-8"))
+    got = fetch_upcoming(today=date(2026, 11, 13))
+    assert [m["home"] for m in got] == ["Leeds", "Chelsea"]
+
+
+def test_a_file_left_over_from_a_played_week_falls_through_to_the_standby(monkeypatch):
+    """What happened in the November 2026 break: Premier League rows, none of them upcoming.
+    That must reach the standby exactly as an empty file does, and report no error."""
+    from fpledge import gw
+
+    played = (
+        "Div,Date,Time,HomeTeam,AwayTeam,AvgH,AvgD,AvgA,Avg>2.5,Avg<2.5\n"
+        "E0,08/11/2020,14:00,Brighton,Brentford,2.0,3.5,3.6,1.8,2.0\n"
+    )
+    _patch_fetch(monkeypatch, played.encode("utf-8"))
+    row = {"home": "Chelsea", "away": "Leeds", "o_h": 1.5, "o_d": 4.3, "o_a": 6.0,
+           "o_over": 1.7, "o_under": 2.1}
+    monkeypatch.setattr(gw.oddsapi, "upcoming_1x2_ou", lambda: [row])
+    assert gw._upcoming_odds() == ([row], "the_odds_api", {})
 
 
 def test_no_premier_league_rows_falls_through_to_the_standby_without_an_error(monkeypatch):

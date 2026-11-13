@@ -147,7 +147,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 593 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 595 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -272,7 +272,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 593 tests
+make test       # 595 tests
 make lint
 ```
 
@@ -390,21 +390,21 @@ since 26 Sep and frozen `/news`; `/model`, which had 404'd in production since l
 market-λ path, which had never run. Market odds now fall back to The Odds API on the days
 football-data's file has no Premier League rows.
 
+**Fixed on 2026-11-13** (HANDOFF §35): a fixtures file left over from a played gameweek no longer
+counts as market odds. In the November break it had stopped GW11 reaching the Odds API standby
+while the artifact reported the market as used.
+
 **Needs attention:**
 
-1. **Market odds can go unused while the artifact says they were used.** In the November
-   international break football-data's fixtures file still listed GW10 after it was played. All
-   10 rows were reported as "upcoming fixtures priced", none matched GW11, and the Odds API
-   standby was never asked because the file had Premier League rows. GW11 ran on the engine (§35).
-2. **Player rates do not update in-season.** Team strengths do since §35, which passed a
+1. **Player rates do not update in-season.** Team strengths do since §35, which passed a
    pre-registered replay on five held-out seasons but went live without the planned side-by-side
    run. Player xG/xA shares still come from last season's totals, and the engine change's effect
    on player rankings is unmeasured.
-3. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
+2. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
-4. The contact email and governing jurisdiction are still placeholders in `/privacy` and
+3. The contact email and governing jurisdiction are still placeholders in `/privacy` and
    `/terms`, and those pages are live.
-5. **Dependencies have no lockfile.** PuLP 4 turned CI red with no change here and blocked deploys
+4. **Dependencies have no lockfile.** PuLP 4 turned CI red with no change here and blocked deploys
    for five weeks (§34). It is capped now, but any other package can do the same.
 
 **Roadmap** (agreed 2026-09-06):

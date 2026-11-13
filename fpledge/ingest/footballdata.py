@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime
+from datetime import UTC, date, datetime
 
 from .. import config
 from . import landing
@@ -164,12 +164,13 @@ def parse_csv(text: str, label: str) -> list[dict]:
     return matches
 
 
-def fetch_upcoming(division: str = "E0") -> list[dict]:
+def fetch_upcoming(division: str = "E0", today: date | None = None) -> list[dict]:
     """Upcoming fixtures with pre-match 1X2 + O/U 2.5 odds (football-data's fixtures.csv).
 
     Returns [] out of season / before books post lines (the file only holds the next ~week).
     Each match: {home, away, o_h, o_d, o_a, o_over, o_under}. Used to derive market-implied
     lambdas for the near gameweek(s); the engine is the fallback for fixtures without odds.
+    Rows dated before `today` (UTC unless given) are dropped: see the comment in the loop.
     """
     import requests
 
@@ -178,9 +179,17 @@ def fetch_upcoming(division: str = "E0") -> list[dict]:
     text = _decode(resp)
     landing.land(text, source="football_data", endpoint="fixtures", season=config.SEASON)
     rows = list(csv.DictReader(io.StringIO(text)))
+    today = today or datetime.now(UTC).date()
     out: list[dict] = []
     for row in rows:
         if row.get("Div") != division or not row.get("HomeTeam"):
+            continue
+        # A FILE THAT OUTLIVES ITS WEEK. Through the November 2026 international break this file
+        # still listed GW10 days after it was played. Those rows priced no upcoming fixture, yet the
+        # report counted them as priced, and because the file had Premier League rows the standby
+        # was never asked: GW11 ran on the engine while `meta.market` said 10/10 (HANDOFF §35).
+        played_on = _parse_date(row.get("Date", ""))
+        if played_on is not None and played_on < today:
             continue
         oh, od, oa = _closing_odds(row)   # falls through to pre-match Avg/PS/B365 for upcoming
         oo, uu = _ou_odds(row)
