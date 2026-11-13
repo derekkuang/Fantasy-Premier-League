@@ -2841,3 +2841,42 @@ and read point in time by `gw.py` for minutes. Two guards go with it. The precom
 publish when a gameweek FPL has finalised is missing from the raw zone, since today a failed fetch only
 warns and the rates would quietly run a week behind. And the artifact should record which gameweek its
 rates run through.
+
+### In production, and the player list it exposed (2026-11-13)
+
+Building the change turned up a larger problem. Production's player list was `player_season`, the
+history pull of 25 July, so identity, club and ownership were July's too:
+
+- **117 current players had no projection at all**, 23 of them regular starters: Declan Rice (13.7%
+  owned), Hull's goalkeeper Tzolakis (13.5%), Silva, Enciso, Suzuki.
+- **30 players were projected for their July club**, such as Nørgaard at Arsenal (now Everton) and Konsa at
+  Villa (now Arsenal), with that club's fixtures and goals.
+- **Ownership was July's**: Groß 1.9% against 48.0% now, De Cuyper 2.1% against 47.7%. That breaks
+  differentials, effective ownership and template risk.
+
+`gw.current_players` now builds the list from today's bootstrap and joins last season's totals by
+`code`. `models.rates` computes the k=3 blend from landed event-live gameweeks, and `compute_xp_records`
+takes it through `rates=`. With `rates=None` the old path is unchanged.
+
+**One difference from the test.** Production zeroes the attacking shares of a club whose squad has under
+9,000 minutes of evidence (`LOW_COVERAGE`), and the harness never had that rule. Coverage now counts this
+season's minutes as well, so Coventry, Hull and Ipswich, about ten gameweeks in, are treated like
+everyone else, as the test treated them. A promoted club early next season is still protected.
+
+**Two data guards.** The precompute refuses to publish when a gameweek FPL has finalised is not landed,
+because a failed fetch used to only warn. A gameweek that has finished but is not yet finalised is a
+normal day and does not block. The artifact records `source.player_data`: the rate method, the gameweek
+it runs through, and any missing ones.
+
+**GW11 built locally both ways** through `build_payload`, from a fresh bootstrap with one shared market
+fetch (The Odds API, 17 of 17 fixtures, since football-data's file was empty):
+
+- Both pass `health_check` and `publish_gate` against the live GW11 artifact. Records go from 555 to 672.
+- Jackson goes from 2.00 (no goals) to 6.15, second over the next three gameweeks. Rudoni goes from 2.24 to
+  5.28, McBurnie from 2.00 to 3.67. Haaland falls from 8.26 to 7.26 and Palmer from 5.94 to 5.67, partly
+  because their teammates now carry shares.
+- Players in both builds move 0.66 points over three gameweeks on average, and 11 of the top 20 stay.
+- No negative or missing projections. The highest GW11 xP is 7.26.
+
+The rate blend is measured (+0.022 held out). The list fix is a correction, not a model change. Their
+combined effect on points is not measured; the weekly scorecard is where that will show.

@@ -154,6 +154,12 @@ def health_check(meta: dict) -> list[str]:
             f"fallback_fixtures={fb} exceeds {MAX_FALLBACK_FIXTURES} — more fixtures than "
             "expected are being priced without engine history"
         )
+    missing = (source.get("player_data") or {}).get("missing_gameweeks") or []
+    if missing:
+        problems.append(
+            f"finished gameweek(s) {missing} are not landed, so player rates and minutes would run "
+            "behind — pull_data.py failed to land them and will retry on the next run"
+        )
     n = meta.get("n_records")
     if isinstance(n, int) and n < MIN_RECORDS:
         problems.append(f"only {n} player records (expected >= {MIN_RECORDS})")
