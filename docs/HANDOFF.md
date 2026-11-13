@@ -2781,6 +2781,11 @@ production ran the same code on the same file while its public `meta.market` say
 rows dated before today in `fetch_upcoming`, so a stale file falls through like an empty one. Until then
 the engine prices next week too during a break, so this change moves GW11 xP by up to 1.03 points.
 
+**Fixed 2026-11-13.** `fetch_upcoming` now drops rows dated before today, so a file left over from a played
+gameweek falls through to the standby like an empty one. The live artifacts of 11 and 13 November both
+carried `football_data 10/10` with every GW11 match from the model. The file had emptied by the evening of
+the 13th, so GW11 would have reached the standby the next day anyway. The fix stops it recurring.
+
 ---
 
 ## 36. Player rates should update in-season, and recent form adds nothing (2026-11-13)
