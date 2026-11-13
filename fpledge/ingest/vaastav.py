@@ -115,6 +115,33 @@ def _add_clean_baseline(rows: list[dict]) -> None:
             prev = r["fpl_xp"]
 
 
+_ELEMENT_TYPE = {"1": "GK", "2": "DEF", "3": "MID", "4": "FWD"}
+
+
+def fetch_players_raw(season: str) -> list[dict]:
+    """One row per player with season totals: {element, code, position, minutes, xg, xa, dc, bonus}.
+
+    `code` is FPL's id for a person across seasons, which `element` is not, so this is what links
+    one season's totals to the next season's players. `dc` is 0 before 2025-26, when the column
+    and the scoring rule that uses it did not exist.
+    """
+    text = _get(f"{VAASTAV_BASE}/{season}/players_raw.csv")
+    landing.land(text, source="vaastav", endpoint="players_raw", season=season)
+    return [
+        {
+            "element": _i(r.get("id")),
+            "code": _i(r.get("code")),
+            "position": _ELEMENT_TYPE.get((r.get("element_type") or "").strip()),
+            "minutes": _i(r.get("minutes")),
+            "xg": _f(r.get("expected_goals")),
+            "xa": _f(r.get("expected_assists")),
+            "dc": _i(r.get("defensive_contribution")),
+            "bonus": _i(r.get("bonus")),
+        }
+        for r in csv.DictReader(io.StringIO(text))
+    ]
+
+
 def fetch_fixtures(season: str) -> list[dict]:
     """Match results (team ids) with gameweek + kickoff, for point-in-time engine fits."""
     text = _get(f"{VAASTAV_BASE}/{season}/fixtures.csv")
