@@ -90,6 +90,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | 33 | two production-only failures: the news digest's memory, and `/model` reading local disk |
 | **34** | **§32's guard was wrong: how often the odds file really has Premier League rows, and the standby** |
 | **35** | **the daily refit learns nothing, and why adding the current season as-is fails** |
+| **36** | **player rates should update in-season; recent form adds nothing** |
 
 ---
 
@@ -2779,3 +2780,64 @@ asked. Every GW11 match and ticker row in the local build of the current engine 
 production ran the same code on the same file while its public `meta.market` says otherwise. Fix: drop
 rows dated before today in `fetch_upcoming`, so a stale file falls through like an empty one. Until then
 the engine prices next week too during a break, so this change moves GW11 xP by up to 1.03 points.
+
+---
+
+## 36. Player rates should update in-season, and recent form adds nothing (2026-11-13)
+
+**Production's player rates were last season's, and zero below 270 minutes.** Per-90 xG, xA, defensive
+contribution and bonus come from last season's totals all season. A player with under 270 Premier League
+minutes last season gets zero for all four. On 2026-11-13 that was 53 of the 208 players with 450+ minutes
+this season. Nicolas Jackson (Chelsea, six goals, 0.54 xG+xA per 90) was projected at 2.00 points with no
+goal or assist part. Rudoni, Belloumi and McBurnie were the same. Each club's expected goals are split
+among players who have a rate, so their teammates were inflated too.
+
+**The test.** `fpledge/eval/player_rates.py`, run by `scripts/compare_player_rates.py`. `validate_xp`
+gained `prior_rates`, `prior_k` and `rate_half_life`, with its default path unchanged. Expected goals per
+side come from closing odds, and minutes from the same model in every variant, so only the rates differ.
+Scored from GW2 on players who played. The rule was committed in `0b2cb46` before any run.
+
+Development seasons, 2023-24 to 2025-26 (111 gameweeks), each variant against production:
+
+| variant | Spearman | change [95%] | MAE |
+|---|---|---|---|
+| production (last season, zero below 270) | 0.3498 | | 2.061 |
+| this season only | 0.3664 | +0.0166 [+0.0098, +0.0233] | 2.067 |
+| blend k=3 | 0.3744 | +0.0246 [+0.0200, +0.0293] | 2.043 |
+| blend k=6 | 0.3739 | +0.0241 [+0.0196, +0.0288] | 2.041 |
+| blend k=10 | 0.3734 | +0.0236 [+0.0190, +0.0280] | 2.041 |
+| blend k=20 | 0.3720 | +0.0222 [+0.0177, +0.0266] | 2.042 |
+
+The blend is `(this season's total + k x prior) / (this season's 90s + k)`. The prior is last season's
+per-90 at 270+ minutes, otherwise last season's regulars at the player's position. k barely matters, and
+the rule took 3. The candidate beat production in every season: +0.0228, +0.0235 and +0.0274.
+
+**Recent form adds nothing, again.** Weighting this season's games by a 6-gameweek half-life moved the
+k=3 blend by +0.0005 [-0.0003, +0.0014], so by the rule it was dropped. Recency on xG/xA alone measured
++0.002 in July. What changes a player's output, such as a new role or the penalties, shows up in a
+season-to-date rate within a few weeks anyway.
+
+**Held out, 2026-27 GW2-10, run once: SHIP.**
+
+| | production | blend k=3 | change [95%] |
+|---|---|---|---|
+| all, 9 gameweeks | 0.3649 | 0.3871 | +0.0222 [+0.0132, +0.0307] |
+| GW2-5 | 0.3743 | 0.3989 | +0.0246 [+0.0126, +0.0367] |
+| GW6-10 | 0.3573 | 0.3776 | +0.0203 [+0.0087, +0.0319] |
+| MAE | 2.092 | 2.058 | |
+
+The size matches the development seasons. The rows came from our own landed event-live results, since
+vaastav's 2026-27 copy stopped at GW6.
+
+**What this does not show.** It is the harness, not production. Production's early-season minutes come
+from last season until a player has four gameweeks, and its expected goals come from the engine beyond
+the next gameweek. Points and decisions are not measured. And nine gameweeks are a confirmation of a
+replicated effect, not a measurement of its size.
+
+### Next
+
+Put the k=3 blend into production. The per-gameweek data it needs is already landed by `pull_data.py`
+and read point in time by `gw.py` for minutes. Two guards go with it. The precompute should refuse to
+publish when a gameweek FPL has finalised is missing from the raw zone, since today a failed fetch only
+warns and the rates would quietly run a week behind. And the artifact should record which gameweek its
+rates run through.

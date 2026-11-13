@@ -396,10 +396,10 @@ football-data's file has no Premier League rows.
    international break football-data's fixtures file still listed GW10 after it was played. All
    10 rows were reported as "upcoming fixtures priced", none matched GW11, and the Odds API
    standby was never asked because the file had Premier League rows. GW11 ran on the engine (§35).
-2. **Player rates do not update in-season.** Team strengths do since §35, which passed a
-   pre-registered replay on five held-out seasons but went live without the planned side-by-side
-   run. Player xG/xA shares still come from last season's totals, and the engine change's effect
-   on player rankings is unmeasured.
+2. **Player rates do not update in-season yet.** They come from last season's totals, and a
+   player under 270 minutes last season gets zero attacking threat: 53 of 208 regular starters
+   on 13 Nov. Blending this season in (k=3) passed a pre-registered test, +0.022 Spearman on
+   this season's held-out GW2–10 (§36). Production change not yet made.
 3. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
 4. The contact email and governing jurisdiction are still placeholders in `/privacy` and
@@ -434,6 +434,6 @@ football-data's file has no Premier League rows.
 
 | doc | read it for | note |
 | --- | --- | --- |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 35 numbered sections | Start with its section map, then §16, §24, §27 and §32–§35. Its header and §1–§4 describe the pre-deploy state of early August |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 36 numbered sections | Start with its section map, then §16, §24, §27 and §32–§36. Its header and §1–§4 describe the pre-deploy state of early August |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | The runbook: schedules, alarms, smoke tests, key rotation | The cloud section is current; the launchd and cron sections are from the laptop era |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | The live API's configuration and how to ship it | The "blocking list" at the top predates the deploy |
