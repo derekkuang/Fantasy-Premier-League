@@ -407,6 +407,18 @@ export type ModelCard = {
   method: Record<string, string>;
   experiments: Experiment[];
   not_modelled: { topic: string; detail: string }[];
+  /** This season, week by week, from the daily precompute. Null before the first finished GW. */
+  live?: LiveRecord | null;
+};
+
+export type LiveScore = { rho: number | null; mae: number };
+
+/** How what we published before each deadline ranked the players who then played, and FPL's
+ *  own pre-deadline forecast scored on the same players where this site captured it. */
+export type LiveRecord = {
+  generated_at: string;
+  gws: { gw: number; n: number; ours: LiveScore; fpl: LiveScore | null }[];
+  summary: { gws_compared: number; ours_rho: number; fpl_rho: number; ours_ahead: number } | null;
 };
 
 /** The measured accuracy of the model. 404s until `scripts/build_model_card.py` has run —
@@ -441,12 +453,14 @@ export type NewsMention = {
   fpl_news: string;
 };
 
-export type NewsSource = "bbc" | "guardian" | "official";
+export type NewsSource = "bbc" | "guardian" | "official" | "pl";
 
 export type NewsItem = {
   /** Which publisher carried it. A club's own statement and a rumour column are not the same
    *  evidence, and the page says which is which rather than blending them. */
   source?: NewsSource;
+  /** Every publisher that ran this story; the digest merges copies into one entry. */
+  sources?: NewsSource[];
   title: string | null;
   summary: string | null;
   link: string | null;

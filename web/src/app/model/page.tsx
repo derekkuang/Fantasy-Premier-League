@@ -1,91 +1,53 @@
-// The honesty page.
+// How the model does. One headline (this season, against FPL's own forecast, week by week) and
+// everything else one tap away: each gameweek, last season's full test and the corrections it
+// went through, what we tried, what the model doesn't know, how it works, and how the team
+// news is checked.
 //
-// Every other page on this site asks you to trust a number. This one is where that trust is
-// supposed to be earned, so it has one rule: nothing here is written by hand. Every figure is
-// read from the artifact `scripts/build_model_card.py` produces by walking a completed season
-// forward, and the page prints the date it was generated so a stale claim announces itself.
-//
-// It has been wrong twice, in opposite directions, and both corrections are printed on it. A
-// model card that only lists wins is a marketing page wearing a lab coat; one that quietly
-// restates a number it got wrong is worse, because it looks like the first thing.
+// Nothing on this page is written by hand except the notes. The live record comes from the
+// daily precompute (live_record.json), last season's test from the model card, and the notes
+// from fpledge/model_notes.py. A record that doesn't exist yet says so rather than inventing one.
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getModelCard, type CardSubset, type ModelCard } from "@/lib/api";
+import { getModelCard, getNews, type CardSubset, type ModelCard, type NewsResponse } from "@/lib/api";
 import { PageError, PageShell } from "@/components/page-shell";
+import { Fold } from "@/components/fold";
+import { LiveChart } from "@/components/live-chart";
 
 export const metadata: Metadata = {
   title: "How the model does — FPL Edge",
   description:
-    "Measured, not asserted: walk-forward validation of our expected-points model against FPL's own projection, the experiments that failed, and what the model deliberately does not know.",
+    "This season's projections scored against what happened, week by week, beside FPL's own forecast. Plus last season's test, the experiments that failed and what the model doesn't know.",
   alternates: { canonical: "/model" },
 };
 
 export const revalidate = 3600;
 
-function Metric({
-  label, mine, theirs, better, unit = "", hint,
-}: {
-  label: string;
-  mine: number | null;
-  theirs: number | null;
-  /** which direction is good — decides who gets the green, not which number is bigger */
-  better: "high" | "low";
-  unit?: string;
-  hint: string;
+function Pair({ label, mine, theirs, better, digits = 3, unit = "" }: {
+  label: string; mine: number | null; theirs: number | null; better: "high" | "low"; digits?: number; unit?: string;
 }) {
   if (mine == null || theirs == null) return null;
   const weWin = better === "high" ? mine > theirs : mine < theirs;
-  const fmt = (n: number) => n.toFixed(3) + unit;
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-black/10 p-3 dark:border-white/10">
-      <span className="t-label text-[10px] text-black/45 dark:text-white/45">{label}</span>
-      <div className="flex items-baseline gap-4">
-        <span className="flex flex-col">
-          <span className={`t-title text-2xl font-bold tabular-nums ${weWin ? "text-emerald-600" : ""}`}>
-            {fmt(mine)}
-          </span>
-          <span className="text-[10px] text-black/45 dark:text-white/45">ours</span>
-        </span>
-        <span className="flex flex-col">
-          <span className={`t-title text-2xl font-bold tabular-nums ${weWin ? "" : "text-emerald-600"}`}>
-            {fmt(theirs)}
-          </span>
-          <span className="text-[10px] text-black/45 dark:text-white/45">FPL&apos;s own</span>
-        </span>
-      </div>
-      <span className="text-[11px] leading-relaxed text-black/50 dark:text-white/50">{hint}</span>
+    <div className="flex items-baseline justify-between gap-3 border-b border-[var(--line)] py-1.5 text-[13px]">
+      <span className="text-muted">{label}</span>
+      <span className="tabular-nums">
+        <strong className={weWin ? "text-[var(--emerald-text)]" : ""}>{mine.toFixed(digits)}{unit}</strong>
+        <span className="text-muted"> ours · </span>
+        <strong className={weWin ? "" : "text-[var(--emerald-text)]"}>{theirs.toFixed(digits)}{unit}</strong>
+        <span className="text-muted"> FPL</span>
+      </span>
     </div>
   );
 }
 
-function Subset({ title, blurb, s }: { title: string; blurb: string; s: CardSubset }) {
+function Subset({ title, s }: { title: string; s: CardSubset }) {
   return (
-    <section className="flex flex-col gap-2">
-      <div>
-        <h3 className="t-title text-[15px] font-semibold">{title}</h3>
-        <p className="text-[12px] leading-relaxed text-black/50 dark:text-white/50">
-          {blurb} · {s.n.toLocaleString()} player-gameweeks
-        </p>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Metric
-          label="Ranking · per-GW Spearman"
-          mine={s.spearman_model}
-          theirs={s.spearman_fpl}
-          better="high"
-          hint="How well the projection ORDERS players against what they actually scored, averaged over gameweeks. Picking a squad is a ranking problem, so this is the metric that matters most."
-        />
-        <Metric
-          label="Error · mean absolute"
-          mine={s.mae_model}
-          theirs={s.mae_fpl}
-          better="low"
-          unit=" pts"
-          hint={`How far off each individual projection is, on average. Lower is better — ours is closer in ${s.gws_model_mae_beats_fpl} gameweeks.`}
-        />
-      </div>
-    </section>
+    <div className="flex flex-col">
+      <span className="pb-1 text-[13px] font-semibold">{title} <span className="font-normal text-muted">· {s.n.toLocaleString()} player-gameweeks</span></span>
+      <Pair label="Ranking score" mine={s.spearman_model} theirs={s.spearman_fpl} better="high" />
+      <Pair label="Average miss" mine={s.mae_model} theirs={s.mae_fpl} better="low" digits={2} unit=" pts" />
+    </div>
   );
 }
 
@@ -93,199 +55,193 @@ export default async function ModelPage() {
   let card: ModelCard;
   try {
     card = await getModelCard();
-  } catch (e) {
-    return <PageError message={e instanceof Error ? e.message : "Could not load the model card."} />;
+  } catch {
+    return <PageError message="The model's results aren't available right now. Try again in a minute." />;
+  }
+  let news: NewsResponse | null = null;
+  try {
+    news = await getNews();
+  } catch {
+    news = null;
   }
 
+  const live = card.live ?? null;
+  const sum = live?.summary ?? null;
   const p = card.measured.played_only;
-  const gap =
-    p.spearman_model != null && p.spearman_fpl != null
-      ? (p.spearman_model - p.spearman_fpl).toFixed(3)
-      : null;
 
   return (
-    <PageShell
-      title="How the model does"
-      subtitle={`Walk-forward validation on ${card.season} — measured, not asserted.`}
-      meta={
-        <span className="text-right font-mono text-[10px] leading-relaxed text-black/40 dark:text-white/40">
-          {card.model_ver}
-          <br />
-          {card.generated_at.slice(0, 10)}
-        </span>
-      }
-    >
-      {/* The finding, stated before anything that might soften it. */}
-      <div className="flex flex-col gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-        <h2 className="t-title text-[17px] font-semibold">
-          Our projection ranks players better than FPL&apos;s own.
-        </h2>
-        <p className="text-[13px] leading-relaxed text-black/70 dark:text-white/70">
-          Across {card.measured.gws_scored} gameweeks of {card.season}, on the players who
-          actually featured, ours correlates{" "}
-          <strong className="tabular-nums">+{gap}</strong> higher with
-          realised points than FPL&apos;s figure as it stood before each deadline — and misses by
-          less on average too.
-        </p>
-        <p className="text-[13px] leading-relaxed text-black/70 dark:text-white/70">
-          We are not going to oversell that. A rank correlation of{" "}
-          <strong className="tabular-nums">{p.spearman_model?.toFixed(2)}</strong> means single
-          gameweeks stay mostly unpredictable, for us and for everyone. It is an edge, not a
-          crystal ball, and it sits alongside the reason this site exists: every number here
-          opens up and reads term by term, and feeds tooling FPL gives you nothing like.
-        </p>
-      </div>
-
-      {/* The page has been wrong twice today. Saying so IS the honesty claim. */}
-      <div className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
-        <h3 className="t-title text-[14px] font-semibold">
-          What we are comparing against, and why this page changed its mind twice
-        </h3>
-        <p className="mt-1 text-[12px] leading-relaxed text-black/60 dark:text-white/60">
-          The public dataset&apos;s <code className="font-mono">xP</code> column is FPL&apos;s own
-          projection, but it is scraped <em>after</em> each gameweek finishes. FPL&apos;s number
-          tracks its <code className="font-mono">form</code> figure almost exactly, and form
-          absorbs a gameweek&apos;s points the moment it ends — so the scraped value has already
-          seen the result it is being asked to predict. Upstream documents this and recommends
-          shifting the column by one gameweek or dropping it entirely.
-        </p>
-        <p className="mt-2 text-[12px] leading-relaxed text-black/60 dark:text-white/60">
-          Scored against it unshifted, FPL &ldquo;beats&rdquo; a hindsight oracle that knows a
-          player&apos;s true season scoring rate <em>and</em> the minutes they actually played.
-          That is the tell. Shifted to what a manager could actually see before the deadline, it
-          scores <strong className="tabular-nums">{p.spearman_fpl?.toFixed(3)}</strong>, and this
-          page uses that. The comparison rests on{" "}
-          <strong>{p.baseline_gws}</strong> gameweeks and{" "}
-          <strong>{p.baseline_n?.toLocaleString()}</strong> player-gameweeks.
-        </p>
-        <p className="mt-2 text-[12px] leading-relaxed text-black/60 dark:text-white/60">
-          <strong className="font-semibold">Two corrections in one day, both published.</strong>{" "}
-          This page first claimed we had the lower error — wrong, an artefact of averaging our
-          score over every gameweek and FPL&apos;s over only the few where their column was
-          populated. It then claimed FPL beat us outright — also wrong, from benchmarking against
-          the contaminated column. Both are fixed. A page that quietly restates its numbers is
-          worth nothing, so the history stays.
-        </p>
-        <p className="mt-2 text-[12px] leading-relaxed text-black/60 dark:text-white/60">
-          The caveat that runs against us: shifting takes FPL&apos;s snapshot from just after the
-          previous gameweek, so it misses up to a week of team news before the next deadline.
-          That handicaps them by an unknown amount. The caveat that runs for us: our live model
-          reduces a projection when a player is flagged injured or doubtful, and the historical
-          data carries no such column, so this test runs ours with that switched off. Neither is
-          quantified. Both should be.
-        </p>
-      </div>
-
-      <Subset
-        title="Players who featured"
-        blurb="The honest test: everyone who got minutes, so the score isn't inflated by correctly guessing that a benched player scores nothing"
-        s={card.measured.played_only}
-      />
-
-      <Subset
-        title="All players"
-        blurb="Everyone in the pool, including non-starters — flattered on both sides by the easy did-they-play signal"
-        s={card.measured.all_players}
-      />
-
-      <section className="flex flex-col gap-2">
-        <h3 className="t-title text-[15px] font-semibold">Error by position</h3>
-        <p className="text-[12px] text-black/50 dark:text-white/50">
-          Mean absolute error among players who featured. Forwards are hardest — their points
-          come almost entirely from goals, which are rare and lumpy.
-        </p>
-        <div className="grid grid-cols-4 gap-2">
-          {["GK", "DEF", "MID", "FWD"].map((pos) => (
-            <div key={pos} className="flex flex-col items-center gap-0.5 rounded-xl border border-black/10 py-2.5 dark:border-white/10">
-              <span className="t-title text-lg font-bold tabular-nums">
-                {card.measured.mae_by_position_played[pos]?.toFixed(2) ?? "—"}
-              </span>
-              <span className="t-label text-[10px] text-black/45 dark:text-white/45">{pos}</span>
+    <PageShell title="How the model does" subtitle="This season's projections, scored against what actually happened.">
+      {/* the headline */}
+      <section className="flex flex-col gap-4 rounded-2xl border border-[var(--line)] p-4">
+        {sum ? (
+          <>
+            <h2 className="t-title text-[18px] font-semibold leading-snug">
+              {`In ${sum.ours_ahead} of ${sum.gws_compared} gameweeks, our projections ranked the players better than FPL's own forecast did.`}
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1 rounded-[12px] bg-[var(--chip)] px-3 py-2.5">
+                <span className="t-title text-[24px] font-bold leading-none tabular-nums text-[var(--emerald-text)]">{sum.ours_rho.toFixed(2)}</span>
+                <span className="text-[12px] text-muted">our average ranking score</span>
+              </div>
+              <div className="flex flex-col gap-1 rounded-[12px] bg-[var(--chip)] px-3 py-2.5">
+                <span className="t-title text-[24px] font-bold leading-none tabular-nums">{sum.fpl_rho.toFixed(2)}</span>
+                <span className="text-[12px] text-muted">FPL&apos;s, on the same players</span>
+              </div>
             </div>
-          ))}
-        </div>
+          </>
+        ) : (
+          <h2 className="t-title text-[18px] font-semibold">This season&apos;s record starts once a gameweek with FPL&apos;s forecast has finished.</h2>
+        )}
+        {live && <LiveChart live={live} />}
+        <p className="text-[13px] leading-relaxed text-muted">
+          The ranking score measures how well the predicted order of players matched the order they
+          actually scored in (1 is perfect). Around 0.3 means single gameweeks stay mostly
+          unpredictable, for everyone: an edge in the ordering, not a promise about any player.
+        </p>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h3 className="t-title text-[15px] font-semibold">What we tried</h3>
-        <p className="text-[12px] leading-relaxed text-black/50 dark:text-white/50">
-          Every change measured as a before/after on the same harness. The nulls are kept
-          deliberately — a list containing only successes tells you nothing about the process
-          that produced it.
-        </p>
-        <ul className="flex flex-col gap-1.5">
-          {card.experiments.map((e) => {
-            const kept = e.verdict.startsWith("kept");
-            return (
-              <li
-                key={e.name}
-                className="flex flex-col gap-1 rounded-xl border border-black/10 p-3 dark:border-white/10"
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[13px] font-semibold">{e.name}</span>
-                  <span
-                    className={`t-label flex-none rounded-full px-2 py-0.5 text-[9px] ${
-                      kept
-                        ? "bg-emerald-500/15 text-[var(--emerald-text)]"
-                        : "bg-black/[.06] text-black/50 dark:bg-white/10 dark:text-white/50"
-                    }`}
-                  >
-                    {kept ? "kept" : "rejected"}
+      <div className="flex flex-col">
+        {live && live.gws.length > 0 && (
+          <Fold title="Each gameweek" aside={`${live.gws.length} finished`}>
+            <table className="w-full text-[13px] tabular-nums">
+              <thead>
+                <tr className="text-[12px] text-muted">
+                  <th className="py-1 text-left font-normal">GW</th>
+                  <th className="py-1 text-right font-normal">Players</th>
+                  <th className="py-1 text-right font-normal">Ours</th>
+                  <th className="py-1 text-right font-normal">FPL</th>
+                  <th className="hidden py-1 text-right font-normal sm:table-cell">Our miss</th>
+                  <th className="hidden py-1 text-right font-normal sm:table-cell">FPL miss</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...live.gws].reverse().map((w) => (
+                  <tr key={w.gw} className="border-t border-[var(--line)]">
+                    <td className="py-1.5">{w.gw}</td>
+                    <td className="py-1.5 text-right">{w.n}</td>
+                    <td className="py-1.5 text-right font-semibold">{w.ours.rho?.toFixed(2) ?? "–"}</td>
+                    <td className="py-1.5 text-right">{w.fpl?.rho?.toFixed(2) ?? "not captured"}</td>
+                    <td className="hidden py-1.5 text-right sm:table-cell">{w.ours.mae.toFixed(2)}</td>
+                    <td className="hidden py-1.5 text-right sm:table-cell">{w.fpl ? w.fpl.mae.toFixed(2) : "–"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted">
+              Scored on players we projected who got minutes. Where this site captured FPL&apos;s
+              forecast before the deadline, both are scored on exactly the same players. Projections
+              are the ones published before each deadline, so earlier weeks show earlier versions of
+              the model. &ldquo;Miss&rdquo; is the average gap between projected and actual points.
+            </p>
+          </Fold>
+        )}
+
+        <Fold title={`Last season's test (${card.season})`} aside={`run ${card.generated_at.slice(0, 10)}`}>
+          <div className="flex flex-col gap-4">
+            <p className="text-[13px] leading-relaxed">
+              {`The model was walked through ${card.season} a gameweek at a time, seeing only earlier weeks each time, and scored against FPL's forecast as it stood before each deadline.`}
+            </p>
+            <Subset title="Players who featured" s={card.measured.played_only} />
+            <Subset title="All players" s={card.measured.all_players} />
+            <div className="flex flex-col gap-1">
+              <span className="text-[13px] font-semibold">Average miss by position, players who featured</span>
+              <div className="grid grid-cols-4 gap-2">
+                {["GK", "DEF", "MID", "FWD"].map((pos) => (
+                  <div key={pos} className="flex flex-col items-center rounded-[10px] bg-[var(--chip)] py-2">
+                    <span className="text-[16px] font-bold tabular-nums">{card.measured.mae_by_position_played[pos]?.toFixed(2) ?? "–"}</span>
+                    <span className="text-[12px] text-muted">{pos}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-muted">
+              <p>
+                <strong className="text-[var(--fg)]">Two corrections, both kept on the record.</strong>{" "}
+                This page first claimed the lower average miss; that came from averaging our score
+                over every gameweek and FPL&apos;s over only the few where its numbers existed. It then
+                claimed FPL ranked better; that came from a copy of FPL&apos;s forecast scraped after
+                each gameweek, which had already absorbed the result. Shifted to what a manager could
+                see before the deadline, FPL scores {p.spearman_fpl?.toFixed(3)} over {p.baseline_gws}{" "}
+                gameweeks, the figure used above.
+              </p>
+              <p>
+                That shift misses up to a week of FPL&apos;s team news, which handicaps FPL by an
+                unknown amount; and this test ran our model without the injury flags it uses live,
+                which handicaps us. This season&apos;s record above has neither problem.
+              </p>
+            </div>
+          </div>
+        </Fold>
+
+        <Fold title="What we tried" aside={`${card.experiments.length} experiments`}>
+          <ul className="flex flex-col">
+            {card.experiments.map((e) => {
+              const kept = e.verdict.startsWith("kept");
+              return (
+                <li key={e.name} className="flex flex-col gap-0.5 border-t border-[var(--line)] py-2.5 first:border-t-0">
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span className="text-[14px] font-semibold">{e.name}</span>
+                    <span className={`flex-none rounded-full px-2 py-0.5 text-[12px] font-semibold ${kept ? "bg-emerald-500/15 text-[var(--emerald-text)]" : "bg-[var(--chip)] text-muted"}`}>
+                      {kept ? "kept" : "dropped"}
+                    </span>
                   </span>
-                </div>
-                <span className="text-[12px] leading-relaxed text-black/55 dark:text-white/55">
-                  {e.question}
-                </span>
-                <span className="font-mono text-[11px] tabular-nums text-black/45 dark:text-white/45">
-                  {e.delta}
-                </span>
-                <span className="text-[11px] leading-relaxed text-black/45 dark:text-white/45">
-                  {e.verdict} · measured {e.measured}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                  <span className="text-[13px] text-muted">{e.question}</span>
+                  <span className="text-[13px] tabular-nums">{e.delta}</span>
+                  <span className="text-[12px] text-muted">{e.verdict} · {e.measured}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </Fold>
 
-      <section className="flex flex-col gap-2">
-        <h3 className="t-title text-[15px] font-semibold">What the model does not know</h3>
-        <p className="text-[12px] leading-relaxed text-black/50 dark:text-white/50">
-          Absences, stated plainly. Anything on this list is something the site will not
-          pretend to have an opinion about.
-        </p>
-        <dl className="flex flex-col gap-2">
-          {card.not_modelled.map((n) => (
-            <div key={n.topic} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-              <dt className="text-[13px] font-semibold">{n.topic}</dt>
-              <dd className="mt-0.5 text-[12px] leading-relaxed text-black/55 dark:text-white/55">
-                {n.detail}
-              </dd>
+        <Fold title="What the model doesn't know" aside={`${card.not_modelled.length} things`}>
+          <dl className="flex flex-col">
+            {card.not_modelled.map((n) => (
+              <div key={n.topic} className="border-t border-[var(--line)] py-2.5 first:border-t-0">
+                <dt className="text-[14px] font-semibold">{n.topic}</dt>
+                <dd className="text-[13px] leading-relaxed text-muted">{n.detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </Fold>
+
+        <Fold title="How it works">
+          <dl className="flex flex-col">
+            {Object.entries(card.method).map(([k, v]) => (
+              <div key={k} className="border-t border-[var(--line)] py-2.5 first:border-t-0">
+                <dt className="text-[14px] font-semibold first-letter:uppercase">{k}</dt>
+                <dd className="text-[13px] leading-relaxed text-muted">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </Fold>
+
+        {news && (
+          <Fold title="How the team news is checked" className="border-b">
+            <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
+              <p>
+                The news page tags stories by keyword (&ldquo;injury&rdquo;, &ldquo;rotation&rdquo;)
+                and compares each tagged player with FPL&apos;s own status. Today{" "}
+                <strong className="tabular-nums">
+                  {news.quality.precision == null ? "none" : `${Math.round(news.quality.precision * 100)}%`}
+                </strong>{" "}
+                of those tags agree with FPL, and{" "}
+                <strong className="tabular-nums">{news.quality.additive}</strong>{" "}name players FPL
+                hasn&apos;t flagged, unverified.
+              </p>
+              <p className="text-muted">
+                That&apos;s too low to show the tags on the news page, so it shows FPL&apos;s status
+                instead. Out of {news.n_items.toLocaleString()} stories collected; none of it changes a
+                projection.
+              </p>
             </div>
-          ))}
-        </dl>
-      </section>
+          </Fold>
+        )}
+      </div>
 
-      <section className="flex flex-col gap-2">
-        <h3 className="t-title text-[15px] font-semibold">Method</h3>
-        <dl className="flex flex-col gap-2">
-          {Object.entries(card.method).map(([k, v]) => (
-            <div key={k} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
-              <dt className="t-label text-[10px] text-black/45 dark:text-white/45">{k}</dt>
-              <dd className="mt-1 text-[12px] leading-relaxed text-black/60 dark:text-white/60">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <p className="text-[11px] leading-relaxed text-black/45 dark:text-white/45">
-        Generated {card.generated_at.slice(0, 10)} from {card.measured.n_player_gws.toLocaleString()}{" "}
-        player-gameweeks across {card.measured.gws_scored} gameweeks of {card.season}. Rebuild it
-        with <code className="font-mono">scripts/build_model_card.py</code>. If this date is old,
-        so is every number above — that is the point of printing it.{" "}
-        <Link href="/predictions" className="text-emerald-600 underline">
-          See the projections themselves →
-        </Link>
+      <p className="text-[13px] text-muted">
+        This season&apos;s record updates every day.{" "}
+        <Link href="/players" className="text-[var(--emerald-text)] underline">See the projections</Link>
       </p>
     </PageShell>
   );

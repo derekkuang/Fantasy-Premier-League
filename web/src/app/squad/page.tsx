@@ -23,8 +23,8 @@ export default async function SquadPage() {
   let loaded;
   try {
     loaded = await Promise.all([getPredictions(gw), getFixtures(gw)]);
-  } catch (e) {
-    return <PageError message={e instanceof Error ? e.message : "Could not load the player pool."} />;
+  } catch {
+    return <PageError message="The player list couldn't be loaded. Try again in a minute." />;
   }
   const [predictions, fixtures] = loaded;
 

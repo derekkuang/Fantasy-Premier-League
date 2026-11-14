@@ -24,6 +24,8 @@
   --amber-br: rgba(245, 158, 11, .35);
   --rose: #be123c;
   --focus: #047857;
+  --muted: #5d6166;                     /* 6.2:1 on white — every secondary sentence */
+  --line: rgba(0, 0, 0, .08);
 }
 
 :root[data-theme="dark"] {
@@ -41,6 +43,8 @@
   --amber-br: rgba(245, 158, 11, .30);
   --rose: #fb7185;
   --focus: #34d399;
+  --muted: #a3a8ad;                     /* 8.0:1 on #0a0a0a */
+  --line: rgba(255, 255, 255, .09);
 }
 
 /* No-JS fallback: honour the OS preference only when no explicit theme is set. */
@@ -59,6 +63,8 @@
     --amber-br: rgba(245, 158, 11, .30);
     --rose: #fb7185;
     --focus: #34d399;
+    --muted: #a3a8ad;
+    --line: rgba(255, 255, 255, .09);
   }
 }
 
@@ -91,6 +97,16 @@ body {
   --track-label: 0.055em;      /* 10–11px uppercase — section labels */
   --nav-h: 48px;               /* real height, so sticky offsets stop guessing */
 }
+
+/* Secondary text has ONE colour, chosen for contrast, instead of 35-55% opacity picked per
+   site (40% black on white is 2.9:1, under the 4.5:1 small text needs). */
+.text-muted { color: var(--muted); }
+
+/* Disclosure rows (<details>): no browser triangle, our chevron instead. */
+.fold > summary { list-style: none; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary .chev { transition: transform var(--dur-fast, 200ms) var(--ease-out, ease); }
+.fold[open] > summary .chev { transform: rotate(90deg); }
 
 .t-display { letter-spacing: var(--track-display); line-height: 1.05; }
 .t-title { letter-spacing: var(--track-title); }

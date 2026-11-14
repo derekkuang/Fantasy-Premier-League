@@ -92,6 +92,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **35** | **the daily refit learns nothing, and why adding the current season as-is fails** |
 | **36** | **player rates should update in-season; recent form adds nothing** |
 | **37** | **predicted vs scored on the player sheet, as published** |
+| **38** | **the UI, simplified: answers first, the working one tap away** |
 
 ---
 
@@ -2914,4 +2915,38 @@ The sheet leads with totals, because one player's single week is mostly noise. H
 was predicted 71.0 and scored 70.
 
 Size: the history adds about 0.45 MB to the artifact now and about 1.7 MB by the end of the season.
+
+## 38. The UI, simplified: answers first, the working one tap away (2026-11-14)
+
+A page-by-page review (desktop and a 390 px phone, live site) found the site showed its working
+as loudly as its answers: News ran to 24 phone screens, Differentials had 28 controls before the
+first player, and one player sheet stacked 10 sections. It also found seven bugs, all fixed here:
+
+1. **Developer text reached users.** With the advisor off, My team printed its setup (an API key
+   and a pip command). The section is now absent while the advisor is off, and while it loads.
+2. **Two pages were wider than a phone.** Predictions was 443 px (a 160 px minimum on the search
+   box), which also pushed its sheet off-screen; the team page was 413 px (five 74 px shirts).
+3. **The squad sheet was trapped.** The dashboard keeps `transform` from its fade-in, which made
+   the sheet's `fixed` layer cover only the dashboard. `Sheet` now renders through a portal.
+4. **Stale words**: "all 555" on Home; the model page's "dormant in preseason" and its script
+   instructions. The model page's notes now come from `fpledge/model_notes.py` on every deploy.
+5. **News repeated and mislabelled stories.** The digest now merges copies of one story (14 on
+   14 Nov) and drops women's, youth, ticket and programme items that name no FPL player.
+6. **Two player sheets** with different labels ("x_minutes", "λ 2.4/1.0"). Now one.
+7. **Faint small text**: 40% black on white is 2.9:1. Secondary text uses one `--muted` colour
+   (6.2:1 light, 8.0:1 dark) and sentences are at least 12 px.
+
+**The structure now.** Four destinations (My team, Players, Fixtures, News), a tab bar on phones,
+the model page in the footer, and a one-line footer with the legal text on Terms. Predictions and
+Differentials are one Players page with views and a Filters sheet; the old routes redirect. The
+player sheet shows three numbers and the next five fixtures, with the season so far, the xP
+breakdown, ownership and form folded below, each with its headline on the right. Fixtures show
+one number per cell. News is one collapsed row per club. The model page leads with this season's
+live record, which the daily precompute now writes as `live_record.json`: over the 8 gameweeks
+with FPL's forecast captured before the deadline, our ranking score averaged 0.32 against FPL's
+0.29 on the same players, ahead in 6.
+
+**A compiler trap worth knowing.** JSX text that starts with a space and contains an HTML entity
+(`&apos;`) loses that space in this toolchain ("8gameweeks", "Chelseaplayer"). Where text after
+a value or a tag needs an apostrophe, use a template string or an explicit `{" "}`.
 

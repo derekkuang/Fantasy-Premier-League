@@ -6,7 +6,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function TeamSearch({ collapsible = false }: { collapsible?: boolean }) {
+export function TeamSearch({ collapsible = false, align = "center" }: { collapsible?: boolean; align?: "center" | "left" }) {
   const [id, setId] = useState("");            // the FPL team id the user types
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(!collapsible);
@@ -28,9 +28,9 @@ export function TeamSearch({ collapsible = false }: { collapsible?: boolean }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="press text-center text-sm text-black/50 hover:text-emerald-600 dark:text-white/50"
+        className={`press text-[14px] text-muted hover:text-[var(--emerald-text)] ${align === "left" ? "text-left" : "text-center"}`}
       >
-        Already know your FPL team ID? <span className="underline">Paste it instead</span>
+        Have your FPL team ID? <span className="underline">Use it instead</span>
       </button>
     );
   }

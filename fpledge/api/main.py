@@ -23,6 +23,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from .. import model_notes
 from ..balance import check_balance
 from ..differentials import find_differentials
 from ..models.optimizer import best_xi
@@ -292,10 +293,7 @@ def team_news(response: Response) -> dict:
             detail="Serving store temporarily unreachable — try again shortly.",
         ) from exc
     if payload is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No news captured yet — run `make capture-news`.",
-        )
+        raise HTTPException(status_code=404, detail="No team news has been collected yet.")
     response.headers["Cache-Control"] = "public, max-age=900"   # daily capture; 15 min is ample
     return {
         **payload,
@@ -331,12 +329,17 @@ def model_card(response: Response) -> dict:
             detail="Serving store temporarily unreachable — try again shortly.",
         ) from exc
     if card is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No model card yet — run `python scripts/build_model_card.py`.",
-        )
-    response.headers["Cache-Control"] = _WEEKLY_CACHE
-    return card
+        raise HTTPException(status_code=404, detail="The model's results haven't been published yet.")
+    # This season's record, week by week, written by the daily precompute. Absent before the
+    # first finished gameweek, and the page says so rather than inventing one.
+    try:
+        live = store.read_artifact("live_record.json")
+    except store.ArtifactUnavailable:
+        live = None
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    # The written sections come from the code, not from the card, so a correction to the text
+    # ships with the next deploy instead of waiting for the card to be rebuilt.
+    return {**card, **model_notes.notes(), "live": live}
 
 
 @app.get("/predictions/{gw}")

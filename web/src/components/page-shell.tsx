@@ -1,21 +1,17 @@
-// Shared shell for the free content pages (fixtures / predictions / differentials).
+// Shared shell for the content pages: a title and, at most, one line saying what the page is.
 
 import type { ReactNode } from "react";
 
-export function PageShell({ title, subtitle, meta, children }: {
+export function PageShell({ title, subtitle, children }: {
   title: string;
   subtitle?: string;
-  meta?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="t-title text-xl font-bold">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm text-black/50 dark:text-white/50">{subtitle}</p>}
-        </div>
-        {meta}
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-4 px-4 py-6">
+      <div className="flex flex-col gap-1">
+        <h1 className="t-title text-[22px] font-bold">{title}</h1>
+        {subtitle && <p className="text-[14px] text-muted">{subtitle}</p>}
       </div>
       {children}
     </main>
@@ -25,10 +21,7 @@ export function PageShell({ title, subtitle, meta, children }: {
 export function PageError({ message }: { message: string }) {
   return (
     <PageShell title="Couldn't load this yet">
-      <p className="text-sm text-black/60 dark:text-white/60">{message}</p>
-      <p className="text-xs text-black/40 dark:text-white/40">
-        This gameweek may not be precomputed yet — try again shortly.
-      </p>
+      <p className="text-[14px] text-muted">{message}</p>
     </PageShell>
   );
 }

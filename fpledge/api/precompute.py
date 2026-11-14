@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 from ..brief import brief_matches
 from ..gw import assemble_for_serving
-from ..history import player_history
+from ..history import live_record, player_history
 from . import MODEL_VER, store
 
 
@@ -67,6 +67,10 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
                              out["fpl_teams"])
     for r in out["records"]:
         r["history"] = history.get(r["element_id"], [])
+    # The same comparison over every player, for the model page. Written beside the gameweek
+    # artifact by `run`, not inside it.
+    record = live_record(published, live, out.get("deadlines") or {},
+                         _fpl_forecasts() if live else {})
 
     return {
         "meta": {
@@ -91,7 +95,23 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
         "records": out["records"],
         "fixture_ticker": {str(tid): rows for tid, rows in out["fixture_ticker"].items()},
         "matches": out["matches"],
+        "live_record": {"generated_at": ts, **record},
     }
+
+
+def _fpl_forecasts() -> dict:
+    """{(gameweek, element_id): FPL's ep_next as captured before that deadline}.
+
+    Read from the snapshot captures. If they can't be read, the live record still publishes our
+    side and leaves FPL's empty, rather than failing the whole refresh over a comparison.
+    """
+    try:
+        from ..eval import snapshots
+
+        return {key: v["ep_next"] for key, v in snapshots.availability_map().items()}
+    except Exception as exc:  # noqa: BLE001 — a missing benchmark must not block publishing
+        print(f"warn: FPL's forecasts unavailable for the live record ({type(exc).__name__}: {exc})")
+        return {}
 
 
 # Health thresholds for a SCHEDULED run. These are refusal points, not warnings: the failure
@@ -253,5 +273,8 @@ def run(gw: int, horizon: int = 8, run_ts: str | None = None,
     if problems and not allow_degraded:
         return {"path": None, "meta": payload["meta"], "payload": payload,
                 "problems": problems, "published": False}
+    record = payload.pop("live_record", None)
     path = store.write_gw(gw, payload)
+    if record is not None:
+        store.write_artifact("live_record.json", record)
     return {"path": str(path), "meta": payload["meta"], "problems": problems, "published": True}

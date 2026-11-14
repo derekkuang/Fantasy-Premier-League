@@ -16,8 +16,8 @@
 // Two things this component insists on. The starter chips solve the blank-page problem AND
 // teach what the advisor is uniquely good at — an empty box invites "who's good this week",
 // which is an expensive way to read the Predictions page. And when the backend says the
-// advisor isn't configured, this says so plainly: a feature that costs money per call must
-// never look like it is working when it isn't.
+// advisor isn't configured, the section is absent: a feature that costs money per call must
+// never look like it is working when it isn't, and its setup is not the visitor's business.
 
 import { useEffect, useRef, useState } from "react";
 import { API_URL } from "@/lib/api";
@@ -99,28 +99,14 @@ export function AdvisorChat({
     }
   }
 
-  if (status && !status.available) {
-    return (
-      <div className="flex flex-col gap-1">
-        <h2 className="t-label mb-1 px-1 text-xs text-black/50 dark:text-white/50">Ask about your squad</h2>
-        <div className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
-          <p className="text-[13px] font-semibold">Advisor is switched off</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-black/55 dark:text-white/55">
-            {status.reason}
-          </p>
-          <p className="mt-2 text-[11px] leading-relaxed text-black/40 dark:text-white/40">
-            It is off rather than faked. Everything else on this page is computed and free;
-            this is the one feature that would cost money per question, so it does not pretend
-            to work without the key that makes it work.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Nothing at all until the API says the advisor is on, and nothing while it is off. Users
+  // were shown its setup instructions (an API key and a pip command) in its place, and the
+  // starter chips flashed up before that. A feature that's switched off simply isn't there.
+  if (!status || !status.available) return null;
 
   return (
     <div className="flex flex-col gap-1">
-      <h2 className="t-label mb-1 flex items-baseline justify-between px-1 text-xs text-black/50 dark:text-white/50">
+      <h2 className="t-label mb-1 flex items-baseline justify-between px-1 text-xs text-muted">
         <span>Ask about your squad</span>
         {status?.stub && (
           <span className="normal-case tracking-normal text-[var(--amber-fg)]">scripted preview</span>
@@ -137,7 +123,7 @@ export function AdvisorChat({
         )}
 
         {turns.length === 0 && (
-          <p className="text-[12px] leading-relaxed text-black/50 dark:text-white/50">
+          <p className="text-[12px] leading-relaxed text-muted">
             The best transfer is already worked out above, for free. Use this for the part a
             calculator can&apos;t take: a constraint.
           </p>
@@ -160,7 +146,7 @@ export function AdvisorChat({
                 {[...new Set(t.tools)].map((tool) => (
                   <span
                     key={tool}
-                    className="rounded-full bg-black/[.06] px-2 py-0.5 font-mono text-[9px] text-black/45 dark:bg-white/10 dark:text-white/45"
+                    className="rounded-full bg-black/[.06] px-2 py-0.5 font-mono text-[9px] text-muted dark:bg-white/10"
                   >
                     {tool}
                   </span>
@@ -171,7 +157,7 @@ export function AdvisorChat({
         ))}
 
         {busy && (
-          <div className="rounded-2xl rounded-bl-sm border border-black/[.06] px-3 py-2 text-[13px] text-black/40 dark:border-white/[.06] dark:text-white/40">
+          <div className="rounded-2xl rounded-bl-sm border border-black/[.06] px-3 py-2 text-[13px] text-muted dark:border-white/[.06]">
             thinking…
           </div>
         )}
@@ -223,10 +209,9 @@ export function AdvisorChat({
         </form>
       </div>
 
-      <p className="px-1 text-[10px] leading-relaxed text-black/40 dark:text-white/40">
-        The advisor can&apos;t produce a number — it can only call a tool that computes one, and
-        the tools enforce the game&apos;s rules, so a move it suggests is a move you can make.
-        Preview: limited to a few questions an hour.
+      <p className="px-1 text-[12px] leading-relaxed text-muted">
+        Every number it gives comes from the same calculations as the rest of the page. Limited
+        to a few questions an hour.
       </p>
     </div>
   );

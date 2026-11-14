@@ -302,3 +302,47 @@ def test_a_pruned_capture_is_skipped_and_said_out_loud(monkeypatch, capsys):
     corpus = news_eval.load_corpus()
     assert len(corpus) == 12             # guids 0..11; capture 4's are all covered by 3 and 5
     assert "1 indexed capture(s) are no longer readable" in capsys.readouterr().out
+
+
+# --- what reaches the page: one copy of each story, and only first-team news ----------------- #
+def test_a_story_from_two_feeds_appears_once_with_both_sources():
+    from fpledge.eval.news_eval import build_digest
+
+    a = _row("Aston Villa", "McGinn nets brace", "Fri, 13 Nov 2026 22:10:00 GMT", source="official")
+    b = _row("Aston Villa", "McGinn nets brace", "2026-11-13T22:10:00Z", source="pl")
+    a["link"] = "https://avfc.co.uk/news/mcginn/"
+    b["link"] = "https://avfc.co.uk/news/mcginn?utm=pl"
+    got = build_digest([a, b], _labels(), "now")["clubs"]["Aston Villa"]
+    assert len(got) == 1 and got[0]["sources"] == ["official", "pl"]
+
+
+def test_womens_youth_and_ticket_stories_are_dropped_when_they_name_no_player():
+    from fpledge.eval.news_eval import build_digest
+
+    items = [_row("Brentford", "Tattoo Tour", "x", summary="Brentford Women striker reveals her ink"),
+             _row("Fulham", "U18: FA Youth Cup draw", "x"),
+             _row("Everton", "Cup quarter-final ticket news", "x"),
+             _row("Everton", "Pickford fit for Saturday", "x")]
+    clubs = build_digest(items, _labels(), "now")["clubs"]
+    assert list(clubs) == ["Everton"] and [i["title"] for i in clubs["Everton"]] == [
+        "Pickford fit for Saturday"]
+
+
+def test_a_first_team_player_keeps_a_story_the_keywords_would_drop():
+    from fpledge.eval.news_eval import build_digest
+
+    item = _row("Coventry", "Loan watch: how the U21s are getting on", "x")
+    item["mentions"] = [{"element_id": 1, "name": "Kitching"}]
+    assert build_digest([item], _labels(), "now")["clubs"]["Coventry"][0]["title"].startswith("Loan")
+
+
+def test_dropped_and_duplicate_stories_free_their_slots_for_real_news():
+    from fpledge.eval.news_eval import DIGEST_ITEM_CAP, build_digest
+
+    junk = [_row("Arsenal", f"Women's match {i}", f"Mon, {10 + i} Aug 2026 09:00:00 GMT")
+            for i in range(DIGEST_ITEM_CAP)]
+    real = [_row("Arsenal", f"Team news {i}", f"Mon, 0{i + 1} Aug 2026 09:00:00 GMT")
+            for i in range(DIGEST_ITEM_CAP)]
+    got = build_digest(junk + real, _labels(), "now")["clubs"]["Arsenal"]
+    assert len(got) == DIGEST_ITEM_CAP and all(i["title"].startswith("Team news") for i in got)
+

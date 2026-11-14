@@ -165,7 +165,8 @@ def test_model_card_404s_rather_than_inventing_numbers(client):
     """A page that publishes the model's accuracy must not fall back to a placeholder."""
     res = client.get("/model")
     assert res.status_code == 404
-    assert "build_model_card" in res.json()["detail"]
+    # and the message is for the person reading the page, not a command for whoever runs it
+    assert "build_model_card" not in res.json()["detail"]
 
 
 def test_model_card_is_served_from_the_serving_store(client):
@@ -175,7 +176,8 @@ def test_model_card_is_served_from_the_serving_store(client):
     and nowhere else, so production 404'd from launch while this test, which wrote the file to
     exactly that local path, stayed green."""
     store.write_artifact("model_card.json", {"season": "2025-26"})
-    assert client.get("/model").json() == {"season": "2025-26"}
+    body = client.get("/model").json()
+    assert body["season"] == "2025-26" and body["live"] is None
 
 
 def test_model_card_ignores_a_stray_local_eval_file(client, monkeypatch, tmp_path):

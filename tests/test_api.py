@@ -392,3 +392,25 @@ def test_season_history_rides_on_the_detail_route_only(client):
 def test_prediction_detail_404s_for_an_unknown_player(client):
     r = client.get("/predictions/1/player/999999")
     assert r.status_code == 404
+
+
+def test_model_route_serves_current_notes_and_this_seasons_record(client):
+    """The written sections come from the code, so a stale card can't freeze stale text on the
+    page; the live record rides along when the precompute has written one."""
+    store.write_artifact("model_card.json", {
+        "generated_at": "2026-09-29", "season": "2024-25", "model_ver": "t",
+        "experiments": [{"name": "stale", "verdict": "kept — dormant in preseason"}],
+    })
+    store.write_artifact("live_record.json", {"gws": [{"gw": 1, "n": 250}], "summary": None})
+    store.invalidate()
+    body = client.get("/model").json()
+    assert body["season"] == "2024-25"
+    assert all("dormant" not in e["verdict"] for e in body["experiments"])
+    assert any(e["name"] == "Player rates update during the season" for e in body["experiments"])
+    assert body["live"]["gws"][0]["gw"] == 1
+
+
+def test_model_route_without_a_card_speaks_to_users_not_to_developers(client):
+    r = client.get("/model")
+    assert r.status_code == 404
+    assert "script" not in r.json()["detail"] and "run" not in r.json()["detail"].lower()

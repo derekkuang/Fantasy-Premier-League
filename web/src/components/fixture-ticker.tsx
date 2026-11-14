@@ -1,10 +1,10 @@
 "use client";
-// True-FDR fixture ticker: teams down, gameweeks across.
+// True-FDR fixture ticker: teams down, gameweeks across, one coloured number per fixture.
 //
-// The lens decides both what each cell shows and how the rows are ranked. "Overall" shows
-// both tracks — attack (chance to score) and defence (chance of a clean sheet) — ranked by
-// their combined difficulty, because the two runs disagree far too often to collapse into
-// one. Picking Attack or Defence narrows every cell to that single track and ranks by it.
+// The lens decides both what each cell shows and how the rows are ranked. "Overall" averages
+// attack (chance to score) and defence (chance of a clean sheet) and ranks by both; Attack or
+// Defence narrows every cell to that track and ranks by it. On a phone the team column is just
+// the club code, so five gameweeks fit on screen.
 //
 // The grid is its own two-axis scroll region so the page never scrolls sideways, and both
 // sticky axes have a scroll range to pin against.
@@ -13,6 +13,8 @@ import { useMemo, useState } from "react";
 import type { FixturesResponse, TickerFixture } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
+import { Explained } from "@/components/explained";
+import { oppLabel } from "@/components/season-history";
 import { SplitCell, type TickerLens } from "@/components/split-cell";
 
 type Win = 3 | 5 | 8;
@@ -21,75 +23,54 @@ type Win = 3 | 5 | 8;
 // be literal class strings — Tailwind scans source text, so a template-built class never
 // generates any CSS.
 const CELL_W: Record<Win, string> = {
-  3: "w-[116px] min-w-[116px] lg:w-[168px] lg:min-w-[168px]",
-  5: "w-[104px] min-w-[104px] lg:w-[132px] lg:min-w-[132px]",
-  8: "w-[96px] min-w-[96px] lg:w-[112px] lg:min-w-[112px]",
+  3: "w-[96px] min-w-[96px] sm:w-[116px] sm:min-w-[116px] lg:w-[168px] lg:min-w-[168px]",
+  5: "w-[58px] min-w-[58px] sm:w-[96px] sm:min-w-[96px] lg:w-[132px] lg:min-w-[132px]",
+  8: "w-[56px] min-w-[56px] sm:w-[80px] sm:min-w-[80px] lg:w-[104px] lg:min-w-[104px]",
 };
-const TEAM_W = "w-[132px] min-w-[132px] lg:w-[150px] lg:min-w-[150px]";
+const TEAM_W = "w-[64px] min-w-[64px] sm:w-[132px] sm:min-w-[132px] lg:w-[150px] lg:min-w-[150px]";
 
-const PILL = "press min-h-8 cursor-pointer rounded-full border px-3 py-1.5 text-xs font-semibold";
+const PILL = "press min-h-9 cursor-pointer rounded-full border px-3 py-1.5 text-[13px] font-semibold";
 const PILL_ON = "border-emerald-600 bg-emerald-600 text-white";
-const PILL_OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55";
-const GROUP_LABEL = "t-label text-[10px] text-black/40 dark:text-white/40";
+const PILL_OFF = "border-[var(--line)] text-muted hover:text-[var(--fg)]";
 
 const LENS_HINT: Record<TickerLens, string> = {
-  overall: "left half attack · right half defence — ranked by combined difficulty",
-  attack: "attack only — ranked by the easiest run of fixtures to score in",
-  defence: "defence only — ranked by the easiest run of fixtures to keep a clean sheet in",
+  overall: "attack and defence averaged",
+  attack: "how likely they are to score",
+  defence: "how likely a clean sheet is",
 };
 
-// --- legend ------------------------------------------------------------------------ //
-function FdrLegend({ lens, hasMarket }: { lens: TickerLens; hasMarket: boolean }) {
+// --- legend: one line, the rest behind "i" ------------------------------------------- //
+function FdrLegend({ hasMarket }: { hasMarket: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl border border-black/10 px-3 py-2.5 shadow-sm dark:border-white/10">
-      <div className="flex items-center gap-1.5">
-        <span className={GROUP_LABEL}>easy</span>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <span
-            key={n}
-            title={n === 1 ? "1 — easiest" : n === 5 ? "5 — hardest" : String(n)}
-            className="grid h-5 w-5 place-items-center rounded-[5px] text-[11px] font-bold tabular-nums"
-            style={{ background: fdrColour(n), color: fdrGlyph(n) }}
-          >
-            {n}
-          </span>
-        ))}
-        <span className={GROUP_LABEL}>hard</span>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        {[
-          ["A", "attack", "chance to score"],
-          ["D", "defence", "chance of a clean sheet"],
-        ].map(([letter, term, gloss]) => (
-          <span key={letter} className="flex items-center gap-1.5 text-[11px] text-black/55 dark:text-white/55">
-            <span className="grid h-4 w-4 place-items-center rounded bg-black/5 text-[9px] font-bold dark:bg-white/10">
-              {letter}
+    <Explained
+      label="How is difficulty worked out?"
+      head={
+        <div className="flex items-center gap-1.5 text-[13px] text-muted">
+          <span>Easy</span>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <span
+              key={n}
+              className="grid h-5 w-5 place-items-center rounded-[5px] text-[11px] font-bold tabular-nums"
+              style={{ background: fdrColour(n), color: fdrGlyph(n) }}
+            >
+              {n}
             </span>
-            <span>
-              <strong className="font-semibold text-[var(--foreground)]">{term}</strong> — {gloss}
-            </span>
-          </span>
-        ))}
-      </div>
-
-      <span className="text-[11px] text-black/35 dark:text-white/35">{LENS_HINT[lens]}</span>
-
-      {/* Two different sources produce these bands and the cells look identical, so the grid
-          has to say so somewhere a reader will actually see. Per-cell provenance is in the
-          tooltip; this is the standing rule — and it is read off the payload rather than
-          asserted, because for four months a parse bug meant NO cell was market-priced while
-          the design said otherwise. A claim about the data belongs in the data. */}
-      <span className="text-[11px] text-black/35 dark:text-white/35">
-        {hasMarket
-          ? "near gameweeks are priced from the betting market where a line exists, later ones from the match model — each cell says which"
-          : "every cell is from the match model — no betting lines are available for this window"}
-      </span>
-    </div>
+          ))}
+          <span>Hard</span>
+        </div>
+      }
+    >
+      Attack is how likely a team is to score; defence is how likely it keeps a clean sheet.
+      Overall averages the two, and they often disagree, so switch to one when you&apos;re
+      picking attackers or defenders. Home fixtures are in capitals.{" "}
+      {hasMarket
+        ? "The nearest gameweeks use bookmaker odds where a match is priced; later ones use the match model."
+        : "Every fixture here comes from the match model; no bookmaker prices cover this window yet."}
+    </Explained>
   );
 }
 
-// --- controls ---------------------------------------------------------------------- //
+// --- controls -------------------------------------------------------------------- //
 function TickerControls({
   win,
   setWin,
@@ -102,23 +83,21 @@ function TickerControls({
   setLens: (l: TickerLens) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
-      <span className={GROUP_LABEL}>window</span>
-      <div className="flex gap-1.5">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex gap-1.5" role="group" aria-label="How many gameweeks">
         {([3, 5, 8] as const).map((w) => (
-          <button key={w} onClick={() => setWin(w)} className={`${PILL} ${win === w ? PILL_ON : PILL_OFF}`}>
-            {w === 8 ? "Full 8" : `Next ${w}`}
+          <button key={w} onClick={() => setWin(w)} aria-pressed={win === w} className={`${PILL} ${win === w ? PILL_ON : PILL_OFF}`}>
+            {`Next ${w}`}
           </button>
         ))}
       </div>
-
-      <span className={GROUP_LABEL}>show</span>
-      <div className="flex gap-1.5">
-        {(["attack", "defence", "overall"] as const).map((l) => (
+      <div className="flex gap-1.5" role="group" aria-label="Which difficulty">
+        {(["overall", "attack", "defence"] as const).map((l) => (
           <button
             key={l}
             onClick={() => setLens(l)}
             title={LENS_HINT[l]}
+            aria-pressed={lens === l}
             className={`${PILL} ${lens === l ? PILL_ON : PILL_OFF}`}
           >
             {l === "attack" ? "Attack" : l === "defence" ? "Defence" : "Overall"}
@@ -147,7 +126,7 @@ function FixtureCell({
   lens: TickerLens;
   cellW: string;
 }) {
-  const cls = `${cellW} border-t border-black/[.06] p-[3px] align-top dark:border-white/[.06]`;
+  const cls = `${cellW} border-t border-[var(--line)] p-[3px] align-top`;
 
   if (!fixtures.length && gw <= lastServed) {
     // A genuine blank gameweek — real, and worth distinguishing from missing data.
@@ -155,7 +134,7 @@ function FixtureCell({
       <td className={cls}>
         <span
           title={`GW${gw} — blank gameweek for ${teamName}`}
-          className="flex h-11 items-center justify-center rounded-lg border border-dashed border-black/[.06] text-[13px] text-black/20 dark:border-white/[.06] dark:text-white/20"
+          className="flex h-11 items-center justify-center rounded-lg border border-dashed border-[var(--line)] text-[13px] text-muted"
         >
           —
         </span>
@@ -168,11 +147,10 @@ function FixtureCell({
     return (
       <td className={cls}>
         <span
-          title={`GW${gw} — not in this payload (precompute horizon is ${horizon}; the pipeline default is 8)`}
-          className="flex h-11 flex-col items-center justify-center rounded-lg border border-dashed border-black/10 text-black/35 dark:border-white/10 dark:text-white/35"
+          title={`GW${gw} isn't projected yet (the projections run ${horizon} gameweeks ahead)`}
+          className="flex h-11 items-center justify-center rounded-lg border border-dashed border-[var(--line)] text-[11px] text-muted"
         >
-          <span className="text-[9px] font-semibold">pending</span>
-          <span className="text-[10px] text-black/20 dark:text-white/20">horizon {horizon}</span>
+          later
         </span>
       </td>
     );
@@ -183,23 +161,15 @@ function FixtureCell({
       <span className="flex flex-col gap-0.5">
         {/* a double gameweek stacks two tiles in the one column */}
         {fixtures.map((f) => {
-          const opp = getClub(f.opp);
           return (
             <span
               key={`${f.opp}-${f.home}`}
-              title={`GW${f.gw} vs ${f.opp} (${f.home ? "H" : "A"}) — att ${f.attack_fdr} / def ${f.defence_fdr} · λ ${f.lam_for.toFixed(1)} / ${f.lam_against.toFixed(1)} · ${f.source === "market" ? "priced from the betting market" : "from the match model"}`}
-              className="flex flex-col overflow-hidden rounded-lg border border-black/[.06] dark:border-white/[.06]"
+              title={`GW${f.gw} v ${f.opp} (${f.home ? "home" : "away"}): attack ${f.attack_fdr}, defence ${f.defence_fdr}, ${f.source === "market" ? "from bookmaker odds" : "from the match model"}`}
+              className="flex flex-col overflow-hidden rounded-lg border border-[var(--line)]"
             >
-              {/* who they play — opponent colour + code + venue */}
-              <span className="flex items-center gap-1 bg-black/5 px-[5px] py-[3px] dark:bg-white/10">
-                <span
-                  className="h-[9px] w-[9px] flex-none rounded-sm border border-black/20"
-                  style={{ background: opp.primary }}
-                />
-                <span className="truncate font-mono text-[10px] font-semibold">{opp.shortCode}</span>
-                <span className="ml-auto flex-none text-[9px] font-semibold text-black/45 dark:text-white/45">
-                  {f.home ? "(H)" : "(A)"}
-                </span>
+              {/* who they play: home in capitals, away in lower case */}
+              <span className="truncate bg-black/[.04] px-1 py-[3px] text-center font-mono text-[12px] font-semibold dark:bg-white/[.07]">
+                {oppLabel(f.opp, f.home)}
               </span>
 
               <SplitCell attack={f.attack_fdr} defence={f.defence_fdr} lens={lens} />
@@ -235,23 +205,24 @@ function TeamRow({
       {/* sticky team column — an opaque background is mandatory or the scrolled columns
           bleed through underneath it */}
       <td
-        className={`sticky left-0 z-10 ${TEAM_W} border-r border-t border-black/10 bg-[var(--background)] p-0 dark:border-white/10`}
+        className={`sticky left-0 z-10 ${TEAM_W} border-r border-t border-[var(--line)] bg-[var(--background)] p-0`}
       >
         <span
-          className="flex items-center gap-[7px] border-l-[3px] py-1.5 pr-2.5 group-hover:bg-black/[.02] dark:group-hover:bg-white/[.03]"
+          title={teamName}
+          className="flex items-center gap-1.5 border-l-[3px] py-1.5 pr-1.5 group-hover:bg-black/[.02] dark:group-hover:bg-white/[.03]"
           style={{ borderLeftColor: club.primary }}
         >
           <Jersey
             primary={club.primary}
             secondary={club.secondary}
             pattern={club.pattern}
-            width={22}
-            height={21}
-            className="ml-[7px] block flex-none"
+            width={18}
+            height={17}
+            className="ml-1.5 block flex-none"
           />
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="font-mono text-xs font-semibold">{club.shortCode}</span>
-            <span className="truncate text-[11px] text-black/50 dark:text-white/50">{teamName}</span>
+            <span className="font-mono text-[12px] font-semibold">{club.shortCode}</span>
+            <span className="hidden truncate text-[12px] text-muted sm:inline">{teamName}</span>
           </span>
         </span>
       </td>
@@ -293,24 +264,20 @@ function TickerGrid({
     // nearest scrolling ancestor, and overflow-x already makes this div one (CSS computes
     // overflow-y to auto too). Leave the height unbounded and the header has zero scroll
     // range inside the box — it scrolls away with the page instead of pinning.
-    <div className="max-h-[calc(100vh-240px)] min-h-[300px] max-w-full overflow-auto overscroll-contain rounded-2xl border border-black/10 shadow-sm dark:border-white/10">
+    <div className="max-h-[calc(100vh-240px)] min-h-[300px] max-w-full overflow-auto overscroll-contain rounded-2xl border border-[var(--line)]">
       <table className="w-max min-w-full border-separate border-spacing-0">
         <thead>
           <tr>
             {/* corner: sticky on BOTH axes, so it outranks the other two */}
             <th
-              className={`sticky left-0 top-0 z-30 ${TEAM_W} border-b border-r border-black/10 bg-[var(--background)] px-2.5 py-[7px] t-label text-left text-[10px] text-black/40 dark:border-white/10 dark:text-white/40`}
+              className={`sticky left-0 top-0 z-30 ${TEAM_W} border-b border-r border-[var(--line)] bg-[var(--background)] px-2 py-[7px] text-left text-[12px] font-semibold text-muted`}
             >
               Team
             </th>
             {gws.map((g) => (
               <th
                 key={g}
-                className={`sticky top-0 z-20 ${cellW} border-b border-black/10 bg-[var(--background)] px-1 py-[7px] t-label text-center text-[10px] dark:border-white/10 ${
-                  g <= lastServed
-                    ? "text-black/40 dark:text-white/40"
-                    : "text-black/20 dark:text-white/20"
-                }`}
+                className={`sticky top-0 z-20 ${cellW} border-b border-[var(--line)] bg-[var(--background)] px-1 py-[7px] text-center text-[12px] font-semibold text-muted`}
               >
                 GW{g}
               </th>
@@ -381,17 +348,12 @@ export function FixtureTicker({ data }: { data: FixturesResponse }) {
       });
   }, [data.teams, lens, windowEnd]);
 
-  const footnote =
-    lastServed === 0
-      ? "No fixtures in this payload yet."
-      : windowEnd - 1 > lastServed
-        ? `Showing GW${startGw}–${windowEnd - 1}; this payload carries GW${startGw}–${lastServed} (meta.horizon ${horizon}). GW${lastServed + 1}+ show as pending — re-run the precompute at its default horizon of 8 to fill them.`
-        : `Showing GW${startGw}–${windowEnd - 1} of the model's ${lastServed - startGw + 1}-gameweek window. Difficulty is the model's expected goals, banded 1–5.`;
+  const footnote = lastServed === 0 ? "No fixtures have been projected yet." : null;
 
   return (
     <div className="flex flex-col gap-3.5">
-      <FdrLegend lens={lens} hasMarket={hasMarket} />
       <TickerControls win={win} setWin={setWin} lens={lens} setLens={setLens} />
+      <FdrLegend hasMarket={hasMarket} />
       <TickerGrid
         rows={rows}
         gws={gws}
@@ -400,7 +362,7 @@ export function FixtureTicker({ data }: { data: FixturesResponse }) {
         lens={lens}
         cellW={CELL_W[win]}
       />
-      <p className="text-[11px] leading-relaxed text-black/40 dark:text-white/40">{footnote}</p>
+      {footnote && <p className="text-[13px] text-muted">{footnote}</p>}
     </div>
   );
 }

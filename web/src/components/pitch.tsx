@@ -8,14 +8,15 @@ import { fdrFor, type SquadPlayer, type TickerFixture } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { formationLabel, POS_ORDER } from "@/lib/formation";
 import { Jersey, JerseyDefs } from "@/components/jersey";
+import { oppLabel } from "@/components/season-history";
 
 type FixtureMap = Record<string, TickerFixture[]>;
-type Pip = { oppCode: string; venue: "H" | "A"; fdr: number };
+type Pip = { opp: string; fdr: number };
 
 function pipFor(player: SquadPlayer, fixtures: FixtureMap): Pip | null {
   const fx = fixtures[player.team ?? ""]?.[0];
   if (!fx) return null;
-  return { oppCode: getClub(fx.opp).shortCode, venue: fx.home ? "H" : "A", fdr: fdrFor(player.position, fx) };
+  return { opp: oppLabel(fx.opp, fx.home), fdr: fdrFor(player.position, fx) };
 }
 
 export function SquadBoard({
@@ -45,12 +46,10 @@ export function SquadBoard({
   })).filter((r) => r.players.length > 0);
 
   return (
-    <section className="flex flex-col gap-2">
+    <section className="flex min-w-0 flex-col gap-2">
       <JerseyDefs />
       <div className="flex items-center justify-between px-0.5">
-        <h2 className="t-label text-[11px] text-black/40 dark:text-white/40">
-          Your squad · tap a player
-        </h2>
+        <h2 className="text-[13px] font-semibold text-muted">Your XI · tap a player</h2>
         <div className="flex items-center gap-1.5">
           <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold tabular-nums text-white">
             {formationLabel(starters)}
@@ -59,16 +58,16 @@ export function SquadBoard({
             <button
               type="button"
               onClick={onReset}
-              className="press min-h-8 rounded-full border border-black/10 px-3 py-1.5 text-[11px] font-semibold text-black/55 hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10 dark:text-white/55"
+              className="press min-h-8 rounded-full border border-[var(--line)] px-3 py-1.5 text-[12px] font-semibold text-muted hover:border-emerald-600"
             >
-              Auto-pick
+              Reset XI
             </button>
           )}
         </div>
       </div>
 
       {lastSwap && (
-        <div className="flex items-center gap-1.5 rounded-[10px] border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+        <div className="flex items-center gap-1.5 rounded-[10px] border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[12px] text-[var(--emerald-text)]">
           <span>✓</span>
           <span>{lastSwap}</span>
         </div>
@@ -87,7 +86,7 @@ export function SquadBoard({
 
         <ol className="relative flex min-h-[452px] flex-col justify-between gap-2.5 px-2 pb-[18px] pt-4">
           {rows.map((row) => (
-            <li key={row.pos} className="flex items-start justify-center gap-0.5">
+            <li key={row.pos} className="flex min-w-0 items-start justify-center gap-0.5">
               {row.players.map((p) => (
                 <PlayerToken
                   key={p.element_id}
@@ -114,7 +113,9 @@ function PlayerToken({ player, pip, isCaptain, onOpen }: { player: SquadPlayer; 
       type="button"
       onClick={onOpen}
       title={`${player.web_name} — tap for detail`}
-      className="press relative flex w-[74px] flex-col items-center gap-1 rounded-[10px] pt-0.5 text-inherit hover:bg-white/[.09] focus-visible:ring-2 focus-visible:ring-white/60"
+      // Fluid, not 74px fixed: five midfielders at 74px are wider than a phone. Shares the row,
+      // so a row of two or three gets wider shirts and fewer cut-off names.
+      className="press relative flex min-w-0 max-w-[88px] flex-1 flex-col items-center gap-1 rounded-[10px] pt-0.5 text-inherit hover:bg-white/[.09] focus-visible:ring-2 focus-visible:ring-white/60"
     >
       <div className="relative h-11 w-[46px]">
         <Jersey
@@ -140,15 +141,12 @@ function PlayerToken({ player, pip, isCaptain, onOpen }: { player: SquadPlayer; 
           </span>
         )}
       </div>
-      <span className="max-w-[72px] truncate rounded-full bg-black/60 px-[7px] py-0.5 text-[11px] font-semibold text-white">
+      <span className="max-w-full truncate rounded-full bg-black/60 px-[7px] py-0.5 text-[12px] font-semibold text-white">
         {player.web_name}
       </span>
-      <div className="flex items-center gap-[3px]">
-        <span className="rounded bg-white/15 px-1 text-[10px] tabular-nums text-white/80">£{player.price.toFixed(1)}</span>
-        <span className="rounded bg-emerald-50 px-[5px] text-[11px] font-bold tabular-nums text-emerald-800">
-          {player.xp.toFixed(1)}
-        </span>
-      </div>
+      <span className="rounded bg-emerald-50 px-[5px] text-[12px] font-bold tabular-nums text-emerald-800">
+        {player.xp.toFixed(1)}
+      </span>
       {pip && <FixturePip pip={pip} />}
     </button>
   );
@@ -157,9 +155,7 @@ function PlayerToken({ player, pip, isCaptain, onOpen }: { player: SquadPlayer; 
 function FixturePip({ pip }: { pip: Pip }) {
   return (
     <div className="flex items-center gap-[3px] pb-0.5 leading-none">
-      <span className="font-mono text-[10px] font-semibold text-white/70">
-        {pip.oppCode} ({pip.venue})
-      </span>
+      <span className="font-mono text-[11px] font-semibold text-white/85">{pip.opp}</span>
       <span
         className="grid h-[14px] min-w-[14px] place-items-center rounded-[3.5px] text-[10px] font-bold leading-none tabular-nums"
         style={{ background: fdrColour(pip.fdr), color: fdrGlyph(pip.fdr) }}
@@ -177,11 +173,11 @@ function BenchStrip({ bench, fixtures, onOpen }: { bench: SquadPlayer[]; fixture
     (a, b) => POS_ORDER.indexOf(a.position) - POS_ORDER.indexOf(b.position) || b.xp - a.xp,
   );
   return (
-    <div className="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-sm dark:border-white/10 dark:bg-white/5">
+    <div className="rounded-2xl border border-[var(--line)] p-3">
       <div className="mb-2 flex items-baseline justify-between">
-        <span className="t-label text-[11px] text-black/40 dark:text-white/40">Bench</span>
-        <span className="text-[11px] tabular-nums text-black/40 dark:text-white/40">
-          £{benchSpend.toFixed(1)}m · {benchXp.toFixed(1)} xP
+        <span className="text-[13px] font-semibold text-muted">Bench</span>
+        <span className="text-[12px] tabular-nums text-muted">
+          {benchXp.toFixed(1)} xP · £{benchSpend.toFixed(1)}m
         </span>
       </div>
       <div className="grid grid-cols-4 gap-1.5">
@@ -193,23 +189,20 @@ function BenchStrip({ bench, fixtures, onOpen }: { bench: SquadPlayer[]; fixture
               type="button"
               key={p.element_id}
               onClick={() => onOpen(p.element_id)}
-              className="press flex min-h-11 flex-col items-center gap-0.5 rounded-[10px] border border-black/[.06] px-0.5 py-1.5 text-inherit opacity-90 hover:border-emerald-500 hover:opacity-100 dark:border-white/[.06]"
+              className="press flex min-h-11 min-w-0 flex-col items-center gap-0.5 rounded-[10px] border border-[var(--line)] px-0.5 py-1.5 text-inherit hover:border-emerald-500"
             >
               <div className="flex items-center gap-[3px]">
-                <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">{i + 1}</span>
+                <span className="text-[11px] tabular-nums text-muted">{i + 1}</span>
                 <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={26} height={25} className="block" />
               </div>
-              <span className="max-w-[90%] truncate text-[11px] font-semibold">{p.web_name}</span>
-              <div className="flex items-center gap-[3px]">
-                <span className="text-[10px] tabular-nums text-black/40 dark:text-white/40">{p.position}</span>
-                <span className="text-[10px] tabular-nums text-black/55 dark:text-white/55">£{p.price.toFixed(1)}</span>
-                <span className="text-[10px] font-bold tabular-nums text-emerald-600">{p.xp.toFixed(1)}</span>
-              </div>
+              <span className="max-w-[92%] truncate text-[12px] font-semibold">{p.web_name}</span>
+              <span className="text-[12px] tabular-nums">
+                <span className="text-muted">{p.position}</span>{" "}
+                <span className="font-bold" style={{ color: "var(--emerald-text)" }}>{p.xp.toFixed(1)}</span>
+              </span>
               {pip && (
                 <div className="flex items-center gap-[3px]">
-                  <span className="font-mono text-[10px] text-black/40 dark:text-white/40">
-                    {pip.oppCode} ({pip.venue})
-                  </span>
+                  <span className="font-mono text-[11px] text-muted">{pip.opp}</span>
                   <span
                     className="grid h-[14px] min-w-[14px] place-items-center rounded-[3.5px] text-[10px] font-bold leading-none tabular-nums"
                     style={{ background: fdrColour(pip.fdr), color: fdrGlyph(pip.fdr) }}
