@@ -314,6 +314,7 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
                       reverse=True)
         # One entry per story, newest copy first, carrying every publisher that ran it.
         stories: dict = {}
+        has_manager_story = False
         for r in rows:
             key = _story_key(r)
             if key not in stories and team_news_only:
@@ -325,6 +326,13 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
                 if src and src not in stories[key]["sources"]:
                     stories[key]["sources"].append(src)
                 continue
+            if team_news_only and accepted[id(r)][0] == ["Manager"]:
+                # One manager story per club, the newest: a sacking reads as "poised to sack",
+                # then "sacked", then "sacked - live", then the columns, and the page needs the
+                # latest of them, not all of them.
+                if has_manager_story:
+                    continue
+                has_manager_story = True
             stories[key] = {"row": r, "sources": [r["source"]] if r.get("source") else [],
                             "words": news_filter.headline_words(r.get("title") or "")}
         out = []

@@ -2995,3 +2995,33 @@ about 3 (8 flagged players and 10 stories, each with "Show all").
 digest keeps its older shape for analysis. `.github/workflows/capture-news.yml` runs a capture
 on demand (the Lambda still runs at 06/12/18 UTC).
 
+**Four leaks, found on the live page the day it shipped (PR #9).** The first live capture kept
+29 stories, and 9 of them were not what the rule meant:
+- *The same manager change over and over.* 10 of the 29 were manager stories about two events
+  (Carrick out and Pochettino in at Man Utd, Sage out at Palace): "poised to sack", "sacked",
+  "sacked - live", a vox pop, a column. A club now keeps its newest manager story. This also
+  freed Man Utd's six-story cap, which had been full of them: "Carrick explains Maguire injury"
+  and the Man Utd line-up had been crowded out.
+- *A story under the wrong club.* The Guardian tags an article with every club in it, so
+  "Carrick denies risk of Manchester United sack" arrived on Aston Villa's feed. A manager story
+  must now name its club in the headline (the club's FPL name, the Guardian's full name, or a
+  short form: Villa, Palace, Forest, Spurs/Tottenham, Albion). "Appointed" alone no longer counts
+  as a manager change: it was catching a chief executive and a sporting director.
+- *Guardian columns.* The Guardian titles columns, letters and podcasts "Headline | Author"
+  (141 of 1,133 Guardian items), and its news never; those are dropped. Club sites use "|" as a
+  format ("TEAM NEWS | AFC BOURNEMOUTH"), so the rule is the Guardian's alone.
+- *Women's sides that never say "Women".* Chelsea's and Brighton's sites run the women's head
+  coach's pressers and injury news on the same feed, worded exactly like the men's ("Sonia
+  Bompastor provides injury update on Buchanan and Malard"; "Albion v Liverpool | Ruiz & Symonds
+  pre-match press conference"). The feeds carry no category, and a rule like "an injury update
+  must name a first-team player" would also drop "Farke provides Leeds fitness update", the
+  most useful kind. So the two coaches are named per club in `WOMENS_HEAD_COACHES`, from a sweep
+  of every kept headline for names the corpus otherwise ties to women's football; nobody else
+  turned up. "Lionesses" and "Players Cup" (the women's league cup) join the women's words.
+  Coaches change, so this list needs a look when they do.
+
+Same week, same corpus, after: 22 stories, of which 11 injury and suspension stories name a
+player and 7 of those name one FPL has flagged. Still kept, because no simple rule separates them
+from real news: an old-injury interview (Muniz), a red-card debate (Bogle), and two international
+press conferences (King for England, Pochettino leaving the USA).
+
