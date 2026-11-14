@@ -12,7 +12,7 @@ from . import config, playermeta
 from .betting.market_lambda import market_lambdas as _market_lambdas
 from .fdr import fixture_ticker
 from .ingest import footballdata, oddsapi
-from .lineup import projected_xi
+from .lineup import projected_xi, recent_starts
 from .matches import match_previews
 from .models.dixon_coles import DixonColesModel
 from .models.rates import PRIOR_K, blended_rates, season_totals
@@ -266,6 +266,8 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     # postdates its own deadline. Preseason this is {} and every projection is unchanged.
     live = storeload.landed_event_live(max_gw=gw - 1)
     recent_minutes = recent_minutes_by_code(boot["elements"], live, past_fixtures)
+    # Each club's usual shape and each player's recent starts, for the projected XIs.
+    usual_shapes, starts_recent = recent_starts(boot["elements"], live, past_fixtures)
     rates = blended_rates(players, season_totals(boot["elements"], live))
     player_data = {
         "rates": f"last season blended with this season, k={PRIOR_K:g}",
@@ -294,6 +296,7 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
         "prices": prices, "availability": availability, "meta": meta,
         "recent_minutes": recent_minutes,
+        "usual_shapes": usual_shapes, "recent_starts": starts_recent,
         "engine": engine, "tmap": tmap, "source_report": source_report, "rates": rates,
         # carried through for the player sheet's predicted-vs-actual history (fpledge/history.py)
         "live": live,
@@ -372,8 +375,8 @@ def assemble_for_serving(
     for m in previews:
         if m["gw"] != gw:
             continue
-        home_xi = projected_xi(records, m["home_id"])
-        away_xi = projected_xi(records, m["away_id"])
+        home_xi = projected_xi(records, m["home_id"], inp.get("usual_shapes", {}).get(m["home_id"]), inp.get("recent_starts"))
+        away_xi = projected_xi(records, m["away_id"], inp.get("usual_shapes", {}).get(m["away_id"]), inp.get("recent_starts"))
         if home_xi or away_xi:
             m["lineups"] = {"home": home_xi, "away": away_xi}
 
