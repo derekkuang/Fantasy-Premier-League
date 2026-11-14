@@ -167,6 +167,18 @@ export type PredictionFixture = {
   fdr: number;   // position-appropriate true FDR, 1..5
 };
 
+/** One finalised gameweek on the player sheet: what we published before that deadline, and
+ *  what he scored. `xp` is null when we did not project him that week (never a zero), and the
+ *  projection is the one users saw, never recalculated with a later model. */
+export type HistoryWeek = {
+  gw: number;
+  xp: number | null;
+  pts: number;
+  mins: number;
+  vs: { opp: string; home: boolean }[];  // who he actually played; [] in a blank week
+  as_club?: string | null;               // set when we projected him for another club
+};
+
 export type Prediction = PlayerContext & {
   element_id: number;
   web_name: string;
@@ -185,6 +197,7 @@ export type Prediction = PlayerContext & {
   xp_next3: number;                  // 3-week outlook (sum of the next 3 GWs)
   fixtures: PredictionFixture[];     // next GWs across the payload horizon (8), ordered; blanks absent
   breakdown: Breakdown | null;       // per-term xP split (Breakdown === the README's XpBreakdown)
+  history?: HistoryWeek[];           // detail route only: this season, oldest first
 };
 
 export type PredictionsResponse = { meta: Meta; predictions: Prediction[] };
@@ -203,7 +216,7 @@ export type PredictionsResponse = { meta: Meta; predictions: Prediction[] };
  *  became a next-3 sum the day this trim was added — the "Next 8" ranking ran on 3 gameweeks
  *  and the UI blamed the payload for a truncation this function had performed. Any future
  *  aggregate over fixtures belongs on this side of the trim, with its own scalar. */
-export type PredictionRow = Omit<Prediction, "breakdown" | "recent" | "price_moves"> & {
+export type PredictionRow = Omit<Prediction, "breakdown" | "recent" | "price_moves" | "history"> & {
   xp_next8: number;      // 8-week outlook (incl. this GW), summed before the trim
   xp_next8_gws: number;  // how many GWs that sum actually covers (<8 only near season end)
 };
@@ -223,6 +236,7 @@ export function toRow(p: Prediction): PredictionRow {
   delete row.breakdown;
   delete row.recent;
   delete row.price_moves;
+  delete row.history;
   return row;
 }
 

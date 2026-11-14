@@ -362,7 +362,8 @@ def prediction_detail(gw: int, element_id: int, response: Response) -> dict:
     for r in payload["records"]:
         if r["element_id"] == element_id:
             response.headers["Cache-Control"] = _WEEKLY_CACHE
-            return _project_prediction(r)
+            # Predicted vs actual this season, detail only: the list stays lean.
+            return {**_project_prediction(r), "history": r.get("history", [])}
     raise HTTPException(status_code=404, detail=f"no player {element_id} in GW{gw}")
 
 

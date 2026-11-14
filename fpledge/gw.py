@@ -233,6 +233,15 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         "SELECT gw, home_id, away_id FROM fixtures WHERE season = ? AND gw < ? AND finished",
         [config.SEASON, gw],
     ).fetchall()
+    # Every finished fixture by FPL id, for the player sheet's history: which match each
+    # player's points came from (fpledge/history.py).
+    fixture_teams = {
+        fid: (h, a)
+        for fid, h, a in con.execute(
+            "SELECT fixture_id, home_id, away_id FROM fixtures WHERE season = ? AND finished",
+            [config.SEASON],
+        ).fetchall()
+    }
     con.close()
     if not history:
         return None
@@ -286,6 +295,11 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         "prices": prices, "availability": availability, "meta": meta,
         "recent_minutes": recent_minutes,
         "engine": engine, "tmap": tmap, "source_report": source_report, "rates": rates,
+        # carried through for the player sheet's predicted-vs-actual history (fpledge/history.py)
+        "live": live,
+        "deadlines": {e["id"]: e.get("deadline_time") for e in boot.get("events", [])},
+        "fixture_teams": fixture_teams,
+        "club_of": {e["id"]: e["team"] for e in boot["elements"]},
     }
 
 
@@ -368,4 +382,5 @@ def assemble_for_serving(
         "fpl_teams": inp["fpl_teams"], "fixture_ticker": ticker, "horizon": horizon,
         "matches": previews, "source_report": inp["source_report"],
         "market_report": market_report,
+        **{k: inp[k] for k in ("live", "deadlines", "fixture_teams", "club_of")},
     }

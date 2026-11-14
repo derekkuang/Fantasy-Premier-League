@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 from ..brief import brief_matches
 from ..gw import assemble_for_serving
+from ..history import player_history
 from . import MODEL_VER, store
 
 
@@ -56,6 +57,16 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
     n_briefs = 0
     if narrate:
         n_briefs = brief_matches(out["matches"], _assets_by_match(out["matches"], out["records"]))
+
+    # Predicted vs actual for the player sheet: every finalised gameweek's stored artifact (what
+    # users saw before that deadline) against what each player then scored.
+    live = out.get("live") or {}
+    published = {g: a for g in live if (a := store.read_gw(g)) is not None}
+    history = player_history(published, live, out.get("deadlines") or {},
+                             out.get("fixture_teams") or {}, out.get("club_of") or {},
+                             out["fpl_teams"])
+    for r in out["records"]:
+        r["history"] = history.get(r["element_id"], [])
 
     return {
         "meta": {

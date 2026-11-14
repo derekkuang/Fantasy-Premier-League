@@ -374,6 +374,21 @@ def test_prediction_detail_returns_one_full_record(client):
     assert "breakdown" in detail and "recent" in detail and "price_moves" in detail
 
 
+def test_season_history_rides_on_the_detail_route_only(client):
+    """Predicted vs actual is for the one player whose sheet is open; the list stays lean."""
+    payload = _synthetic_payload()
+    history = [{"gw": 1, "xp": 4.2, "pts": 9, "mins": 90, "vs": [{"opp": "Club B", "home": True}]}]
+    payload["records"][0]["history"] = history
+    store.write_gw(GW, payload)
+    store.invalidate()
+    target = payload["records"][0]["element_id"]
+    assert client.get(f"/predictions/{GW}/player/{target}").json()["history"] == history
+    assert all("history" not in r for r in client.get(f"/predictions/{GW}").json()["predictions"])
+    # an artifact from before the field existed still answers, with nothing to show
+    other = payload["records"][1]["element_id"]
+    assert client.get(f"/predictions/{GW}/player/{other}").json()["history"] == []
+
+
 def test_prediction_detail_404s_for_an_unknown_player(client):
     r = client.get("/predictions/1/player/999999")
     assert r.status_code == 404
