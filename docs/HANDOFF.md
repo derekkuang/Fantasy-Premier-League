@@ -94,6 +94,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **37** | **predicted vs scored on the player sheet, as published** |
 | **38** | **the UI, simplified: answers first, the working one tap away** |
 | **39** | **team news only: an allowlist, not a blocklist, and FPL's flags first** |
+| **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
 
 ---
 
@@ -3025,3 +3026,48 @@ player and 7 of those name one FPL has flagged. Still kept, because no simple ru
 from real news: an old-injury interview (Muniz), a red-card debate (Bogle), and two international
 press conferences (King for England, Pochettino leaving the USA).
 
+---
+
+## 40. The match page: odds in plain numbers, predicted XIs in each club's own shape (2026-11-14)
+
+Prompted by a look at DraftHound (drafthound.com/fpl), which shows win and clean-sheet chances
+per fixture and a predicted XI per club with each player tagged by how often he starts. We had
+computed both since August (`/matches/{gw}`: result, clean-sheet and over-2.5 chances, scorelines,
+projected XIs) and shown neither: no page read the matches payload. This is stage 1 of the
+September plan ("Match Lab"), done.
+
+**The Fixtures grid** keeps Overall (difficulty 1-5) as its default and replaces the Attack and
+Defence difficulty views with the chances themselves: Win % (from the matches payload), Goals
+(expected goals, coloured by attack difficulty) and Clean sheet (coloured by defence difficulty),
+so a colour means what it meant before. Rows rank by the chosen view. Every fixture links to its
+match page. The page joins the two payloads by gameweek and clubs (`web/src/lib/odds.ts`); if the
+matches payload fails, the grid still renders and those views print a dash.
+
+**The match page** (`/fixtures/11-17-1`: gameweek, home id, away id): the win/draw/win bar, four
+tiles (likeliest score, expected goals, clean sheets, over 2.5 and both to score), both predicted
+XIs on the pitch, the six best FPL picks from the match (tap for the player sheet), and the
+likeliest scores in a fold. A match in a later gameweek shows the odds and says the lineups come
+in its week. The template "brief" (`brief.py`) is not shown: with no model key it only restates
+the numbers already on the page.
+
+**The predicted XI, fixed.** `lineup.projected_xi` took whichever legal formation held the most
+expected minutes, which rewards any position with many part-time players: Arsenal came out 5-4-1
+because five defenders each averaged 55+ minutes. It now takes the club's own shape, the FPL
+position split it started with most in its last five single-fixture gameweeks
+(`lineup.recent_starts`, from event-live `starts`). Over GW6-10 of 2026-27 that shape matched the
+next match's 66 times in 100. Real shapes include 4-6-0 (Chelsea, Man Utd) and 3-6-1, which the
+fixed formation list could not express; the list is now only the fallback, used when a club has
+no recent matches or too few fit players for its shape (`basis: "minutes"`).
+
+**The tags.** Each XI player carries `starts: [k, n]` over the same matches, and the page turns it
+into a word. Measured over GW6-10 (players at clubs that played the next week, 3,360 cases): of
+those who had started 5 of 5, 91% started the next match (Nailed); 4 of 5, 64% (Regular); 2 or
+3, 51%, and 1, 29% (Rotation); none, 4% (No starts). FPL's own chance of playing replaces the
+word when a player is flagged. In-sample and one season's worth: re-measure once more weeks land.
+
+**A question the tags surfaced, not acted on.** Saliba (0 minutes in all ten gameweeks, now fit)
+is in Arsenal's XI with "No starts" on him, at 69 expected minutes. That is the documented
+fallback in `xp_table.compute_xp_records`: an all-zero minutes record cannot be told apart from
+a new signing's missing data, so the player gets last season's average. For a player returning
+from a long injury it is probably generous for his first games back. Changing it changes
+projections, so it needs a measurement first, not a guess.

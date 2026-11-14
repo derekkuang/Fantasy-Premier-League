@@ -4,6 +4,7 @@
 // table all react together. Here we just render starters in positional rows + the bench,
 // and call onOpen when a token is tapped.
 
+import type { ReactNode } from "react";
 import { fdrFor, type SquadPlayer, type TickerFixture } from "@/lib/api";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { formationLabel, POS_ORDER } from "@/lib/formation";
@@ -73,17 +74,7 @@ export function SquadBoard({
         </div>
       )}
 
-      {/* Pitch */}
-      <div className="relative overflow-hidden rounded-2xl border border-black/10 shadow-sm dark:border-white/10 bg-gradient-to-b from-teal-700 to-teal-800 dark:from-[#0b3d38] dark:to-[#072a27]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 [background:repeating-linear-gradient(180deg,rgba(255,255,255,.055)_0_44px,transparent_44px_88px)] dark:[background:repeating-linear-gradient(180deg,rgba(255,255,255,.035)_0_44px,transparent_44px_88px)]"
-        />
-        <div aria-hidden className="pointer-events-none absolute left-0 right-0 top-1/2 h-px bg-white/25" />
-        <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/25" />
-        <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[76px] w-[172px] -translate-x-1/2 rounded-b-[3px] border border-t-0 border-white/25" />
-        <div aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-[76px] w-[172px] -translate-x-1/2 rounded-t-[3px] border border-b-0 border-white/25" />
-
+      <PitchFrame>
         <ol className="relative flex min-h-[452px] flex-col justify-between gap-2.5 px-2 pb-[18px] pt-4">
           {rows.map((row) => (
             <li key={row.pos} className="flex min-w-0 items-start justify-center gap-0.5">
@@ -99,10 +90,28 @@ export function SquadBoard({
             </li>
           ))}
         </ol>
-      </div>
+      </PitchFrame>
 
       <BenchStrip bench={bench} fixtures={fixtures} onOpen={onOpen} />
     </section>
+  );
+}
+
+/** The pitch itself: grass, stripes and markings. The squad board and the match page's
+ *  predicted lineups both draw on it. */
+export function PitchFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-black/10 shadow-sm dark:border-white/10 bg-gradient-to-b from-teal-700 to-teal-800 dark:from-[#0b3d38] dark:to-[#072a27]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 [background:repeating-linear-gradient(180deg,rgba(255,255,255,.055)_0_44px,transparent_44px_88px)] dark:[background:repeating-linear-gradient(180deg,rgba(255,255,255,.035)_0_44px,transparent_44px_88px)]"
+      />
+      <div aria-hidden className="pointer-events-none absolute left-0 right-0 top-1/2 h-px bg-white/25" />
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/25" />
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[76px] w-[172px] -translate-x-1/2 rounded-b-[3px] border border-t-0 border-white/25" />
+      <div aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-[76px] w-[172px] -translate-x-1/2 rounded-t-[3px] border border-b-0 border-white/25" />
+      {children}
+    </div>
   );
 }
 

@@ -303,12 +303,14 @@ export type LineupPlayer = {
   status: string | null;      // FPL availability code
   chance: number | null;      // chance of playing next round, 0-100
   penalties: number | null;   // set-piece order, 1 = first choice
+  starts?: [number, number] | null;   // [started, of the club's last N matches]
 };
 
 /** `confidence` is the XI's mean share of a full match — how nailed the side is, not a
  *  probability that the XI is exactly right. */
 export type ProjectedLineup = {
   formation: string;          // e.g. "4-3-3"
+  basis?: "recent" | "minutes";   // the club's usual recent shape, or the most-minutes fallback
   xi: LineupPlayer[];
   bench: LineupPlayer[];
   confidence: number;
