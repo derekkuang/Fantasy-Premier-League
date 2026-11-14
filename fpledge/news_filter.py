@@ -16,6 +16,14 @@ Anything about women's or youth sides is dropped even if a name matches, because
 
 On 14 Nov 2026 this kept 8 of 120 stories, all of them real team news.
 
+FOUR LEAKS, found on the live page the day it shipped (HANDOFF §39), and closed here:
+  * the same manager change, three or four times over: a club keeps its newest manager story;
+  * a manager story filed under the wrong club (a Guardian piece about Man Utd's manager,
+    tagged Aston Villa because Villa were the opponents): it must name its club in the headline;
+  * Guardian columns, letters and podcasts ("... | Jonathan Wilson"): never news;
+  * women's sides whose club site never says "Women": Chelsea's and Brighton's women's head
+    coaches publish on the same feed as the men's, so they are named in `WOMENS_HEAD_COACHES`.
+
 FPL's own flags are the other half of the page: `flagged_players` lists everyone FPL marks
 doubtful, injured or suspended, straight from the bootstrap, so the page is complete even when
 no feed has written about a player yet.
@@ -25,6 +33,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
+from functools import cache
+
+from fpledge.ingest.newsfeed import GUARDIAN_FEEDS
 
 
 def _words(*patterns: str) -> re.Pattern:
@@ -44,15 +55,32 @@ SIGNALS: dict[str, re.Pattern] = {
                      "in contention", "available again"),
     "Team news": _words("team news", r"line-?up", r"starting (xi|eleven)", "press conference",
                         r"rotat(e|ion)", "rested", "squad news"),
-    "Manager": _words(r"sack(ed|s)?", "appointed", r"new (head coach|manager|boss)", "interim",
-                      "parted company"),
+    # Not a bare "appointed": that is also a chief executive or a sporting director.
+    "Manager": _words(r"sack(ed|s)?", r"appointed (as )?(new )?(head coach|manager|boss)",
+                      r"new (head coach|manager|boss)", "interim", "parted company"),
 }
 # A piece that is team news by its format, whether or not it names anyone.
 TEAM_NEWS_FORMAT = _words("team news", "press conference", r"line-?up", "starting xi",
                           "injury update", "fitness update")
 # Never the first team, whatever names it matches.
 NOT_FIRST_TEAM = _words(r"women('s)?", r"wsl2?", r"u1[5-9]s?", r"u2[0-3]s?", r"under-?\d\d",
-                        "academy", "pl2", "youth cup")
+                        "academy", "pl2", "youth cup", "lionesses", "players cup")
+# Women's head coaches whose club's feed carries their pressers and injury news without ever
+# saying "Women" ("Sonia Bompastor provides injury update on Buchanan and Malard"; "Albion v
+# Liverpool | Ruiz & Symonds pre-match press conference"). The feeds carry no category to tell
+# them apart, so they are named, per club, from what the corpus showed on 14 Nov 2026. Other
+# women's sides say "Women" or "WSL" and are caught above. When a coach changes, change this.
+WOMENS_HEAD_COACHES = {"Chelsea": _words("Bompastor"), "Brighton": _words("Ruiz")}
+
+# A club as headlines write it. The full names are the Guardian's (its channel titles); these
+# are the short forms the FPL name and the full name both miss.
+_CLUB_EXTRA = {
+    "Man Utd": ("Man United", "Manchester Utd"), "Spurs": ("Tottenham",),
+    "Nott'm Forest": ("Forest",), "Crystal Palace": ("Palace",), "Aston Villa": ("Villa",),
+    "Brighton": ("Albion", "Brighton & Hove Albion"), "Wolves": ("Wolverhampton",),
+    "Hull City": ("Hull",), "Coventry City": ("Coventry",), "Ipswich Town": ("Ipswich",),
+    "Bournemouth": ("AFC Bournemouth", "Cherries"),
+}
 
 FLAG_STATUSES = ("d", "i", "s")       # doubtful, injured, suspended; "u" is mostly loans and exits
 POSITION = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD"}
@@ -81,15 +109,40 @@ def headline_players(title: str, club: str, club_squads: Mapping[str, Iterable[t
             if re.search(rf"(?<![\w'-]){re.escape(name)}(?![\w-])", t)]
 
 
+@cache
+def _club_names(club: str) -> re.Pattern:
+    names = {club, *_CLUB_EXTRA.get(club, ())}
+    if club in GUARDIAN_FEEDS:
+        names.add(GUARDIAN_FEEDS[club][1].split(" | ")[0])
+    return re.compile(r"(?<![\w'])(" + "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+                      + r")(?![\w])", re.IGNORECASE)
+
+
+def names_club(title: str, club: str) -> bool:
+    """Whether the headline names `club`, in any of the ways headlines do."""
+    return bool(club) and bool(_club_names(club).search(_plain(title)))
+
+
 def team_news(item: Mapping, club_squads: Mapping) -> tuple[list[str], list[int]] | None:
     """(labels, headline players) if the story is team news, otherwise None."""
     title = _plain(item.get("title") or "")
+    club = item.get("club") or ""
     if NOT_FIRST_TEAM.search(f"{title} {_plain(item.get('summary') or '')}"):
         return None
+    coach = WOMENS_HEAD_COACHES.get(club)
+    if coach is not None and coach.search(title):
+        return None
+    # The Guardian titles its columns, letters and podcasts "Headline | Author"; its news never.
+    if item.get("source") == "guardian" and " | " in title:
+        return None
     labels = [label for label, rx in SIGNALS.items() if rx.search(title)]
+    # A manager change is news about the club the headline names, not the club whose feed it
+    # came through: "Carrick denies risk of Manchester United sack" reached Aston Villa's.
+    if "Manager" in labels and not names_club(title, club):
+        labels.remove("Manager")
     if not labels:
         return None
-    players = headline_players(title, item.get("club") or "", club_squads)
+    players = headline_players(title, club, club_squads)
     if players or TEAM_NEWS_FORMAT.search(title) or "Manager" in labels:
         return labels, players
     return None

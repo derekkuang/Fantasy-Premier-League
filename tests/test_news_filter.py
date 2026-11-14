@@ -137,3 +137,56 @@ def test_fitness_counts_only_as_a_fitness_test_or_update():
     assert team_news(story("Spurs", "Tel faces fitness test before Arsenal"), SQUADS) == (["Injury"], [1])
     assert team_news(story("Spurs", "Fitness, Tel and a back four: what next for Spurs"), SQUADS) is None
 
+
+
+# --- the leaks found on the live page, 14 Nov 2026 ------------------------------------------ #
+def test_a_womens_head_coach_is_not_first_team_news_at_their_own_club():
+    """Chelsea's and Brighton's sites never say "Women" on these."""
+    bompastor = story("Chelsea", "Sonia Bompastor provides injury update on Kadeisha Buchanan and Melvine Malard",
+                      "after both Chelsea players were forced off with injuries during our 1-0 victory")
+    ruiz = story("Brighton", "Albion v Liverpool | Ruiz & Symonds pre-match press conference")
+    assert team_news(bompastor, SQUADS) is None
+    assert team_news(ruiz, SQUADS) is None
+    # the men's equivalents still count, and a manager naming nobody is still team news
+    assert team_news(story("Brighton", "Brighton v Leeds | Hurzeler Pre-Match Press Conference"), SQUADS) == (["Team news"], [])
+    assert team_news(story("Leeds", "Farke provides Leeds fitness update ahead of Bournemouth match"), SQUADS) == (["Injury"], [])
+    assert team_news(story("Brighton", "London City Lionesses v Albion | pre-match press conference"), SQUADS) is None
+
+
+def test_guardian_columns_are_not_news():
+    col = {**story("Man Utd", "Here Manchester United go again, taking the Two Ronnies route to hiring a new boss | Jonathan Wilson"),
+           "source": "guardian"}
+    assert team_news(col, SQUADS) is None
+    # a club site's "A | B" headline is a format, not a byline
+    assert team_news({**story("Ipswich Town", "TEAM NEWS | AFC BOURNEMOUTH"), "source": "official"}, SQUADS) == (["Team news"], [])
+
+
+def test_a_manager_story_must_name_its_club():
+    """The Guardian tagged this Man Utd story Aston Villa (they were the opponents)."""
+    misfiled = story("Aston Villa", "‘I expect to move forward’: Carrick denies risk of Manchester United sack")
+    assert team_news(misfiled, SQUADS) is None
+    assert team_news(story("Man Utd", "‘I expect to move forward’: Carrick denies risk of Manchester United sack"), SQUADS) == (["Manager"], [])
+    assert team_news(story("Man Utd", "'There's no point getting a new manager'"), SQUADS) is None
+    assert team_news(story("Nott'm Forest", "Forest sack Pereira"), SQUADS) == (["Manager"], [])
+    assert team_news(story("Spurs", "Tottenham appoint new head coach"), SQUADS) == (["Manager"], [])
+
+
+def test_appointed_means_a_manager_not_a_chief_executive():
+    assert team_news(story("Nott'm Forest", "THEODORE GIANNIKOS APPOINTED FOREST CHIEF EXECUTIVE OFFICER"), SQUADS) is None
+    assert team_news(story("Ipswich Town", "Ipswich: Gary O'Neil appointed as head coach"), SQUADS) == (["Manager"], [])
+
+
+def test_the_page_keeps_one_manager_story_per_club_the_newest():
+    items = [
+        {**story("Crystal Palace", "Crystal Palace poised to sack Pierre Sage and target Frank"), "source": "guardian",
+         "published": "Sun, 08 Nov 2026 22:12:00 GMT", "link": "https://g/1"},
+        {**story("Crystal Palace", "Crystal Palace sack Pierre Sage and in advanced talks to appoint Thomas Frank"),
+         "source": "guardian", "published": "Thu, 12 Nov 2026 12:27:00 GMT", "link": "https://g/2"},
+        {**story("Crystal Palace", "Crystal Palace sack boss Sage after 16 games"), "source": "bbc",
+         "published": "Thu, 12 Nov 2026 17:15:00 GMT", "link": "https://b/3"},
+        {**story("Crystal Palace", "Team News: Four changes for Liverpool test"), "source": "pl",
+         "published": "Sun, 08 Nov 2026 13:00:00 GMT", "link": "https://p/4"},
+    ]
+    d = build_digest(items, LABELS, "2026-11-14T18:00:00+00:00", team_news_only=True, bootstrap={})
+    titles = [e["title"] for e in d["clubs"]["Crystal Palace"]]
+    assert titles == ["Crystal Palace sack boss Sage after 16 games", "Team News: Four changes for Liverpool test"]
