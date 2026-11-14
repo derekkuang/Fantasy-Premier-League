@@ -1,228 +1,43 @@
-// Team news — BETA, and it says so at the top rather than in a footnote.
-//
-// This page exists because of a measurement, not a hunch: perfect team news is worth roughly
-// fourteen times more to the model than the best modelling change we found (docs/HANDOFF.md §19).
-// FPL's own availability field covers the INJURY half for free and in detail. It says almost
-// nothing about ROTATION, and rotation is what a manager's press conference is actually about.
-//
-// So the page has one rule, and it is the same rule as /model: never claim more than was
-// measured. Every headline here is a link to its publisher, every keyword tag is labelled as
-// routing rather than judgement, and FPL's own status is printed beside every player so the
-// reader can see both sources instead of being told which to believe. Nothing on this page
-// changes a single projection anywhere else on the site.
+// Team news: the latest stories for each club from public feeds, with FPL's own status beside
+// every player named. Beta, and it changes no projection on the site. How well its keyword
+// routing agrees with FPL is published on the model page rather than here.
 
 import type { Metadata } from "next";
-import Link from "next/link";
-import { getNews, type NewsItem, type NewsResponse } from "@/lib/api";
+import { getNews, type NewsResponse } from "@/lib/api";
 import { PageError, PageShell } from "@/components/page-shell";
+import { Explained } from "@/components/explained";
+import { NewsBoard } from "@/components/news-board";
 
 export const metadata: Metadata = {
-  title: "Team news (beta) — FPL Edge",
-  description:
-    "Automated team-news digest from public club feeds, shown beside FPL's own availability status. Beta: keyword routing, not classification, and it changes no projection.",
+  title: "Team news — FPL Edge",
+  description: "The latest team news for every Premier League club, from club sites, the BBC and the Guardian, with FPL's own status beside each player.",
   alternates: { canonical: "/news" },
 };
 
 export const revalidate = 900;
 
-const CUE_LABEL: Record<string, string> = {
-  injury: "injury",
-  return: "return",
-  rotation: "rotation",
-  suspension: "suspension",
-};
-
-// FPL's own codes. Shown verbatim beside anything we surface, because on availability FPL is
-// the authority and we are a second opinion.
-const STATUS_LABEL: Record<string, string> = {
-  a: "available",
-  d: "doubtful",
-  i: "injured",
-  s: "suspended",
-  u: "unavailable",
-};
-
-function Cue({ tag }: { tag: string }) {
-  const tone =
-    tag === "injury" || tag === "suspension"
-      ? "bg-red-500/10 text-red-700 dark:text-red-400"
-      : tag === "rotation"
-        ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-  return (
-    <span className={`t-label rounded-full px-2 py-0.5 text-[10px] font-medium ${tone}`}>
-      {CUE_LABEL[tag] ?? tag}
-    </span>
-  );
-}
-
-// Where an item came from. Shown because the three sources are not equivalent evidence: a club's
-// own site is the club speaking, the BBC and Guardian are reporting on it. The reader is told
-// which, rather than being handed a blended feed and asked to trust it.
-const SOURCE_LABEL: Record<string, string> = {
-  official: "club",
-  bbc: "BBC",
-  guardian: "Guardian",
-};
-
-function SourceTag({ source }: { source?: string }) {
-  if (!source) return null;
-  return (
-    <span className="t-label rounded-full bg-black/[0.05] px-1.5 py-0.5 text-[10px] text-black/45 dark:bg-white/[0.07] dark:text-white/45">
-      {SOURCE_LABEL[source] ?? source}
-    </span>
-  );
-}
-
-function Item({ item }: { item: NewsItem }) {
-  return (
-    <li className="border-t border-black/5 py-3 first:border-t-0 dark:border-white/10">
-      <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
-        <SourceTag source={item.source} />
-        {item.link ? (
-          <a
-            href={item.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="press text-[13px] font-medium leading-snug hover:text-emerald-600"
-          >
-            {item.title}
-          </a>
-        ) : (
-          <span className="text-[13px] font-medium leading-snug">{item.title}</span>
-        )}
-        {item.cues.map((c) => (
-          <Cue key={c} tag={c} />
-        ))}
-      </div>
-      {item.summary ? (
-        <p className="mt-1 text-[12px] leading-snug text-black/55 dark:text-white/55">
-          {item.summary}
-        </p>
-      ) : null}
-      {item.mentions.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {item.mentions.map((m) => (
-            <span
-              key={m.element_id}
-              className="t-label rounded-md bg-black/[0.04] px-2 py-0.5 text-[11px] dark:bg-white/[0.06]"
-            >
-              {m.name}
-              {/* FPL's own line wins the last word on availability, always. */}
-              {m.fpl_news ? (
-                <span className="ml-1 text-black/45 dark:text-white/45">
-                  · FPL: {m.fpl_news}
-                </span>
-              ) : m.fpl_status && m.fpl_status !== "a" ? (
-                <span className="ml-1 text-black/45 dark:text-white/45">
-                  · FPL: {STATUS_LABEL[m.fpl_status] ?? m.fpl_status}
-                </span>
-              ) : null}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
 export default async function NewsPage() {
   let data: NewsResponse;
   try {
     data = await getNews();
-  } catch (e) {
-    // PageError renders its own shell. Not wrapped in a second one.
-    return (
-      <PageError
-        message={
-          e instanceof Error
-            ? `${e.message} This page fills in once the daily capture has run.`
-            : "Could not load team news."
-        }
-      />
-    );
+  } catch {
+    return <PageError message="Team news isn't available right now. It updates three times a day." />;
   }
-
-  const clubs = Object.entries(data.clubs);
-  const generated = new Date(data.generated_at);
+  const updated = new Date(data.generated_at).toLocaleString("en-GB", {
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+  });
 
   return (
-    <PageShell title="Team news">
-      <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3">
-        <div className="flex items-center gap-2">
-          <span className="t-label rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300">
-            BETA
-          </span>
-          <span className="t-label text-[11px] text-black/55 dark:text-white/55">
-            updated {generated.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
-          </span>
-        </div>
-        <p className="mt-2 text-[12px] leading-relaxed text-black/70 dark:text-white/70">
-          {data.disclaimer}
-        </p>
-      </div>
-
-      {/* The page grades itself. Publishing precision and recall beside the content is the
-          same discipline as /model — a feature that cannot be checked should not be trusted. */}
-      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          ["items tracked", String(data.n_items)],
-          ["clubs", `${data.n_clubs}/20`],
-          [
-            "agrees with FPL",
-            data.quality.precision === null ? "—" : `${Math.round(data.quality.precision * 100)}%`,
-          ],
-          // NOT "rotation hints". These are keyword hits on players FPL has not flagged, and at
-          // the precision printed beside them most are noise rather than signal. Adding richer
-          // sources raised how many players get mentioned at all (good) and lowered how often a
-          // keyword means what it looks like (bad) — calling the raw count "hints" would claim
-          // the second number is fine because the first one improved.
-          ["unverified rotation flags", String(data.quality.additive)],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-lg border border-black/5 bg-black/[0.02] p-2.5 dark:border-white/10 dark:bg-white/[0.03]"
-          >
-            <div className="t-label text-[10px] uppercase text-black/45 dark:text-white/45">
-              {label}
-            </div>
-            <div className="mt-0.5 text-lg font-semibold tabular-nums">{value}</div>
-          </div>
-        ))}
-      </div>
-
-      <p className="mb-5 text-[12px] leading-relaxed text-black/55 dark:text-white/55">
-        Items come from three kinds of public feed — each club&rsquo;s own site, the BBC and the
-        Guardian — and each is labelled with which. The coloured tags are <em>keyword routing</em>,
-        not judgements: they say a phrase appeared, not that a manager meant it. That distinction
-        matters more than it used to. Richer feeds mean far more players get mentioned, and also
-        far more keywords that do not mean what they look like, which is why the agreement rate
-        above is low and printed anyway. Where FPL has published a status for a player it is
-        printed beside them and is the authority.{" "}
-        <Link href="/model" className="press underline decoration-black/20 hover:text-emerald-600">
-          How we measure things
-        </Link>
-        .
-      </p>
-
-      {clubs.length === 0 ? (
-        <p className="text-sm text-black/55 dark:text-white/55">
-          Nothing captured yet. This fills in once the daily capture has run.
-        </p>
-      ) : (
-        <div className="space-y-5">
-          {clubs.map(([club, items]) => (
-            <section key={club}>
-              <h2 className="t-title mb-1 text-[13px] font-semibold">{club}</h2>
-              <ul className="rounded-xl border border-black/5 px-3 dark:border-white/10">
-                {items.map((it, i) => (
-                  <Item key={`${club}-${i}`} item={it} />
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
+    <PageShell title="Team news" subtitle={`Latest from each club. Updated ${updated} UTC.`}>
+      <Explained
+        label="Where does this come from?"
+        head={<span className="rounded-full bg-[var(--amber-bg)] px-2 py-0.5 text-[12px] font-semibold text-[var(--amber-fg)]">Beta</span>}
+      >
+        Stories come from each club&apos;s site, the Premier League, the BBC and the Guardian.
+        Players named in a story show FPL&apos;s own status beside them, and FPL is the
+        authority on availability. Nothing on this page changes a projection.
+      </Explained>
+      <NewsBoard clubs={Object.entries(data.clubs)} />
     </PageShell>
   );
 }

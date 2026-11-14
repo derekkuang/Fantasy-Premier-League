@@ -7,25 +7,17 @@ export default async function FixturesPage() {
   let data;
   try {
     data = await getFixtures(await getLatestGw());
-  } catch (err) {
-    return <PageError message={(err as Error).message} />;
+  } catch {
+    return <PageError message="The fixtures couldn't be loaded. Try again in a minute." />;
   }
   return (
     <PageShell
-      title="Fixture ticker"
-      subtitle="True difficulty from the betting market and the match model, not FPL's static FDR — attack and defence side by side."
-      meta={<span className="rounded-full bg-black/5 px-2 py-1 font-mono text-[11px] text-black/50 dark:bg-white/10 dark:text-white/50">{data.meta.model_ver}</span>}
+      title="Fixtures"
+      subtitle="How hard each team's next games are, best runs first."
     >
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
       <JerseyDefs />
       <FixtureTicker data={data} />
-      {/* affiliation + kit notices live in the global footer */}
-      <p className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">
-        Difficulty is banded from the expected goals for each side, so it moves with form and
-        opponent — it is not FPL&apos;s fixed preseason rating. Where a fixture has a de-vigged
-        betting line the market’s expected goals are used in place of the model’s; the legend
-        says whether any in this window do, and each cell says which it used.
-      </p>
     </PageShell>
   );
 }
