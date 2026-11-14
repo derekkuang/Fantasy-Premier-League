@@ -1,21 +1,25 @@
 "use client";
 // True-FDR fixture ticker: teams down, gameweeks across, one coloured number per fixture.
 //
-// The lens decides both what each cell shows and how the rows are ranked. "Overall" averages
-// attack (chance to score) and defence (chance of a clean sheet) and ranks by both; Attack or
-// Defence narrows every cell to that track and ranks by it. On a phone the team column is just
-// the club code, so five gameweeks fit on screen.
+// The lens decides both what each cell shows and how the rows are ranked. "Overall" is
+// difficulty, attack and defence averaged, and ranks by both; Win %, Goals and Clean sheet print
+// that chance in every cell and rank by it (HANDOFF §40). Every fixture opens its match page. On
+// a phone the team column is just the club code, so five gameweeks fit on screen.
 //
 // The grid is its own two-axis scroll region so the page never scrolls sideways, and both
 // sticky axes have a scroll range to pin against.
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { FixturesResponse, TickerFixture } from "@/lib/api";
+import { oddsKey, pct, type FixtureOdds } from "@/lib/odds";
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { Jersey } from "@/components/jersey";
 import { Explained } from "@/components/explained";
 import { oppLabel } from "@/components/season-history";
 import { SplitCell, type TickerLens } from "@/components/split-cell";
+
+type Odds = Record<string, FixtureOdds>;
 import { Segmented } from "@/components/segmented";
 
 type Win = 3 | 5 | 8;
@@ -32,29 +36,32 @@ const TEAM_W = "w-[64px] min-w-[64px] sm:w-[132px] sm:min-w-[132px] lg:w-[150px]
 
 
 // --- legend: one line, the rest behind "i" ------------------------------------------- //
-function FdrLegend({ hasMarket }: { hasMarket: boolean }) {
+function FdrLegend({ hasMarket, lens }: { hasMarket: boolean; lens: TickerLens }) {
+  const overall = lens === "overall";
   return (
     <Explained
-      label="How is difficulty worked out?"
+      label="How are these worked out?"
       head={
         <div className="flex items-center gap-1.5 text-[13px] text-muted">
-          <span>Easy</span>
+          <span>{overall ? "Easy" : "Better"}</span>
           {[1, 2, 3, 4, 5].map((n) => (
             <span
               key={n}
               className="grid h-5 w-5 place-items-center rounded-[5px] text-[11px] font-bold tabular-nums"
               style={{ background: fdrColour(n), color: fdrGlyph(n) }}
             >
-              {n}
+              {overall ? n : ""}
             </span>
           ))}
-          <span>Hard</span>
+          <span>{overall ? "Hard" : "Worse"}</span>
         </div>
       }
     >
-      Attack is how likely a team is to score; defence is how likely it keeps a clean sheet.
-      Overall averages the two, and they often disagree, so switch to one when you&apos;re
-      picking attackers or defenders. Home fixtures are in capitals.{" "}
+      {"Overall is difficulty from 1 (easy) to 5 (hard): how likely a team is to score and to keep a " +
+        "clean sheet, averaged. The other views print the chance itself: Win % to win the match, Goals " +
+        "the goals it's expected to score, Clean sheet the chance of keeping one. Attackers want Goals, " +
+        "defenders and keepers want Clean sheet. Home fixtures are in capitals. Tap any fixture for its " +
+        "match page: the odds, the likely scores and both predicted lineups. "}
       {hasMarket
         ? "The nearest gameweeks use bookmaker odds where a match is priced; later ones use the match model."
         : "Every fixture here comes from the match model; no bookmaker prices cover this window yet."}
@@ -79,7 +86,7 @@ function TickerControls({
       <Segmented label="How many gameweeks" options={[[3, "Next 3"], [5, "Next 5"], [8, "Next 8"]] as const} value={win} onChange={setWin} />
       <Segmented
         label="Which difficulty"
-        options={[["overall", "Overall"], ["attack", "Attack"], ["defence", "Defence"]] as const}
+        options={[["overall", "Overall"], ["win", "Win %"], ["goals", "Goals"], ["cs", "Clean sheet"]] as const}
         value={lens}
         onChange={setLens}
       />
@@ -91,18 +98,22 @@ function TickerControls({
 function FixtureCell({
   fixtures,
   gw,
+  teamId,
   teamName,
   lastServed,
   horizon,
   lens,
+  odds,
   cellW,
 }: {
   fixtures: TickerFixture[];
   gw: number;
+  teamId: number;
   teamName: string;
   lastServed: number;
   horizon: number;
   lens: TickerLens;
+  odds: Odds;
   cellW: string;
 }) {
   const cls = `${cellW} border-t border-[var(--line)] p-[3px] align-top`;
@@ -140,19 +151,28 @@ function FixtureCell({
       <span className="flex flex-col gap-0.5">
         {/* a double gameweek stacks two tiles in the one column */}
         {fixtures.map((f) => {
-          return (
-            <span
-              key={`${f.opp}-${f.home}`}
-              title={`GW${f.gw} v ${f.opp} (${f.home ? "home" : "away"}): attack ${f.attack_fdr}, defence ${f.defence_fdr}, ${f.source === "market" ? "from bookmaker odds" : "from the match model"}`}
-              className="flex flex-col overflow-hidden rounded-lg border border-[var(--line)]"
-            >
+          const o = odds[oddsKey(f.gw, teamId, f.opp_id)];
+          const title = `GW${f.gw} v ${f.opp} (${f.home ? "home" : "away"}): ` +
+            (o ? `win ${pct(o.win)}, clean sheet ${pct(o.cs)}, ` : "") +
+            `${f.lam_for.toFixed(1)} goals expected, ${f.source === "market" ? "from bookmaker odds" : "from the match model"}`;
+          const body = (
+            <>
               {/* who they play: home in capitals, away in lower case */}
               <span className="truncate bg-black/[.04] px-1 py-[3px] text-center font-mono text-[12px] font-semibold dark:bg-white/[.07]">
                 {oppLabel(f.opp, f.home)}
               </span>
-
-              <SplitCell attack={f.attack_fdr} defence={f.defence_fdr} lens={lens} />
-            </span>
+              <SplitCell fixture={f} odds={o} lens={lens} />
+            </>
+          );
+          const tile = "flex flex-col overflow-hidden rounded-lg border border-[var(--line)]";
+          // Not prefetched: a hundred visible cells would each fetch a match page.
+          return o ? (
+            <Link key={`${f.opp}-${f.home}`} href={`/fixtures/${o.id}`} prefetch={false} title={title}
+              className={`${tile} press hover:border-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-600`}>
+              {body}
+            </Link>
+          ) : (
+            <span key={`${f.opp}-${f.home}`} title={title} className={tile}>{body}</span>
           );
         })}
       </span>
@@ -162,20 +182,24 @@ function FixtureCell({
 
 // --- one team row -------------------------------------------------------------------- //
 function TeamRow({
+  teamId,
   teamName,
   fixtures,
   gws,
   lastServed,
   horizon,
   lens,
+  odds,
   cellW,
 }: {
+  teamId: number;
   teamName: string;
   fixtures: TickerFixture[];
   gws: number[];
   lastServed: number;
   horizon: number;
   lens: TickerLens;
+  odds: Odds;
   cellW: string;
 }) {
   const club = getClub(teamName);
@@ -211,10 +235,12 @@ function TeamRow({
           key={g}
           gw={g}
           fixtures={fixtures.filter((f) => f.gw === g)}
+          teamId={teamId}
           teamName={teamName}
           lastServed={lastServed}
           horizon={horizon}
           lens={lens}
+          odds={odds}
           cellW={cellW}
         />
       ))}
@@ -229,6 +255,7 @@ function TickerGrid({
   lastServed,
   horizon,
   lens,
+  odds,
   cellW,
 }: {
   rows: { team_id: number; team_name: string; fixtures: TickerFixture[] }[];
@@ -236,6 +263,7 @@ function TickerGrid({
   lastServed: number;
   horizon: number;
   lens: TickerLens;
+  odds: Odds;
   cellW: string;
 }) {
   return (
@@ -267,12 +295,14 @@ function TickerGrid({
           {rows.map((t) => (
             <TeamRow
               key={t.team_id}
+              teamId={t.team_id}
               teamName={t.team_name}
               fixtures={t.fixtures}
               gws={gws}
               lastServed={lastServed}
               horizon={horizon}
               lens={lens}
+              odds={odds}
               cellW={cellW}
             />
           ))}
@@ -283,7 +313,7 @@ function TickerGrid({
 }
 
 // --- the page's one client component ------------------------------------------------- //
-export function FixtureTicker({ data }: { data: FixturesResponse }) {
+export function FixtureTicker({ data, odds }: { data: FixturesResponse; odds: Odds }) {
   const [win, setWin] = useState<Win>(5);
   const [lens, setLens] = useState<TickerLens>("overall");
 
@@ -306,39 +336,41 @@ export function FixtureTicker({ data }: { data: FixturesResponse }) {
     [data.teams],
   );
 
-  // Ranked by the mean FDR over the VISIBLE window, so the order follows the window too.
-  // Overall ranks on both tracks at once; ties break alphabetically.
+  // Ranked over the VISIBLE window, so the order follows the window too: Overall by mean
+  // difficulty (both tracks at once), the others by the mean chance, best first. Ties break
+  // alphabetically; a team with nothing in the window sinks.
   const rows = useMemo(() => {
-    const mean = (fx: TickerFixture[], key: "attack_fdr" | "defence_fdr") =>
-      fx.length ? fx.reduce((s, f) => s + f[key], 0) / fx.length : 99; // 99 sinks empty rows
+    const score = (t: { team_id: number; fixtures: TickerFixture[] }): number => {
+      const fx = t.fixtures.filter((f) => f.gw < windowEnd);
+      if (!fx.length) return Infinity;
+      const mean = (get: (f: TickerFixture) => number) => fx.reduce((s, f) => s + get(f), 0) / fx.length;
+      const chance = (get: (o: FixtureOdds) => number) =>
+        -mean((f) => { const o = odds[oddsKey(f.gw, t.team_id, f.opp_id)]; return o ? get(o) : 0; });
+      switch (lens) {
+        case "overall": return mean((f) => f.attack_fdr + f.defence_fdr);
+        case "goals": return -mean((f) => f.lam_for);
+        case "win": return chance((o) => o.win);
+        case "cs": return chance((o) => o.cs);
+      }
+    };
     return data.teams
-      .map((t) => {
-        const inWindow = t.fixtures.filter((f) => f.gw < windowEnd);
-        return { ...t, atk: mean(inWindow, "attack_fdr"), def: mean(inWindow, "defence_fdr") };
-      })
-      .sort((a, b) => {
-        const key =
-          lens === "attack"
-            ? a.atk - b.atk
-            : lens === "defence"
-              ? a.def - b.def
-              : a.atk + a.def - (b.atk + b.def);
-        return key || a.team_name.localeCompare(b.team_name);
-      });
-  }, [data.teams, lens, windowEnd]);
+      .map((t) => ({ ...t, score: score(t) }))
+      .sort((a, b) => (a.score === b.score ? 0 : a.score - b.score) || a.team_name.localeCompare(b.team_name));
+  }, [data.teams, lens, windowEnd, odds]);
 
   const footnote = lastServed === 0 ? "No fixtures have been projected yet." : null;
 
   return (
     <div className="flex flex-col gap-3.5">
       <TickerControls win={win} setWin={setWin} lens={lens} setLens={setLens} />
-      <FdrLegend hasMarket={hasMarket} />
+      <FdrLegend hasMarket={hasMarket} lens={lens} />
       <TickerGrid
         rows={rows}
         gws={gws}
         lastServed={lastServed}
         horizon={horizon}
         lens={lens}
+        odds={odds}
         cellW={CELL_W[win]}
       />
       {footnote && <p className="text-[13px] text-muted">{footnote}</p>}
