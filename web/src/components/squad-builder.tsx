@@ -28,6 +28,7 @@ import {
 } from "@/lib/squad";
 import { Jersey } from "@/components/jersey";
 import { TeamDashboard } from "@/components/team-dashboard";
+import { TeamSearch } from "@/components/team-search";
 
 const STORAGE_KEY = "fpledge.squad";
 
@@ -134,16 +135,16 @@ export function SquadBuilder({
           <button
             type="button"
             onClick={() => setViewingOverride(false)}
-            className="press t-label rounded-full border border-black/10 px-3 py-1.5 text-[11px] text-black/60 hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10 dark:text-white/60"
+            className="press rounded-full border border-[var(--line)] px-3 py-1.5 text-[13px] font-semibold hover:border-emerald-600"
           >
-            ← edit squad
+            ← Edit squad
           </button>
           <button
             type="button"
             onClick={share}
-            className="press t-label rounded-full bg-emerald-600 px-3 py-1.5 text-[11px] text-white"
+            className="press rounded-full bg-emerald-600 px-3 py-1.5 text-[13px] font-semibold text-white"
           >
-            copy share link
+            Copy share link
           </button>
         </div>
         <TeamDashboard data={buildTeamResponse(picks, gw, meta)} fixtures={fixtures} source="manual" />
@@ -153,12 +154,12 @@ export function SquadBuilder({
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6">
-      <div>
-        <h1 className="t-title text-xl font-bold">Build a squad</h1>
-        <p className="mt-0.5 text-sm text-black/50 dark:text-white/50">
-          Fifteen players, £{BUDGET.toFixed(0)}m, max 3 per club — the real rules. No account,
-          no team id. Works before the season starts, when the FPL API has no squads to fetch.
+      <div className="flex flex-col gap-1">
+        <h1 className="t-title text-[22px] font-bold">Build a squad</h1>
+        <p className="text-[14px] text-muted">
+          Fifteen players, £{BUDGET.toFixed(0)}m, at most three from one club. No account needed.
         </p>
+        <TeamSearch collapsible align="left" />
       </div>
 
       <Summary
@@ -205,11 +206,16 @@ function Summary({
           <Metric label="squad xP" value={picks.reduce((s, p) => s + p.xp, 0).toFixed(1)} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={onAuto} className="press min-h-9 rounded-full border border-black/10 px-3 py-1.5 text-[12px] font-semibold hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10">
+          <button
+            type="button"
+            onClick={onAuto}
+            title="Fills the remaining slots with the highest projected players that still fit the budget. A legal start to edit, not an optimal squad."
+            className="press min-h-9 rounded-full border border-[var(--line)] px-3 py-1.5 text-[13px] font-semibold hover:border-emerald-600"
+          >
             Auto-pick
           </button>
           {picks.length > 0 && (
-            <button type="button" onClick={onClear} className="press min-h-9 rounded-full border border-black/10 px-3 py-1.5 text-[12px] font-semibold text-black/55 hover:border-rose-500 hover:text-rose-500 dark:border-white/10 dark:text-white/55">
+            <button type="button" onClick={onClear} className="press min-h-9 rounded-full border border-black/10 px-3 py-1.5 text-[12px] font-semibold text-muted hover:border-rose-500 hover:text-rose-500 dark:border-white/10">
               Clear
             </button>
           )}
@@ -259,7 +265,7 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
       <span className={`t-title text-xl font-bold tabular-nums ${tone === "bad" ? "text-[var(--rose)]" : ""}`}>
         {value}
       </span>
-      <span className="text-[11px] text-black/50 dark:text-white/50">{label}</span>
+      <span className="text-[11px] text-muted">{label}</span>
     </div>
   );
 }
@@ -273,7 +279,7 @@ function SquadSlots({ picks, onRemove }: { picks: Prediction[]; onRemove: (id: n
         const empty = SQUAD_QUOTA[pos] - mine.length;
         return (
           <div key={pos} className="flex items-start gap-2">
-            <span className="t-label w-9 flex-none pt-2 text-[10px] text-black/40 dark:text-white/40">
+            <span className="w-9 flex-none pt-2 text-[12px] font-semibold text-muted">
               {pos}
             </span>
             <div className="flex flex-1 flex-wrap gap-1.5">
@@ -289,15 +295,15 @@ function SquadSlots({ picks, onRemove }: { picks: Prediction[]; onRemove: (id: n
                   >
                     <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={18} height={17} className="block flex-none" />
                     <span className="text-[12px] font-semibold">{p.web_name}</span>
-                    <span className="tabular-nums text-[11px] text-black/45 dark:text-white/45">£{p.price.toFixed(1)}</span>
-                    <span aria-hidden className="text-[11px] text-black/30 group-hover:text-rose-500 dark:text-white/30">✕</span>
+                    <span className="tabular-nums text-[11px] text-muted">£{p.price.toFixed(1)}</span>
+                    <span aria-hidden className="text-[11px] text-muted group-hover:text-rose-500">✕</span>
                   </button>
                 );
               })}
               {Array.from({ length: Math.max(0, empty) }, (_, i) => (
                 <span
                   key={`e${i}`}
-                  className="flex min-h-9 min-w-[84px] items-center justify-center rounded-full border border-dashed border-black/15 px-3 text-[11px] text-black/30 dark:border-white/15 dark:text-white/30"
+                  className="flex min-h-9 min-w-[84px] items-center justify-center rounded-full border border-dashed border-black/15 px-3 text-[11px] text-muted dark:border-white/15"
                 >
                   empty
                 </span>
@@ -318,6 +324,7 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
   const [pos, setPos] = useState<Pos | "ALL">(firstGap);
   const [q, setQ] = useState("");
   const [touched, setTouched] = useState(false);
+  const [limit, setLimit] = useState(20);
   const active = touched ? pos : firstGap;
 
   const rows = useMemo(() => {
@@ -330,8 +337,7 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
             p.web_name.toLowerCase().includes(needle) ||
             (p.team ?? "").toLowerCase().includes(needle)),
       )
-      .sort((a, b) => b.xp - a.xp)
-      .slice(0, 60);
+      .sort((a, b) => b.xp - a.xp);
   }, [pool, active, q]);
 
   const chosen = new Set(picks.map((p) => p.element_id));
@@ -346,11 +352,11 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
             return (
               <button
                 key={p}
-                onClick={() => { setTouched(true); setPos(p); }}
+                onClick={() => { setTouched(true); setPos(p); setLimit(20); }}
                 aria-pressed={on}
                 className={`press min-h-8 flex-none rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
                   on ? "border-emerald-600 bg-emerald-600 text-white"
-                     : "border-black/10 text-black/55 dark:border-white/10 dark:text-white/55"
+                     : "border-black/10 text-muted dark:border-white/10"
                 }`}
               >
                 {p}
@@ -374,9 +380,9 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
 
       <ul className="overflow-hidden rounded-2xl border border-black/10 shadow-sm dark:border-white/10">
         {rows.length === 0 && (
-          <li className="px-3 py-4 text-[13px] text-black/50 dark:text-white/50">No players match that.</li>
+          <li className="px-3 py-4 text-[13px] text-muted">No players match that.</li>
         )}
-        {rows.map((p) => {
+        {rows.slice(0, limit).map((p) => {
           const club = getClub(p.team);
           const picked = chosen.has(p.element_id);
           const reason = picked ? null : blockedReason(p, picks);
@@ -395,20 +401,20 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-center gap-1">
                     <span className="truncate text-[13px] font-semibold">{p.web_name}</span>
-                    <span className="flex-none font-mono text-[10px] text-black/35 dark:text-white/35">{club.shortCode}</span>
+                    <span className="flex-none font-mono text-[11px] text-muted">{club.shortCode}</span>
                   </span>
-                  <span className="text-[10px] tabular-nums text-black/45 dark:text-white/45">
+                  <span className="text-[12px] tabular-nums text-muted">
                     {p.position} · {p.ownership.toFixed(1)}% owned
                     {reason ? <span className="text-[var(--amber-fg)]"> · {reason}</span> : null}
                   </span>
                 </span>
-                <span className="w-12 flex-none text-right tabular-nums text-[13px] text-black/60 dark:text-white/60">
+                <span className="w-12 flex-none text-right tabular-nums text-[13px] text-muted">
                   £{p.price.toFixed(1)}
                 </span>
                 <span className="w-10 flex-none text-right t-title text-[15px] font-bold tabular-nums text-emerald-600">
                   {p.xp.toFixed(1)}
                 </span>
-                <span aria-hidden className="w-4 flex-none text-center text-[15px] text-black/25 dark:text-white/25">
+                <span aria-hidden className="w-4 flex-none text-center text-[15px] text-muted">
                   {picked ? "✓" : disabled ? "" : "+"}
                 </span>
               </button>
@@ -416,11 +422,15 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
           );
         })}
       </ul>
-      <p className="text-[11px] text-black/40 dark:text-white/40">
-        Top 60 by xP for this filter. Auto-pick takes players in xP order while the cheapest
-        possible filling of every remaining slot still fits the budget — a legal starting point
-        to edit, not an optimal squad.
-      </p>
+      {rows.length > limit && (
+        <button
+          type="button"
+          onClick={() => setLimit((n) => n + 20)}
+          className="press self-center rounded-full border border-[var(--line)] px-4 py-2 text-[13px] font-semibold"
+        >
+          Show 20 more of {rows.length}
+        </button>
+      )}
     </div>
   );
 }

@@ -38,7 +38,7 @@ function ErrorState({ id, message }: { id: string; message: string }) {
   return (
     <main className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-16 text-center">
       <h1 className="text-lg font-semibold">Couldn&apos;t load team {id}</h1>
-      <p className="text-sm text-black/60 dark:text-white/60">{message}</p>
+      <p className="text-sm text-muted">{message}</p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Link
           href="/team/0"

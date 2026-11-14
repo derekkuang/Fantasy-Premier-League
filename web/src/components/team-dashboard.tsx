@@ -13,10 +13,11 @@ import {
   swapLegal,
 } from "@/lib/formation";
 import { computeHealth, type BalanceFlag } from "@/lib/balance";
-import { Card, Flag, SectionTitle, Stat } from "@/components/ui";
+import { Card, Flag, Stat } from "@/components/ui";
 import { SquadBoard } from "@/components/pitch";
 import { CaptainCompare } from "@/components/captain-compare";
 import { PlayerSheet, type SwapOption } from "@/components/player-sheet";
+import { Explained } from "@/components/explained";
 import { AdvisorChat } from "@/components/advisor-chat";
 
 export function TeamDashboard({
@@ -101,18 +102,16 @@ export function TeamDashboard({
       // the page snaps from placeholder to content in a single frame
       className="enter mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6"
     >
-      <header className="flex items-end justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <Link href="/" className="press text-[13px] text-emerald-600 hover:underline">
-            ← another team
+      <header className="flex flex-col gap-1">
+        {/* One way back. A built squad has its own "Edit squad" bar above this. */}
+        {!manual && (
+          <Link href="/squad" className="press w-fit text-[13px] text-[var(--emerald-text)] hover:underline">
+            ← Another team
           </Link>
-          <h1 className="t-title text-lg font-semibold">
-            {manual ? `Your squad · GW${data.gw}` : `Team ${data.entry_id} · GW${data.gw}`}
-          </h1>
-        </div>
-        <span className="rounded-full bg-black/5 px-2 py-1 font-mono text-[11px] text-black/50 dark:bg-white/10 dark:text-white/50">
-          {data.meta.model_ver}
-        </span>
+        )}
+        <h1 className="t-title text-[22px] font-bold">
+          {manual ? `Your squad · GW${data.gw}` : `Team ${data.entry_id} · GW${data.gw}`}
+        </h1>
       </header>
 
       {!manual && data.picks_gw != null && data.picks_gw < data.gw && (
@@ -120,17 +119,16 @@ export function TeamDashboard({
         // the squad shown is the manager's current one from the previous gameweek, priced
         // against the upcoming projections. Transfers made for GW{gw} appear once its
         // deadline passes — FPL doesn't expose them earlier.
-        <p className="text-xs leading-relaxed text-black/55 dark:text-white/60">
-          Squad as of GW{data.picks_gw} — your latest confirmed team — projected against
-          GW{data.gw}. Transfers you make for GW{data.gw} will show up here after its
-          deadline, when FPL reveals them.
+        <p className="text-[13px] leading-relaxed text-muted">
+          Your squad as of GW{data.picks_gw}, projected for GW{data.gw}. Transfers for GW{data.gw}
+          appear after its deadline, when FPL reveals them.
         </p>
       )}
 
       <Card className="p-5">
         <div className="flex items-end justify-between gap-4">
           <Stat
-            label="projected points (best XI, C doubled)"
+            label="projected points, best XI"
             value={starters.length ? projected.toFixed(1) : "—"}
           />
           <div className="flex gap-6 text-right">
@@ -144,7 +142,7 @@ export function TeamDashboard({
         </div>
       </Card>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,430px)_1fr] lg:items-start">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)] lg:items-start">
         <SquadBoard
           squad={data.squad}
           fixtures={fixtures}
@@ -156,38 +154,32 @@ export function TeamDashboard({
           onReset={resetXI}
         />
 
-        <div className="flex flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-5">
           <CaptainCompare starters={starters} basis={basis} onBasis={setBasis} captainId={captainId} />
           {!manual && <TransferCard move={data.best_transfer} freeTransfers={data.free_transfers} />}
-          {/* Sits BELOW the free precomputed answer on purpose — the chip prompts are all
-              follow-ups to it, which is the only thing it is worth paying a model for. */}
+          <BalanceCard flags={health.flags} />
+          {data.unscored_elements.length > 0 && (
+            <p className="text-[13px] text-muted">
+              {data.unscored_elements.length} of your players have no projection yet and are left
+              out of the total.
+            </p>
+          )}
+          {/* Shows nothing at all while the advisor is switched off. */}
           <AdvisorChat
             gw={data.gw}
             owned={data.squad.map((p) => p.element_id)}
             bank={data.bank}
             freeTransfers={data.free_transfers}
           />
-          {data.unscored_elements.length > 0 && (
-            <p className="px-1 text-xs text-black/50 dark:text-white/50">
-              {data.unscored_elements.length} owned player(s) have no prediction (promoted or
-              low-data team) and are excluded from the projection.
-            </p>
-          )}
-          <BalanceCard flags={health.flags} />
         </div>
       </div>
-
-      <p className="px-1 text-center text-[11px] leading-relaxed text-black/40 dark:text-white/40">
-        Club colours only — generic kit shapes, no official kits or crests. Not affiliated with
-        the Premier League. xP is model-estimated; how well it does is measured and published.
-      </p>
 
       {open && (
         <PlayerSheet
           player={open}
-          fixtures={fixtures[open.team ?? ""] ?? []}
-          swapTitle={openIsStarter ? "Bench — swap out for" : "Start — swap in for"}
-          swapOptions={swapOptions}
+          gw={data.gw}
+          role={open.is_captain || open.element_id === captainId ? "captain" : openIsStarter ? "starter" : "bench"}
+          swap={{ title: openIsStarter ? "Swap with the bench" : "Bring into the XI", options: swapOptions }}
           onClose={() => setOpenId(null)}
         />
       )}
@@ -197,36 +189,27 @@ export function TeamDashboard({
 
 function TransferCard({ move, freeTransfers }: { move: TransferMove | null; freeTransfers: number }) {
   return (
-    <div className="flex flex-col gap-1">
-      <SectionTitle>Best transfer</SectionTitle>
-      <Card className="p-4">
+    <section className="flex flex-col gap-2">
+      <Explained label="How is this chosen?" head={<h2 className="text-[13px] font-semibold text-muted">Best transfer</h2>}>
+        Judged on your whole squad at its best possible XI, so swapping bench and starters
+        doesn&apos;t change it.{freeTransfers < 1 ? " With no free transfer it has to beat the 4-point hit." : ""}
+      </Explained>
+      <Card className="px-4 py-3">
         {move && move.net_gain > 0 ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-rose-600 dark:text-rose-400">OUT {move.out.web_name}</span>
-              <span className="text-black/40 dark:text-white/40">→</span>
-              <span className="text-emerald-600 dark:text-emerald-400">IN {move.in.web_name}</span>
-            </div>
-            <div className="flex items-center justify-between text-xs text-black/55 dark:text-white/55">
-              <span className="tabular-nums">cost £{move.cost.toFixed(1)}m</span>
-              <span className="tabular-nums">
-                +{move.xp_gain.toFixed(2)} xP → net {move.net_gain > 0 ? "+" : ""}
-                {move.net_gain.toFixed(2)}
-                {freeTransfers < 1 ? " (after −4)" : ""}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-black/55 dark:text-white/55">
-            No transfer beats holding this week — your squad is already well-placed.
+          <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[14px]">
+            <span>
+              <span className="text-muted">Out</span> <strong>{move.out.web_name}</strong>{" "}
+              <span className="text-muted">→ in</span> <strong>{move.in.web_name}</strong>
+            </span>
+            <span className="tabular-nums" style={{ color: "var(--emerald-text)" }}>
+              +{move.net_gain.toFixed(1)} xP{freeTransfers < 1 ? " after the hit" : ""}
+            </span>
           </p>
+        ) : (
+          <p className="text-[14px] text-muted">No transfer beats holding this week.</p>
         )}
       </Card>
-      <p className="px-1 text-[10px] text-black/40 dark:text-white/40">
-        For your 15 as a whole, judged at your best possible XI — so it doesn&apos;t change when
-        you swap bench and starters.
-      </p>
-    </div>
+    </section>
   );
 }
 
@@ -237,8 +220,8 @@ function BalanceCard({ flags }: { flags: BalanceFlag[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
 
   return (
-    <div>
-      <SectionTitle>Squad health · tap a flag</SectionTitle>
+    <section className="flex flex-col gap-2">
+      <h2 className="text-[13px] font-semibold text-muted">Squad health</h2>
       <div className="flex flex-col gap-2">
         {flags.map((f, i) => (
           <Flag
@@ -252,6 +235,6 @@ function BalanceCard({ flags }: { flags: BalanceFlag[] }) {
           </Flag>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
