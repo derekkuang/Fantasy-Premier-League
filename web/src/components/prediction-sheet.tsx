@@ -1,6 +1,6 @@
 "use client";
 // Sheet opened when a prediction row is tapped: five stat tiles, the next-5 fixtures with
-// true FDR, and the exact per-term xP breakdown (terms sum to xP). Bottom sheet on mobile,
+// true FDR, predicted vs scored this season, and the exact per-term xP breakdown (terms sum to xP). Bottom sheet on mobile,
 // centred dialog on desktop. Closes on backdrop / ✕ / Escape.
 
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { getPlayerDetail, type Prediction, type PredictionRow } from "@/lib/api"
 import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
 import { BAND_BLURB, BAND_RANGE, bandStyle } from "@/lib/risk";
 import { Jersey } from "@/components/jersey";
+import { SeasonHistory } from "@/components/season-history";
 import { Sheet, SheetClose } from "@/components/sheet";
 
 function Tile({ label, value, emerald = false }: { label: string; value: string; emerald?: boolean }) {
@@ -228,6 +229,20 @@ export function PredictionSheet({ player, onClose }: { player: PredictionRow; on
             </div>
           </div>
         )}
+
+        {/* predicted vs scored this season — from the detail fetch, like the breakdown */}
+        <div className="flex flex-col gap-1.5">
+          <span className="t-label text-[10px] text-black/55 dark:text-white/60">
+            Predicted vs scored · this season
+          </span>
+          {detail == null ? (
+            <span className="text-[11px] text-black/40 dark:text-white/40">{loadingNote}</span>
+          ) : detail.history?.length ? (
+            <SeasonHistory weeks={detail.history} />
+          ) : (
+            <span className="text-[11px] text-black/40 dark:text-white/40">Nothing to compare yet.</span>
+          )}
+        </div>
 
         {/* recent form + price momentum — both structurally empty in preseason */}
         <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">

@@ -91,6 +91,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **34** | **§32's guard was wrong: how often the odds file really has Premier League rows, and the standby** |
 | **35** | **the daily refit learns nothing, and why adding the current season as-is fails** |
 | **36** | **player rates should update in-season; recent form adds nothing** |
+| **37** | **predicted vs scored on the player sheet, as published** |
 
 ---
 
@@ -2793,7 +2794,7 @@ the 13th, so GW11 would have reached the standby the next day anyway. The fix st
 **Production's player rates were last season's, and zero below 270 minutes.** Per-90 xG, xA, defensive
 contribution and bonus come from last season's totals all season. A player with under 270 Premier League
 minutes last season gets zero for all four. On 2026-11-13 that was 53 of the 208 players with 450+ minutes
-this season. Nicolas Jackson (Chelsea, six goals, 0.54 xG+xA per 90) was projected at 2.00 points with no
+this season. Nicolas Jackson (Aston Villa, six goals, 0.54 xG+xA per 90) was projected at 2.00 points with no
 goal or assist part. Rudoni, Belloumi and McBurnie were the same. Each club's expected goals are split
 among players who have a rate, so their teammates were inflated too.
 
@@ -2885,3 +2886,32 @@ fetch (The Odds API, 17 of 17 fixtures, since football-data's file was empty):
 
 The rate blend is measured (+0.022 held out). The list fix is a correction, not a model change. Their
 combined effect on points is not measured; the weekly scorecard is where that will show.
+
+## 37. Predicted vs scored on the player sheet, as published (2026-11-13)
+
+The player sheet now shows each finished gameweek this season: what the site published before that
+deadline next to what the player scored, plus season totals. `fpledge/history.py` builds it in the
+daily precompute from two stored sources: each gameweek's serving artifact (`gw{N}.json`, frozen once
+its deadline passes) and FPL's finalised event-live. The detail route carries it; the list route does
+not.
+
+**What it shows is what users saw, never a recalculation.** Rerunning old gameweeks with today's model
+would make the past look better than it was. Three rules keep it honest:
+
+- A projection counts only if its artifact was written after the previous deadline and before its
+  own. All ten artifacts for GW1-10 pass. A later rerun, or last season's file under the same name,
+  shows as "not projected".
+- A player missing from that week's artifact is "not projected", never a zero, and counts in neither
+  total. Rice and Tzolakis have no projection for GW1-10, because of the July player list (§36).
+- The opponent comes from FPL's fixture for that week, not from the artifact. The artifact projected 30
+  players for their July club. For those weeks `as_club` names that club, and the sheet says so:
+  Jackson's GW1-10 projections were for Chelsea's matches while he played for Aston Villa. That
+  explains his 10.2 predicted against 54 scored. A player whose club that week can't be told (he has
+  moved since and is on neither side) gets no opponent rather than a guess. Twenty-five GW1-2 entries
+  are like that.
+
+The sheet leads with totals, because one player's single week is mostly noise. Haaland, for example,
+was predicted 71.0 and scored 70.
+
+Size: the history adds about 0.45 MB to the artifact now and about 1.7 MB by the end of the season.
+
