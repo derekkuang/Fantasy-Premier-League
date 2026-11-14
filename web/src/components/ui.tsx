@@ -113,12 +113,15 @@ export function Flag({
       >
         {icon}
         <span className="flex-1">{children}</span>
-        <span
+        <svg
           aria-hidden
-          className={`select-none pt-px text-[10px] opacity-60 ${open ? "rotate-180" : ""}`}
+          width="8"
+          height="12"
+          viewBox="0 0 8 12"
+          className={`mt-1 flex-none opacity-70 transition-transform ${open ? "rotate-90" : ""}`}
         >
-          ▾
-        </span>
+          <path d="M1.5 1.5 6 6l-4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
 
       {open && (

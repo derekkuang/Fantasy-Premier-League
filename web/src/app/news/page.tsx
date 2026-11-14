@@ -28,7 +28,7 @@ export default async function NewsPage() {
   });
 
   return (
-    <PageShell title="Team news" subtitle={`Latest from each club. Updated ${updated} UTC.`}>
+    <PageShell narrow title="Team news" subtitle={`Latest from each club. Updated ${updated} UTC.`}>
       <Explained
         label="Where does this come from?"
         head={<span className="rounded-full bg-[var(--amber-bg)] px-2 py-0.5 text-[12px] font-semibold text-[var(--amber-fg)]">Beta</span>}

@@ -70,7 +70,7 @@ export default async function ModelPage() {
   const p = card.measured.played_only;
 
   return (
-    <PageShell title="How the model does" subtitle="This season's projections, scored against what actually happened.">
+    <PageShell narrow title="How the model does" subtitle="This season's projections, scored against what actually happened.">
       {/* the headline */}
       <section className="flex flex-col gap-4 rounded-2xl border border-[var(--line)] p-4">
         {sum ? (

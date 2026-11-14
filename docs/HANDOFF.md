@@ -2950,3 +2950,10 @@ with FPL's forecast captured before the deadline, our ranking score averaged 0.3
 (`&apos;`) loses that space in this toolchain ("8gameweeks", "Chelseaplayer"). Where text after
 a value or a tag needs an apostrophe, use a template string or an explicit `{" "}`.
 
+
+**Desktop follow-up (2026-11-14, after it went live).** The phone checks passed; desktop didn't.
+- **The sheet sat on the bottom edge.** It was meant to be a centred dialog, but its container always aligned to the bottom. The old sheet was tall enough to hide this; the folded one wasn't, and it climbed the screen as its sections opened. It now hangs from 7vh and grows downward.
+- **The drag handle showed on desktop.** Plain CSS in `globals.css` sits outside Tailwind's layers and beat `lg:hidden`. The same flaw made the new `.text-muted` override every `hover:` colour; it's now an `@utility`.
+- **Bright controls in dark mode.** With no `color-scheme: dark`, scrollbars, checkboxes and sliders rendered light.
+- **The page shifted sideways when a sheet opened.** `scrollbar-gutter: stable` fixes it.
+- **Controls and widths.** Mode switches share one segmented control (positions, fixture window and view, captain mode, horizon). News and the model page use a reading width.

@@ -104,7 +104,10 @@ export function Sheet({
   // clickable behind an open sheet. A portal makes that impossible on every page at once.
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    // Phones: a bottom sheet. Desktop: a dialog hung from near the top, so it opens in the
+    // same place every time and grows DOWN as its sections open, rather than sitting on the
+    // bottom edge and climbing the screen.
+    <div className="fixed inset-0 z-50 flex items-end justify-center lg:items-start lg:pt-[7vh]">
       <div
         className="sheet-backdrop absolute inset-0 bg-black/45 backdrop-blur-[2px]"
         data-closing={closing}
@@ -120,9 +123,10 @@ export function Sheet({
         data-dragging={drag.dragging}
         style={drag.style}
         className={
-          "sheet-panel relative flex max-h-[88vh] w-full max-w-[430px] flex-col gap-3.5 " +
+          "sheet-panel scroll-thin relative flex max-h-[88vh] w-full max-w-[430px] flex-col gap-3.5 " +
           "overflow-y-auto overscroll-contain rounded-t-[20px] border border-black/10 bg-white " +
           "px-4 pb-6 pt-2 shadow-[0_-8px_30px_rgba(0,0,0,.25)] focus:outline-none " +
+          "lg:max-h-[84vh] lg:rounded-[20px] lg:px-5 lg:pt-5 lg:shadow-[0_20px_60px_rgba(0,0,0,.35)] " +
           "dark:border-white/10 dark:bg-[#0a0a0a] " +
           className
         }

@@ -29,6 +29,7 @@ import {
 import { Jersey } from "@/components/jersey";
 import { TeamDashboard } from "@/components/team-dashboard";
 import { TeamSearch } from "@/components/team-search";
+import { Segmented } from "@/components/segmented";
 
 const STORAGE_KEY = "fpledge.squad";
 
@@ -344,38 +345,20 @@ function Picker({ pool, picks, onAdd }: { pool: Prediction[]; picks: Prediction[
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-2 rounded-2xl border border-black/10 p-2.5 shadow-sm dark:border-white/10">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(["ALL", ...POS_ORDER] as const).map((p) => {
-            const on = active === p;
-            const full = p !== "ALL" && counts[p] >= SQUAD_QUOTA[p];
-            return (
-              <button
-                key={p}
-                onClick={() => { setTouched(true); setPos(p); setLimit(20); }}
-                aria-pressed={on}
-                className={`press min-h-8 flex-none rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
-                  on ? "border-emerald-600 bg-emerald-600 text-white"
-                     : "border-black/10 text-muted dark:border-white/10"
-                }`}
-              >
-                {p}
-                {p !== "ALL" && (
-                  <span className={on ? "opacity-80" : full ? "text-emerald-600" : "opacity-50"}>
-                    {" "}{counts[p]}/{SQUAD_QUOTA[p]}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search player or club…"
-            aria-label="Search player or club"
-            className="min-h-9 min-w-[150px] flex-1 rounded-full border border-black/15 bg-transparent px-3 py-1.5 text-sm outline-none ring-[var(--focus)] focus:ring-2 dark:border-white/15"
-          />
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          label="Position"
+          options={(["ALL", ...POS_ORDER] as const).map((p) => [p, p === "ALL" ? "All" : `${p} ${counts[p]}/${SQUAD_QUOTA[p]}`] as const)}
+          value={active}
+          onChange={(p) => { setTouched(true); setPos(p); setLimit(20); }}
+        />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search player or club"
+          aria-label="Search player or club"
+          className="min-h-10 w-full min-w-0 rounded-full border border-[var(--line)] bg-transparent px-4 text-[14px] outline-none ring-[var(--focus)] focus:ring-2 md:w-auto md:max-w-sm md:flex-1"
+        />
       </div>
 
       <ul className="overflow-hidden rounded-2xl border border-black/10 shadow-sm dark:border-white/10">

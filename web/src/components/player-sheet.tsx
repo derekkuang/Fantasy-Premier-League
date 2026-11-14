@@ -222,7 +222,7 @@ export function PlayerSheet({
               <Fold
                 title={swap.title}
                 aside={bestSwap ? `best ${bestSwap.delta >= 0 ? "+" : ""}${bestSwap.delta.toFixed(1)}` : "none"}
-                defaultOpen
+                defaultOpen={bestSwap != null && bestSwap.delta > 0}
               >
                 {swap.options.length > 0 ? (
                   <div className="flex flex-col gap-1.5">

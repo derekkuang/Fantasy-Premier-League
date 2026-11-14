@@ -49,7 +49,7 @@ export function SquadBoard({
     <section className="flex min-w-0 flex-col gap-2">
       <JerseyDefs />
       <div className="flex items-center justify-between px-0.5">
-        <h2 className="text-[13px] font-semibold text-muted">Your XI · tap a player</h2>
+        <h2 className="text-[13px] font-semibold text-muted">Your XI</h2>
         <div className="flex items-center gap-1.5">
           <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold tabular-nums text-white">
             {formationLabel(starters)}
