@@ -1,63 +1,31 @@
-// The next-3-gameweek strip: three cells, each carrying the opponent code, a true-FDR chip
-// (digit never conveyed by colour alone), and that GW's xP. A 12% tint of the FDR colour
-// makes a good run readable at a glance. `chip` = mobile (34px cells), `row` = desktop table.
+// The next three gameweeks in the desktop Players table: opponent (home in capitals, away in
+// lower case) and that gameweek's projection, on a tint of the fixture's difficulty colour. The
+// difficulty digit stays, small, so colour is never the only signal.
 
 import type { PredictionFixture } from "@/lib/api";
-import { fdrColour, fdrGlyph, getClub } from "@/lib/clubs";
+import { fdrColour, fdrGlyph } from "@/lib/clubs";
+import { oppLabel } from "@/components/season-history";
 
-export function Next3Strip({
-  fixtures,
-  variant = "row",
-}: {
-  fixtures: PredictionFixture[];
-  position?: string;
-  variant?: "chip" | "row";
-}) {
-  const cells = (fixtures ?? []).slice(0, 3);
-
-  if (variant === "chip") {
-    return (
-      <div className="flex flex-none items-center gap-[3px]">
-        {cells.map((f) => {
-          const c = fdrColour(f.fdr);
-          return (
-            <span
-              key={f.gw}
-              title={`GW${f.gw} vs ${f.opp} (${f.home ? "H" : "A"}) — FDR ${f.fdr} · ${f.xp.toFixed(2)} xP`}
-              className="flex w-[34px] flex-col items-center gap-px rounded-[5px] border border-black/[.06] py-0.5 dark:border-white/[.06]"
-              style={{ background: `color-mix(in oklab, ${c} 12%, transparent)` }}
-            >
-              <span className="flex items-center gap-0.5 leading-none">
-                <span className="font-mono text-[8px] text-black/45 dark:text-white/45">{getClub(f.opp).shortCode}</span>
-                <span className="min-w-[7px] rounded-sm text-center text-[7px] font-bold tabular-nums" style={{ background: c, color: fdrGlyph(f.fdr) }}>
-                  {f.fdr}
-                </span>
-              </span>
-              <span className="text-[10px] font-bold leading-tight tabular-nums">{f.xp.toFixed(1)}</span>
-            </span>
-          );
-        })}
-      </div>
-    );
-  }
-
+export function Next3Strip({ fixtures }: { fixtures: PredictionFixture[] }) {
   return (
     <div className="flex items-center gap-1">
-      {cells.map((f) => {
+      {(fixtures ?? []).slice(0, 3).map((f) => {
         const c = fdrColour(f.fdr);
         return (
           <span
-            key={f.gw}
-            title={`GW${f.gw} vs ${f.opp} (${f.home ? "H" : "A"}) — FDR ${f.fdr}`}
-            className="flex flex-1 items-center justify-center gap-1 rounded-[7px] border border-black/[.06] px-1 py-[3px] dark:border-white/[.06]"
-            style={{ background: `color-mix(in oklab, ${c} 12%, transparent)` }}
+            key={`${f.gw}-${f.opp}`}
+            title={`GW${f.gw} v ${f.opp} (${f.home ? "home" : "away"}), difficulty ${f.fdr} of 5`}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-1.5 py-1"
+            style={{ background: `color-mix(in oklab, ${c} 16%, transparent)` }}
           >
-            <span className="min-w-[11px] rounded-[3px] text-center text-[9px] font-bold tabular-nums" style={{ background: c, color: fdrGlyph(f.fdr) }}>
+            <span className="font-mono text-[12px] font-semibold">{oppLabel(f.opp, f.home)}</span>
+            <span
+              className="grid h-4 min-w-4 place-items-center rounded-[4px] px-0.5 text-[10px] font-bold tabular-nums"
+              style={{ background: c, color: fdrGlyph(f.fdr) }}
+            >
               {f.fdr}
             </span>
-            <span className="font-mono text-[10px] font-semibold">{getClub(f.opp).shortCode}</span>
-            <span className="text-[9px] text-black/40 dark:text-white/40">({f.home ? "H" : "A"})</span>
-            <span className="text-[11px] font-semibold tabular-nums">{f.xp.toFixed(1)}</span>
+            <span className="text-[13px] font-semibold tabular-nums">{f.xp.toFixed(1)}</span>
           </span>
         );
       })}

@@ -18,13 +18,13 @@ import { TeamSearch } from "@/components/team-search";
 
 export const revalidate = 3600;
 
-const PAGES: [string, string, string][] = [
-  ["/predictions", "Every player, ranked", "Projected points for all 555, with the per-term maths behind each one."],
-  ["/fixtures", "Two difficulty ratings", "Attack and defence disagree on about half of all fixtures. Most tickers show one number."],
-  ["/differentials", "Risk, banded", "High projection, low ownership — sorted by how much of a punt it actually is."],
+const pages = (n: number | null): [string, string, string][] => [
+  ["/players", "Every player, ranked", `Projected points for ${n ? `all ${n}` : "every"} players, low-owned picks and penalty takers.`],
+  ["/fixtures", "Fixture difficulty", "The next eight gameweeks for every club, for attack and defence."],
+  ["/model", "How the model does", "This season's projections against FPL's own, week by week."],
 ];
 
-async function topPicks(): Promise<{ gw: number; players: Prediction[] } | null> {
+async function topPicks(): Promise<{ gw: number; players: Prediction[]; total: number } | null> {
   try {
     const gw = await getLatestGw();
     const { predictions } = await getPredictions(gw);
@@ -32,7 +32,7 @@ async function topPicks(): Promise<{ gw: number; players: Prediction[] } | null>
       .filter((p) => !p.low_coverage)
       .sort((a, b) => b.xp - a.xp)
       .slice(0, 4);
-    return players.length ? { gw, players } : null;
+    return players.length ? { gw, players, total: predictions.length } : null;
   } catch {
     return null;   // a landing page must never depend on the API being up
   }
@@ -47,9 +47,9 @@ export default async function Home() {
         <h1 className="t-display text-[34px] font-bold sm:text-[42px]">
           Pick 15. See what they&apos;ll <span className="text-emerald-600">score.</span>
         </h1>
-        <p className="text-[15px] leading-relaxed text-black/60 dark:text-white/60">
-          A projected score for every player, the captain that gains you most on the field,
-          and a squad-health check — from a match model, not a tip sheet.
+        <p className="text-[15px] leading-relaxed text-muted">
+          A projected score for every player, the best captain and a squad check, from a match
+          model rather than a tip sheet.
         </p>
       </div>
 
@@ -60,19 +60,17 @@ export default async function Home() {
         >
           Build a squad <span aria-hidden>→</span>
         </Link>
-        <p className="text-center text-xs text-black/45 dark:text-white/45">
-          £100m, 2/5/5/3, max 3 per club — the real rules. No account, no team id.
-        </p>
+        <p className="text-center text-[13px] text-muted">The real rules: £100m, at most three per club. No account.</p>
         <TeamSearch collapsible />
       </div>
 
       {/* Live proof: the actual top of the actual table, rendered by the actual components. */}
       {top && (
         <Link
-          href="/predictions"
-          className="press flex flex-col gap-2 rounded-2xl border border-black/10 p-3 hover:border-emerald-600/50 dark:border-white/10"
+          href="/players"
+          className="press flex flex-col gap-2 rounded-2xl border border-[var(--line)] p-3 hover:border-emerald-600/50"
         >
-          <span className="t-label flex items-baseline justify-between text-[10px] text-black/40 dark:text-white/40">
+          <span className="flex items-baseline justify-between text-[12px] font-semibold text-muted">
             <span>Top projected · GW{top.gw}</span>
             <span className="normal-case tracking-normal text-emerald-600">see all →</span>
           </span>
@@ -89,7 +87,7 @@ export default async function Home() {
                     height={28}
                     className="block"
                   />
-                  <span className="max-w-full truncate text-[11px] font-semibold">{p.web_name}</span>
+                  <span className="max-w-full truncate text-[12px] font-semibold">{p.web_name}</span>
                   <span className="t-title text-[15px] font-bold tabular-nums text-emerald-600">
                     {p.xp.toFixed(1)}
                   </span>
@@ -102,31 +100,22 @@ export default async function Home() {
 
       {/* Three doors, not four claims. Each one is a page you can go and check. */}
       <ul className="flex flex-col gap-2">
-        {PAGES.map(([href, title, sub]) => (
+        {pages(top?.total ?? null).map(([href, title, sub]) => (
           <li key={href}>
             <Link
               href={href}
-              className="press flex items-center justify-between gap-3 rounded-xl border border-black/10 px-3.5 py-2.5 hover:border-emerald-600/50 dark:border-white/10"
+              className="press flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] px-3.5 py-2.5 hover:border-emerald-600/50"
             >
               <span className="flex flex-col">
-                <span className="text-sm font-semibold">{title}</span>
-                <span className="text-xs leading-relaxed text-black/50 dark:text-white/50">{sub}</span>
+                <span className="text-[14px] font-semibold">{title}</span>
+                <span className="text-[13px] leading-relaxed text-muted">{sub}</span>
               </span>
-              <span aria-hidden className="flex-none text-black/25 dark:text-white/25">→</span>
+              <span aria-hidden className="flex-none text-muted">→</span>
             </Link>
           </li>
         ))}
       </ul>
 
-      <p className="text-center text-xs leading-relaxed text-black/55 dark:text-white/60">
-        <strong className="font-semibold text-black/75 dark:text-white/75">Honest by design.</strong>{" "}
-        We measured our projections against FPL&apos;s own and published the result —
-        including the two times we got the measurement wrong. Single gameweeks stay mostly
-        unpredictable; the tooling is the rest of the edge.{" "}
-        <Link href="/model" className="whitespace-nowrap text-emerald-600 underline">
-          see the numbers →
-        </Link>
-      </p>
     </main>
   );
 }
