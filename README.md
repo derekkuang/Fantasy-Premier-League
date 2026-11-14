@@ -116,7 +116,9 @@ flowchart LR
 
 The daily fit uses three completed seasons plus this one, so team strengths move as results come
 in. A club with fewer than 10 games in the fit keeps a default rating until it has them (§35).
-Player attacking rates come from last season's totals and do not change in-season.
+Player rates (xG, xA, defensive contribution and bonus per 90) blend last season with this season's
+finished gameweeks, so they move every gameweek too, and the player list, clubs and ownership come
+from today's FPL data (§36). The precompute refuses to publish if a finalised gameweek is missing.
 
 From a new artifact to a visible page takes up to ~16 minutes: the API's store caches for 60s
 and Vercel revalidates within 5–15 min. The precompute refuses to publish a degraded fit (see
@@ -147,7 +149,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 595 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 619 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -272,7 +274,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 595 tests
+make test       # 619 tests
 make lint
 ```
 
@@ -396,10 +398,10 @@ while the artifact reported the market as used.
 
 **Needs attention:**
 
-1. **Player rates do not update in-season.** Team strengths do since §35, which passed a
-   pre-registered replay on five held-out seasons but went live without the planned side-by-side
-   run. Player xG/xA shares still come from last season's totals, and the engine change's effect
-   on player rankings is unmeasured.
+1. **The new player inputs are unmeasured on points.** Since §36 player rates blend this season
+   in (+0.022 Spearman held out) and the player list is rebuilt from today's FPL data, which had
+   been frozen in July: 117 players unprojected, 30 at old clubs, ownership four months stale.
+   Neither had a live comparison first, so the weekly scorecard is the check.
 2. **FPL intermittently returns 403 to the Lambdas' bootstrap fetch** (15, 23 and 25 Sep). So
    far every one fell outside a capture window; one inside it would cost that week's snapshot.
 3. The contact email and governing jurisdiction are still placeholders in `/privacy` and
@@ -434,6 +436,6 @@ while the artifact reported the market as used.
 
 | doc | read it for | note |
 | --- | --- | --- |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 35 numbered sections | Start with its section map, then §16, §24, §27 and §32–§35. Its header and §1–§4 describe the pre-deploy state of early August |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 36 numbered sections | Start with its section map, then §16, §24, §27 and §32–§36. Its header and §1–§4 describe the pre-deploy state of early August |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | The runbook: schedules, alarms, smoke tests, key rotation | The cloud section is current; the launchd and cron sections are from the laptop era |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | The live API's configuration and how to ship it | The "blocking list" at the top predates the deploy |

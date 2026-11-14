@@ -15,6 +15,7 @@ from .ingest import footballdata, oddsapi
 from .lineup import projected_xi
 from .matches import match_previews
 from .models.dixon_coles import DixonColesModel
+from .models.rates import PRIOR_K, blended_rates, season_totals
 from .models.teammap import build_odds_team_map, build_team_map
 from .models.xp_table import compute_multi_gw_xp, compute_xp_records
 from .storage import duck
@@ -163,6 +164,39 @@ def recent_minutes_by_code(elements: list[dict], live_by_gw: dict,
     return dict(out)
 
 
+def current_players(elements: list[dict], history: dict) -> list[dict]:
+    """One row per player FPL lists today, with last season's totals joined by `code`.
+
+    Identity, club, position and ownership come from today's bootstrap. They used to come from
+    `player_season`, which is the July history pull: on 2026-11-13 that left 117 current players
+    unprojected (23 regular starters, Declan Rice among them), 30 at their July club, and every
+    ownership as it stood in July (Gross 1.9% against 48.0%). A player with no history row gets
+    zeros for last season, which the rate blend fills with his position's average.
+    """
+    rows = []
+    for e in elements:
+        last = history.get(e["code"], {})
+        rows.append({
+            "code": e["code"], "element_id": e["id"], "team_id": e["team"],
+            "position": config.ELEMENT_TYPE_TO_POS[e["element_type"]], "web_name": e["web_name"],
+            "minutes": last.get("minutes") or 0, "starts": last.get("starts") or 0,
+            "xg": last.get("xg") or 0.0, "xa": last.get("xa") or 0.0,
+            "dc": last.get("dc") or 0, "bonus": last.get("bonus") or 0,
+            "ownership": float(e.get("selected_by_percent") or 0.0),
+        })
+    return rows
+
+
+def missing_gameweeks(events: list[dict], landed: set, before_gw: int) -> list[int]:
+    """Gameweeks FPL has finalised (`data_checked`) before `before_gw` that are not landed.
+
+    `pull_data.py` lands each finalised gameweek, and a failed fetch only warns. Without this the
+    projection would quietly run on rates and minutes a week or more behind.
+    """
+    checked = {e["id"] for e in events if e.get("data_checked") and e["id"] < before_gw}
+    return sorted(checked - landed)
+
+
 def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | None:
     """Shared load + engine fit for a gameweek window [gw, gw+horizon).
 
@@ -172,7 +206,7 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     """
     con = duck.connect()
     duck.init_schema(con)
-    players = [
+    history = [
         dict(zip(PLAYER_COLS, r, strict=True))
         for r in con.execute(
             f"SELECT {', '.join(PLAYER_COLS)} FROM player_season WHERE season = ?",
@@ -200,10 +234,11 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         [config.SEASON, gw],
     ).fetchall()
     con.close()
-    if not players:
+    if not history:
         return None
 
     boot = storeload.latest_raw("fpl_api", "bootstrap")
+    players = current_players(boot["elements"], {h["code"]: h for h in history})
     prices = {e["code"]: e["now_cost"] / 10.0 for e in boot["elements"]}
     # live availability: (chance_of_playing_next_round, status) per player, to discount
     # injured/doubtful players in the current-GW prediction (the production half of fix #2).
@@ -220,9 +255,14 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     # `max_gw=gw - 1` bound is the point-in-time rule: predicting gameweek N may read only
     # gameweeks < N, so re-precomputing a past week never sees (or pays to fetch) data that
     # postdates its own deadline. Preseason this is {} and every projection is unchanged.
-    recent_minutes = recent_minutes_by_code(
-        boot["elements"], storeload.landed_event_live(max_gw=gw - 1), past_fixtures
-    )
+    live = storeload.landed_event_live(max_gw=gw - 1)
+    recent_minutes = recent_minutes_by_code(boot["elements"], live, past_fixtures)
+    rates = blended_rates(players, season_totals(boot["elements"], live))
+    player_data = {
+        "rates": f"last season blended with this season, k={PRIOR_K:g}",
+        "through_gw": max(live) if live else None,
+        "missing_gameweeks": missing_gameweeks(boot.get("events", []), set(live), gw),
+    }
 
     matches, source_report = footballdata.load_seasons_report(seasons or SEASONS)
     if not matches:
@@ -239,12 +279,13 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     # Carried so the precompute can refuse to publish a degraded fit. A dropped season used to
     # be invisible past this point.
     source_report["unmapped_teams"] = sorted(n for n, v in tmap.items() if not v)
+    source_report["player_data"] = player_data
 
     return {
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
         "prices": prices, "availability": availability, "meta": meta,
         "recent_minutes": recent_minutes,
-        "engine": engine, "tmap": tmap, "source_report": source_report,
+        "engine": engine, "tmap": tmap, "source_report": source_report, "rates": rates,
     }
 
 
@@ -257,7 +298,7 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], meta=inp["meta"],
-        recent_minutes=inp["recent_minutes"],
+        recent_minutes=inp["recent_minutes"], rates=inp["rates"],
     )
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
@@ -283,7 +324,7 @@ def assemble_for_serving(
     records, fallback, coverage = compute_xp_records(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], market_lambdas=market,
-        meta=inp["meta"], recent_minutes=inp["recent_minutes"],
+        meta=inp["meta"], recent_minutes=inp["recent_minutes"], rates=inp["rates"],
     )
     ticker_fixtures = [{"gw": g, "home_id": h, "away_id": a} for (g, h, a) in inp["fixtures"]]
     ticker = fixture_ticker(
@@ -305,7 +346,7 @@ def assemble_for_serving(
     multi = compute_multi_gw_xp(
         inp["players"], inp["fpl_teams"], fixtures_by_gw, inp["engine"], inp["tmap"],
         inp["prices"], ticker, sorted(fixtures_by_gw), availability=inp["availability"],
-        market_lambdas=market, recent_minutes=inp["recent_minutes"],
+        market_lambdas=market, recent_minutes=inp["recent_minutes"], rates=inp["rates"],
     )
     for r in records:
         fx = multi.get(r["element_id"], [])

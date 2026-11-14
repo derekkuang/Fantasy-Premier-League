@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from ..playermeta import EMPTY_META
 from . import rank
 from .minutes import RECENT_GWS, MinutesModel
-from .shares import match_shares, team_minutes
+from .shares import match_shares, rate_shares, team_minutes
 from .xpoints import (
     PlayerContext,
     dc_point_probability,
@@ -61,8 +61,13 @@ def compute_xp_records(
     meta: dict | None = None,
     recent_minutes: dict | None = None,
     min_recent_gws: int = MIN_RECENT_GWS,
+    rates: dict | None = None,
 ):
     """Return (records, skipped_fixtures, coverage).
+
+    `rates` ({code: per-90 xg, xa, dc, bonus, plus this season's minutes}, from
+    `models.rates.blended_rates`) replaces last season's totals as the source of every per-90
+    rate, and its minutes count towards a club's coverage. Without it, behaviour is unchanged.
 
     records: list of dicts with code, element_id, web_name, position, team_id, team_name,
     price, x_minutes, xp, ownership, eo, diff_value, template_risk, captain_score, low_cov.
@@ -97,8 +102,21 @@ def compute_xp_records(
 
     minutes_pred = {p["code"]: _pred(p) for p in players}
     x_minutes = {code: mp.x_minutes for code, mp in minutes_pred.items()}
-    shares = match_shares(players, x_minutes)
-    coverage = team_minutes(players)
+    if rates is None:
+        shares = match_shares(players, x_minutes)
+        coverage = team_minutes(players)
+    else:
+        shares = rate_shares(
+            [{"code": p["code"], "team_id": p["team_id"],
+              "xg90": rates.get(p["code"], {}).get("xg", 0.0),
+              "xa90": rates.get(p["code"], {}).get("xa", 0.0)} for p in players],
+            x_minutes,
+        )
+        # This season's minutes count as evidence too, so a promoted squad stops being
+        # "low coverage" once it has played roughly a season's worth of a squad's minutes.
+        coverage = team_minutes(players)
+        for p in players:
+            coverage[p["team_id"]] = coverage.get(p["team_id"], 0.0) + rates.get(p["code"], {}).get("minutes", 0.0)
     by_team: dict = defaultdict(list)
     for p in players:
         by_team[p["team_id"]].append(p)
@@ -138,10 +156,14 @@ def compute_xp_records(
                     # "Diop" artifact). We can't trust attacking attribution here — drop it.
                     # Appearance / clean-sheet / defensive-contribution stay (fixture-based).
                     sh = {"goal_share": 0.0, "assist_share": 0.0}
-                per90 = p["minutes"] / 90.0
-                trust = p["minutes"] >= min_rate_minutes
-                dc_per90 = (p["dc"] / per90) if trust else 0.0
-                bonus_per90 = (p["bonus"] / per90) if trust else 0.0
+                if rates is None:
+                    per90 = p["minutes"] / 90.0
+                    trust = p["minutes"] >= min_rate_minutes
+                    dc_per90 = (p["dc"] / per90) if trust else 0.0
+                    bonus_per90 = (p["bonus"] / per90) if trust else 0.0
+                else:
+                    dc_per90 = rates.get(p["code"], {}).get("dc", 0.0)
+                    bonus_per90 = rates.get(p["code"], {}).get("bonus", 0.0)
                 ctx = PlayerContext(
                     position=p["position"],
                     p_play=mp.p_play,
@@ -203,6 +225,7 @@ def compute_multi_gw_xp(
     availability: dict | None = None,
     market_lambdas: dict | None = None,
     recent_minutes: dict | None = None,
+    rates: dict | None = None,
 ):
     """Per-player xP for each upcoming gameweek, joined to the fixture + true FDR.
 
@@ -217,7 +240,7 @@ def compute_multi_gw_xp(
         recs, _, _ = compute_xp_records(
             players, fpl_teams, fixtures_by_gw.get(g, []), engine, tmap, prices,
             availability=availability, market_lambdas=market_lambdas,
-            recent_minutes=recent_minutes,
+            recent_minutes=recent_minutes, rates=rates,
         )
         xp_by_el: dict = defaultdict(float)
         meta: dict = {}

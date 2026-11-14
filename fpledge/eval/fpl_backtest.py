@@ -130,8 +130,18 @@ def validate_xp(
     oracle_minutes=False,  # False | "exact" | "starter" | "appears" — see _OracleMinutes
     return_records: bool = False,
     fixture_lambdas: dict | None = None,
+    prior_rates: dict | None = None,
+    prior_k: float | None = None,
+    rate_half_life: float | None = None,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
+
+    PLAYER RATES (xG, xA, defensive contribution and bonus per 90). By default they are this
+    season's to date, as they always were here. `prior_rates` ({element: {stat: per 90}}) switches
+    to the production question (`eval.player_rates`): with `prior_k` None the prior is used alone
+    all season, which is what production does with last season's totals; with `prior_k` the
+    prior is blended in as if worth `prior_k` full games. `rate_half_life` (gameweeks) weights
+    this season's games towards the recent ones.
 
     With return_records=True, also returns the raw (gw, element, my_xp, fpl_xp, actual, pos)
     tuples — used by the point-in-time leakage test.
@@ -176,6 +186,24 @@ def validate_xp(
                 return 0.0
             return sum(wi * v for wi, v in zip(w, vals, strict=True)) / (den / 90.0)
         return a[key] / (a["minutes"] / 90.0) if a["minutes"] >= min_rate_minutes else 0.0
+
+    def _player_rate(el, a, key):
+        if prior_rates is None:
+            if key in ("xg", "xa"):
+                return _rate(a, key)
+            return _per90(a[key], a["minutes"], min_rate_minutes)
+        prior = prior_rates.get(el, {}).get(key, 0.0)
+        if prior_k is None:
+            return prior
+        if rate_half_life:
+            vals, mins = a[f"recent_{key}"], a["recent"]
+            m = len(vals)
+            w = [0.5 ** ((m - 1 - i) / rate_half_life) for i in range(m)]
+            total = sum(wi * v for wi, v in zip(w, vals, strict=True))
+            nineties = sum(wi * mm for wi, mm in zip(w, mins, strict=True)) / 90.0
+        else:
+            total, nineties = a[key], a["minutes"] / 90.0
+        return (total + prior_k * prior) / (nineties + prior_k)
 
     baseline_clean = True   # set False if a legacy caller supplies no shifted column
     acc: dict = {}  # element -> rolling totals (from GWs strictly before the current one)
@@ -235,7 +263,8 @@ def validate_xp(
                     squad.sort(reverse=True)
                     predicted_xi.update(el for _x, el in squad[:11])
             players = [
-                {"code": el, "team_id": a["team_id"], "xg90": _rate(a, "xg"), "xa90": _rate(a, "xa")}
+                {"code": el, "team_id": a["team_id"],
+                 "xg90": _player_rate(el, a, "xg"), "xa90": _player_rate(el, a, "xa")}
                 for el, a in acc.items()
             ]
             shares = rate_shares(players, xmins)
@@ -257,8 +286,8 @@ def validate_xp(
                         mode=mode,
                     )
                 sh = shares.get(el, {"goal_share": 0.0, "assist_share": 0.0})
-                dc90 = _per90(a["dc"], a["minutes"], min_rate_minutes)
-                bon90 = _per90(a["bonus"], a["minutes"], min_rate_minutes)
+                dc90 = _player_rate(el, a, "dc")
+                bon90 = _player_rate(el, a, "bonus")
                 pos, tid = rows[0]["position"], rows[0]["team_id"]
 
                 my_xp, scored = 0.0, False
@@ -338,13 +367,16 @@ def validate_xp(
             a = acc.setdefault(
                 el,
                 {"minutes": 0, "starts": 0, "xg": 0.0, "xa": 0.0, "dc": 0, "bonus": 0, "games": 0,
-                 "recent": [], "recent_xg": [], "recent_xa": [], "team_id": rows[0]["team_id"]},
+                 "recent": [], "recent_xg": [], "recent_xa": [], "recent_dc": [], "recent_bonus": [],
+                 "team_id": rows[0]["team_id"]},
             )
             a["team_id"] = rows[0]["team_id"]
             a["games"] += len(rows)
             a["recent"].append(sum(r["minutes"] for r in rows))       # per-GW minutes (recency)
             a["recent_xg"].append(sum(r["xg"] for r in rows))         # per-GW xG (recency)
             a["recent_xa"].append(sum(r["xa"] for r in rows))         # per-GW xA (recency)
+            a["recent_dc"].append(sum(r["dc"] for r in rows))
+            a["recent_bonus"].append(sum(r["bonus"] for r in rows))
             for r in rows:
                 a["minutes"] += r["minutes"]
                 a["starts"] += r["starts"]
