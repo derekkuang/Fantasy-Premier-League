@@ -218,23 +218,19 @@ export default async function ModelPage() {
 
         {news && (
           <Fold title="How the team news is checked" className="border-b">
-            <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
-              <p>
-                The news page tags stories by keyword (&ldquo;injury&rdquo;, &ldquo;rotation&rdquo;)
-                and compares each tagged player with FPL&apos;s own status. Today{" "}
-                <strong className="tabular-nums">
-                  {news.quality.precision == null ? "none" : `${Math.round(news.quality.precision * 100)}%`}
-                </strong>{" "}
-                of those tags agree with FPL, and{" "}
-                <strong className="tabular-nums">{news.quality.additive}</strong>{" "}name players FPL
-                hasn&apos;t flagged, unverified.
-              </p>
-              <p className="text-muted">
-                That&apos;s too low to show the tags on the news page, so it shows FPL&apos;s status
-                instead. Out of {news.n_items.toLocaleString()} stories collected; none of it changes a
-                projection.
-              </p>
-            </div>
+            {news.filter ? (
+              <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
+                <p>
+                  {`Of the last ${news.window_days ?? 7} days' ${news.filter.considered} stories from club sites, the Premier League, the BBC and the Guardian, ${news.filter.kept} were team news: a headline about an injury, suspension, return, line-up, press conference or manager change at a first team. The rest (shop sales, mascots, history, opinion) are left out.`}
+                </p>
+                <p>
+                  {`The check: of the ${news.filter.injury_stories_naming_players} injury and suspension stories that name a player, ${news.filter.agree_with_fpl} name one FPL has flagged itself; the others name players FPL hasn't flagged.`}
+                </p>
+                <p className="text-muted">The injury list itself is FPL&apos;s, unchanged. None of it changes a projection.</p>
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted">Team news is being rebuilt with a new filter; the check appears after the next collection.</p>
+            )}
           </Fold>
         )}
       </div>

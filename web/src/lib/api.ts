@@ -468,6 +468,24 @@ export type NewsItem = {
   /** Keyword ROUTING hints, deliberately over-inclusive. Not classifications. */
   cues: string[];
   mentions: NewsMention[];
+  /** Page mode only: what kind of team news the headline is (Injury, Suspension, Return,
+   *  Team news, Manager), from whole headline words. */
+  labels?: string[];
+  /** Page mode only: the players the HEADLINE names, with FPL's own status beside each. */
+  players?: NewsMention[];
+};
+
+/** Someone FPL itself marks doubtful, injured or suspended, in FPL's own words. */
+export type FlaggedPlayer = {
+  element_id: number;
+  name: string;
+  team: string | null;
+  position: "GK" | "DEF" | "MID" | "FWD" | "";
+  status: "d" | "i" | "s";
+  chance: number | null;
+  news: string;
+  news_added: string | null;
+  ownership: number;
 };
 
 export type NewsResponse = {
@@ -483,6 +501,10 @@ export type NewsResponse = {
   };
   beta: boolean;
   disclaimer: string;
+  /** Page mode (since 15 Nov 2026): FPL's flagged players, and how the filter did. */
+  flagged?: FlaggedPlayer[];
+  window_days?: number;
+  filter?: { considered: number; kept: number; injury_stories_naming_players: number; agree_with_fpl: number };
 };
 
 /** Automated team-news digest. 404s until `make capture-news` has run — a team-news page with

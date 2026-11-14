@@ -41,9 +41,10 @@ import pathlib
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 
+from .. import news_filter
 from ..ingest import capture_index, landing
 
 # How many captures are read, and held, at once. Small on purpose: see `load_corpus`.
@@ -248,8 +249,19 @@ def _shorten(text: str, limit: int = DIGEST_SUMMARY_CHARS) -> str:
     return f"{cut}…"
 
 
+DIGEST_WINDOW_DAYS = 7      # team news older than a week is history, not news
+
+
+def _fpl_view(el: int, labels: dict, fallback: str | None = None) -> dict:
+    lab = labels.get(el) or {}
+    # FPL's own line, verbatim. Never our paraphrase of it.
+    return {"element_id": el, "name": lab.get("name") or fallback,
+            "fpl_status": lab.get("status"), "fpl_news": lab.get("news") or ""}
+
+
 def build_digest(items: list[dict], labels: dict, generated_at: str,
-                 clubs_allowed: list[str] | None = None) -> dict:
+                 clubs_allowed: list[str] | None = None, *, team_news_only: bool = False,
+                 bootstrap: dict | None = None) -> dict:
     """A club-keyed digest for the beta page.
 
     Carries FPL's own status alongside every mention, so the page can show what FPL says next to
@@ -259,14 +271,37 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
     `clubs_allowed` is the CURRENT league, from the bootstrap. The corpus is cumulative and
     outlives a season, so without it a relegated club keeps appearing on the page months after
     it left the division — which is how the page came to report 23 clubs in a 20-team league.
+
+    `team_news_only` is the page's mode (HANDOFF §39): only stories `news_filter.team_news`
+    accepts, from the last DIGEST_WINDOW_DAYS, each carrying its labels and the players its
+    headline names; plus `flagged`, FPL's own list of doubtful, injured and suspended players
+    from `bootstrap`. Without it the digest keeps its older shape for analysis.
     """
     allowed = set(clubs_allowed) if clubs_allowed else None
+    club_squads = news_filter.squads(labels) if team_news_only else {}
+    cutoff = None
+    if team_news_only:
+        try:
+            cutoff = datetime.fromisoformat(generated_at) - timedelta(days=DIGEST_WINDOW_DAYS)
+        except ValueError:
+            cutoff = None
     by_club: dict = {}
+    accepted: dict = {}
+    considered = 0
     for it in items:
         club = it.get("club") or "?"
         if allowed is not None and club not in allowed:
             continue
-        if off_topic(it):
+        if team_news_only:
+            when = parse_published(it.get("published"))
+            if cutoff is not None and when is not None and when < cutoff:
+                continue
+            considered += 1
+            verdict = news_filter.team_news(it, club_squads)
+            if verdict is None:
+                continue
+            accepted[id(it)] = verdict
+        elif off_topic(it):
             continue
         by_club.setdefault(club, []).append(it)
 
@@ -281,16 +316,21 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
         stories: dict = {}
         for r in rows:
             key = _story_key(r)
+            if key not in stories and team_news_only:
+                # The page also merges the same story told in different words.
+                words = news_filter.headline_words(r.get("title") or "")
+                key = next((k for k, st in stories.items() if news_filter.same_story(words, st["words"])), key)
             if key in stories:
                 src = r.get("source")
                 if src and src not in stories[key]["sources"]:
                     stories[key]["sources"].append(src)
                 continue
-            stories[key] = {"row": r, "sources": [r["source"]] if r.get("source") else []}
+            stories[key] = {"row": r, "sources": [r["source"]] if r.get("source") else [],
+                            "words": news_filter.headline_words(r.get("title") or "")}
         out = []
         for story in list(stories.values())[:DIGEST_ITEM_CAP]:
             r = story["row"]
-            out.append({
+            entry = {
                 "title": r.get("title"),
                 "summary": _shorten(r.get("summary")),
                 "source": r.get("source"),
@@ -298,22 +338,19 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
                 "link": r.get("link"),
                 "published": r.get("published"),
                 "cues": r.get("cues") or [],
-                "mentions": [
-                    {
-                        "element_id": m["element_id"],
-                        "name": (labels.get(m["element_id"]) or {}).get("name") or m.get("name"),
-                        # FPL's own line, verbatim. Never our paraphrase of it.
-                        "fpl_status": (labels.get(m["element_id"]) or {}).get("status"),
-                        "fpl_news": (labels.get(m["element_id"]) or {}).get("news") or "",
-                    }
-                    for m in (r.get("mentions") or [])
-                ],
-            })
+                "mentions": [_fpl_view(m["element_id"], labels, m.get("name"))
+                             for m in (r.get("mentions") or [])],
+            }
+            if id(r) in accepted:
+                story_labels, players = accepted[id(r)]
+                entry["labels"] = story_labels
+                entry["players"] = [_fpl_view(el, labels) for el in players]
+            out.append(entry)
         if out:
             clubs[club] = out
 
     scored = evaluate(items, labels)
-    return {
+    digest = {
         "generated_at": generated_at,
         "n_items": len(items),
         "n_clubs": len(clubs),
@@ -326,3 +363,14 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
             "fpl_flagged": scored["n_fpl_flagged"],
         },
     }
+    if team_news_only:
+        kept = [e for rows in clubs.values() for e in rows]
+        # The check the model page prints: of the injury and suspension stories that name a
+        # player, how many name one FPL itself has flagged?
+        named = [e for e in kept if {"Injury", "Suspension"} & set(e.get("labels", [])) and e.get("players")]
+        agree = sum(any((labels.get(p["element_id"]) or {}).get("flagged") for p in e["players"]) for e in named)
+        digest["window_days"] = DIGEST_WINDOW_DAYS
+        digest["filter"] = {"considered": considered, "kept": len(kept),
+                            "injury_stories_naming_players": len(named), "agree_with_fpl": agree}
+        digest["flagged"] = news_filter.flagged_players(bootstrap or {})
+    return digest

@@ -150,7 +150,9 @@ def main(argv: list[str] | None = None) -> None:
     # and folding it into the gameweek artifact would make it up to seven days stale on a page
     # whose whole value is being current. The API stays a pure reader either way.
     corpus = load_corpus() or items
-    digest = build_digest(corpus, fpl_labels(boot), now.isoformat(), clubs_allowed=in_league)
+    # The page's mode: team news only, from the last week, with FPL's flagged players beside it.
+    digest = build_digest(corpus, fpl_labels(boot), now.isoformat(), clubs_allowed=in_league,
+                          team_news_only=True, bootstrap=boot)
     # Through the serving store rather than straight to a path, so the digest follows
     # FPLEDGE_SERVING_URI wherever it points. A capture on a scheduler writing to a local
     # filesystem would produce a digest that is discarded seconds later, and the page it feeds
