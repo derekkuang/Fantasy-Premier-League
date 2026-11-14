@@ -27,7 +27,7 @@ export default async function PlayersPage() {
   }
   const rows = data.predictions.map(toRow);
   return (
-    <PageShell title="Players" subtitle={`Projected points for gameweek ${data.meta.gw}. Tap a player for the detail.`}>
+    <PageShell title="Players" subtitle={`Projected points for gameweek ${data.meta.gw}. Select a player for the detail.`}>
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
       <JerseyDefs />
       {/* The static page renders the default view; the URL's ?view= takes over in the browser. */}

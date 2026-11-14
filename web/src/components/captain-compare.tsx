@@ -12,6 +12,7 @@ import { getClub } from "@/lib/clubs";
 import { xpFloor } from "@/lib/formation";
 import { Jersey } from "@/components/jersey";
 import { Fold } from "@/components/fold";
+import { Segmented } from "@/components/segmented";
 
 /** Expected captain points you gain on a rival who doesn't own this player. */
 const vsField = (p: SquadPlayer) => p.captain_score ?? 2 * p.xp * (1 - (p.ownership ?? 0) / 100);
@@ -64,21 +65,13 @@ export function CaptainCompare({
 
         <Fold title="Compare captains" aside={MODES.find((m) => m.id === basis)?.label}>
           <div className="flex flex-col gap-2.5">
-            <div className="flex gap-1.5" role="group" aria-label="How to choose the captain">
-              {MODES.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => onBasis(m.id)}
-                  aria-pressed={basis === m.id}
-                  className={`press rounded-full border px-3 py-1.5 text-[13px] font-semibold ${
-                    basis === m.id ? "border-emerald-600 bg-emerald-600 text-white" : "border-[var(--line)] text-muted"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="How to choose the captain"
+              options={MODES.map((m) => [m.id, m.label] as const)}
+              value={basis}
+              onChange={onBasis}
+              className="self-start"
+            />
             <p className="text-[12px] leading-relaxed text-muted">
               {rank
                 ? `Doubles whoever gains you most on a rival who doesn't own him: twice his xP times the share of managers without him. Anyone under ${floor.toFixed(1)} xP is skipped, so it can't pick a punt.`

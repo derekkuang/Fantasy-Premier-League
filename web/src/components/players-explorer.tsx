@@ -19,6 +19,7 @@ import { PlayerSheet } from "@/components/player-sheet";
 import { Sheet, SheetClose } from "@/components/sheet";
 import { Explained } from "@/components/explained";
 import { oppLabel } from "@/components/season-history";
+import { Segmented } from "@/components/segmented";
 
 type Pos = "ALL" | "GK" | "DEF" | "MID" | "FWD";
 type Horizon = "xp" | "xp_next3" | "xp_next8";
@@ -151,40 +152,31 @@ export function PlayersExplorer({ predictions, gw, initialView = "all" }: {
         ))}
       </div>
 
-      {/* position, filters, search */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-1" role="group" aria-label="Position">
-            {POSITIONS.map((p) => (
-              <button
-                key={p}
-                onClick={() => patch({ pos: p })}
-                aria-pressed={f.pos === p}
-                className={`press min-h-9 rounded-full px-2.5 text-[12px] font-semibold ${
-                  f.pos === p ? "bg-[var(--fg)] text-[var(--background)]" : "text-muted hover:text-[var(--fg)]"
-                }`}
-              >
-                {p === "ALL" ? "All" : p}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setFiltersOpen(true)}
-            className="press flex min-h-9 flex-none items-center gap-1.5 rounded-full border border-[var(--line)] px-3 text-[13px] font-semibold"
-          >
-            Filters
-            {custom > 0 && (
-              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-emerald-600 px-1 text-[11px] text-white">{custom}</span>
-            )}
-          </button>
-        </div>
+      {/* position, search, filters: two rows on a phone, one from tablet width up */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          label="Position"
+          className="order-1"
+          options={POSITIONS.map((p) => [p, p === "ALL" ? "All" : p] as const)}
+          value={f.pos}
+          onChange={(p) => patch({ pos: p })}
+        />
         <input
           value={f.q}
           onChange={(e) => patch({ q: e.target.value })}
           placeholder="Search player or club"
           aria-label="Search player or club"
-          className="min-h-10 w-full min-w-0 rounded-full border border-[var(--line)] bg-transparent px-4 text-[14px] outline-none ring-[var(--focus)] focus:ring-2"
+          className="order-3 min-h-10 w-full min-w-0 rounded-full border border-[var(--line)] bg-transparent px-4 text-[14px] outline-none ring-[var(--focus)] focus:ring-2 md:order-2 md:w-auto md:max-w-sm md:flex-1"
         />
+        <button
+          onClick={() => setFiltersOpen(true)}
+          className="press order-2 ml-auto flex min-h-10 flex-none items-center gap-1.5 rounded-full border border-[var(--line)] px-4 text-[13px] font-semibold hover:border-emerald-600 md:order-3"
+        >
+          Filters
+          {custom > 0 && (
+            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-emerald-600 px-1 text-[11px] text-white">{custom}</span>
+          )}
+        </button>
       </div>
 
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -388,11 +380,7 @@ function FiltersSheet({ f, patch, bandCounts, matching, reset, onClose }: {
 
           <div className="flex flex-col gap-2">
             <span className={label}>Projected points over</span>
-            <div className="flex flex-wrap gap-1.5">
-              {HORIZONS.map(([h, l]) => (
-                <button key={h} onClick={() => patch({ horizon: h })} aria-pressed={f.horizon === h} className={chip(f.horizon === h)}>{l}</button>
-              ))}
-            </div>
+            <Segmented label="Projected points over" options={HORIZONS} value={f.horizon} onChange={(h) => patch({ horizon: h })} className="self-start" />
           </div>
 
           <div className="flex flex-col gap-2">

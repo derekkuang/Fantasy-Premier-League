@@ -16,6 +16,7 @@ import { Jersey } from "@/components/jersey";
 import { Explained } from "@/components/explained";
 import { oppLabel } from "@/components/season-history";
 import { SplitCell, type TickerLens } from "@/components/split-cell";
+import { Segmented } from "@/components/segmented";
 
 type Win = 3 | 5 | 8;
 
@@ -29,15 +30,6 @@ const CELL_W: Record<Win, string> = {
 };
 const TEAM_W = "w-[64px] min-w-[64px] sm:w-[132px] sm:min-w-[132px] lg:w-[150px] lg:min-w-[150px]";
 
-const PILL = "press min-h-9 cursor-pointer rounded-full border px-3 py-1.5 text-[13px] font-semibold";
-const PILL_ON = "border-emerald-600 bg-emerald-600 text-white";
-const PILL_OFF = "border-[var(--line)] text-muted hover:text-[var(--fg)]";
-
-const LENS_HINT: Record<TickerLens, string> = {
-  overall: "attack and defence averaged",
-  attack: "how likely they are to score",
-  defence: "how likely a clean sheet is",
-};
 
 // --- legend: one line, the rest behind "i" ------------------------------------------- //
 function FdrLegend({ hasMarket }: { hasMarket: boolean }) {
@@ -83,27 +75,14 @@ function TickerControls({
   setLens: (l: TickerLens) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div className="flex gap-1.5" role="group" aria-label="How many gameweeks">
-        {([3, 5, 8] as const).map((w) => (
-          <button key={w} onClick={() => setWin(w)} aria-pressed={win === w} className={`${PILL} ${win === w ? PILL_ON : PILL_OFF}`}>
-            {`Next ${w}`}
-          </button>
-        ))}
-      </div>
-      <div className="flex gap-1.5" role="group" aria-label="Which difficulty">
-        {(["overall", "attack", "defence"] as const).map((l) => (
-          <button
-            key={l}
-            onClick={() => setLens(l)}
-            title={LENS_HINT[l]}
-            aria-pressed={lens === l}
-            className={`${PILL} ${lens === l ? PILL_ON : PILL_OFF}`}
-          >
-            {l === "attack" ? "Attack" : l === "defence" ? "Defence" : "Overall"}
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <Segmented label="How many gameweeks" options={[[3, "Next 3"], [5, "Next 5"], [8, "Next 8"]] as const} value={win} onChange={setWin} />
+      <Segmented
+        label="Which difficulty"
+        options={[["overall", "Overall"], ["attack", "Attack"], ["defence", "Defence"]] as const}
+        value={lens}
+        onChange={setLens}
+      />
     </div>
   );
 }
@@ -264,7 +243,7 @@ function TickerGrid({
     // nearest scrolling ancestor, and overflow-x already makes this div one (CSS computes
     // overflow-y to auto too). Leave the height unbounded and the header has zero scroll
     // range inside the box — it scrolls away with the page instead of pinning.
-    <div className="max-h-[calc(100vh-240px)] min-h-[300px] max-w-full overflow-auto overscroll-contain rounded-2xl border border-[var(--line)]">
+    <div className="scroll-thin max-h-[calc(100vh-240px)] min-h-[300px] max-w-full overflow-auto overscroll-contain rounded-2xl border border-[var(--line)] lg:max-h-[calc(100vh-190px)]">
       <table className="w-max min-w-full border-separate border-spacing-0">
         <thead>
           <tr>
