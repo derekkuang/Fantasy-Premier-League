@@ -21,7 +21,7 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 
 export function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <h2 className="t-label mb-2 px-1 text-xs text-black/50 dark:text-white/50">
+    <h2 className="t-label mb-2 px-1 text-xs text-muted">
       {children}
     </h2>
   );
@@ -32,8 +32,8 @@ export function Stat({ label, value, sub }: { label: string; value: ReactNode; s
   return (
     <div className="flex flex-col">
       <span className="t-display text-3xl font-bold tabular-nums">{value}</span>
-      <span className="mt-1 text-xs text-black/50 dark:text-white/50">{label}</span>
-      {sub ? <span className="text-xs text-black/40 dark:text-white/40">{sub}</span> : null}
+      <span className="mt-1 text-xs text-muted">{label}</span>
+      {sub ? <span className="text-xs text-muted">{sub}</span> : null}
     </div>
   );
 }

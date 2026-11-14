@@ -15,7 +15,7 @@ export const DEFAULT_PAGE_SIZE: PageSize = 50;
 const BTN =
   "press min-h-[30px] min-w-[30px] cursor-pointer rounded-full border px-2.5 py-[5px] text-xs font-semibold disabled:cursor-default disabled:opacity-40";
 const ON = "border-emerald-600 bg-emerald-600 text-white";
-const OFF = "border-black/10 text-black/55 dark:border-white/10 dark:text-white/60";
+const OFF = "border-black/10 text-muted dark:border-white/10";
 
 /** Clamp a page to the available range and return the slice bounds for it. */
 export function pageOf<T>(rows: T[], page: number, size: number) {
@@ -50,11 +50,11 @@ export function Pagination({
   return (
     <div className="flex flex-col gap-2.5 border-t border-black/[.06] pt-3 dark:border-white/[.06]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] tabular-nums text-black/55 dark:text-white/60">
+        <span className="text-[11px] tabular-nums text-muted">
           Showing {from + 1}–{to} of {total} {unit}
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="t-label text-[10px] text-black/55 dark:text-white/60">
+          <span className="t-label text-[10px] text-muted">
             per page
           </span>
           {SIZES.map((s) => (
@@ -76,7 +76,7 @@ export function Pagination({
           </button>
           {pageNumbers(current, pageCount).map((n, i) =>
             n === "gap" ? (
-              <span key={`gap${i}`} className="px-1 text-xs text-black/55 dark:text-white/60">…</span>
+              <span key={`gap${i}`} className="px-1 text-xs text-muted">…</span>
             ) : (
               <button
                 key={n}

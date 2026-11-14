@@ -51,7 +51,7 @@ export function ThemeToggle() {
       title="Toggle light / dark"
       aria-label="Toggle light or dark theme"
       // 30px of ink, 46px of target: `.tap` grows the hit area without moving the layout.
-      className="tap press grid h-[30px] w-[30px] flex-none place-items-center rounded-full border border-black/10 text-[13px] text-black/60 hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10 dark:text-white/60"
+      className="tap press grid h-[30px] w-[30px] flex-none place-items-center rounded-full border border-black/10 text-[13px] text-muted hover:border-emerald-600 hover:text-emerald-600 dark:border-white/10"
     >
       {/* empty until mounted so SSR/CSR markup matches */}
       <span suppressHydrationWarning>{theme === null ? "" : theme === "dark" ? "☀" : "☾"}</span>

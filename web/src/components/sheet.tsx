@@ -19,6 +19,7 @@
 // The drag lives in lib/use-sheet-drag.ts; here it is just wired to the panel.
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useDismissable } from "@/lib/use-dismissable";
 import { useSheetDrag } from "@/lib/use-sheet-drag";
 
@@ -97,7 +98,12 @@ export function Sheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dismiss]);
 
-  return (
+  // Into <body>, not wherever the sheet was opened. A `fixed` layer is fixed to the viewport
+  // only while no ancestor has a transform; the team dashboard keeps one from its fade-in, which
+  // shrank this "full-screen" layer to the dashboard's box and left the nav and footer bright and
+  // clickable behind an open sheet. A portal makes that impossible on every page at once.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <div
         className="sheet-backdrop absolute inset-0 bg-black/45 backdrop-blur-[2px]"
@@ -129,7 +135,8 @@ export function Sheet({
         </div>
         {children(dismiss)}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -139,7 +146,7 @@ export function SheetClose({ onClick }: { onClick: () => void }) {
     <button
       onClick={onClick}
       aria-label="Close"
-      className="tap press grid h-7 w-7 flex-none place-items-center rounded-full border border-black/10 text-black/50 hover:text-black dark:border-white/10 dark:text-white/50 dark:hover:text-white"
+      className="tap press grid h-7 w-7 flex-none place-items-center rounded-full border border-black/10 text-muted hover:text-black dark:border-white/10 dark:hover:text-white"
     >
       ✕
     </button>

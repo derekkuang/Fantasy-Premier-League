@@ -28,7 +28,7 @@ export default function PrivacyPage() {
           disk, never linked to you, and never shared.
         </P>
         <P>
-          Your <strong>light/dark theme choice</strong> is stored in your own browser&apos;s local
+          Your <strong>light/dark theme choice</strong>{" "}is stored in your own browser&apos;s local
           storage. It never leaves your device and is not a tracking cookie.
         </P>
       </S>

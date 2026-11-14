@@ -1,10 +1,10 @@
 "use client";
-// Predicted vs scored, this season, on the player sheet. A bar is what he scored; the emerald
-// tick is what this site published before that deadline, never recalculated with a later
-// model. Weeks we did not project him carry no tick and count in neither total. Weeks we
-// projected him for a club he had left say so (an out-of-date player list), rather than
-// passing that projection off as one for the match he played. Tap or hover a week for its
-// numbers; "Every gameweek" is the same data as a table.
+// Predicted vs scored, this season, inside the player sheet's "Season so far" section. A bar is
+// what he scored; the emerald tick is what this site published before that deadline, never
+// recalculated with a later model. Weeks we did not project him carry no tick and count in
+// neither total. Weeks we projected him for a club he had left say so (an out-of-date player
+// list), rather than passing that projection off as one for the match he played. Tap or hover
+// a week for its numbers; "Every gameweek" is the same data as a table.
 
 import { useState } from "react";
 import type { HistoryWeek } from "@/lib/api";
@@ -12,16 +12,32 @@ import { getClub } from "@/lib/clubs";
 
 const CHART_H = 88; // px
 
+/** The section header's summary, so the totals read without opening it. */
+export function seasonTotals(weeks: HistoryWeek[]): { predicted: number; scored: number; n: number } {
+  const projected = weeks.filter((w) => w.xp != null);
+  return {
+    predicted: projected.reduce((s, w) => s + (w.xp ?? 0), 0),
+    scored: projected.reduce((s, w) => s + w.pts, 0),
+    n: projected.length,
+  };
+}
+
+/** Home fixtures in capitals, away in lower case: the FPL convention, and no "(H)" to read. */
+export function oppLabel(opp: string, home: boolean): string {
+  const code = getClub(opp).shortCode;
+  return home ? code.toUpperCase() : code.toLowerCase();
+}
+
 function vsLabel(w: HistoryWeek): string | null {
   if (!w.vs.length) return null;
-  return w.vs.map((v) => `${getClub(v.opp).shortCode} (${v.home ? "H" : "A"})`).join(" + ");
+  return w.vs.map((v) => oppLabel(v.opp, v.home)).join(" + ");
 }
 
 function weekNote(w: HistoryWeek): string {
   const vs = vsLabel(w);
   return [
     `GW${w.gw}`,
-    ...(vs ? [`vs ${vs}`] : []),
+    ...(vs ? [`v ${vs}`] : []),
     w.xp == null
       ? "not projected"
       : `predicted ${w.xp.toFixed(1)}${w.as_club ? ` as a ${w.as_club} player` : ""}`,
@@ -30,29 +46,13 @@ function weekNote(w: HistoryWeek): string {
   ].join(" · ");
 }
 
-function Total({ label, value, emerald = false }: { label: string; value: string; emerald?: boolean }) {
-  return (
-    <div className="flex flex-col gap-0.5 rounded-[10px] border border-black/[.06] px-2 py-[7px] dark:border-white/[.06]">
-      <span
-        className="text-base font-bold leading-none tabular-nums"
-        style={emerald ? { color: "var(--emerald-text)" } : undefined}
-      >
-        {value}
-      </span>
-      <span className="text-[10px] text-black/40 dark:text-white/40">{label}</span>
-    </div>
-  );
-}
-
 export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
   const [active, setActive] = useState(weeks.length - 1);
   const shown = weeks[Math.min(active, weeks.length - 1)];
 
-  const projected = weeks.filter((w) => w.xp != null);
-  const predicted = projected.reduce((s, w) => s + (w.xp ?? 0), 0);
-  const scored = projected.reduce((s, w) => s + w.pts, 0);
+  const { predicted, scored, n } = seasonTotals(weeks);
   const diff = scored - predicted;
-  const wrongClub = projected.filter((w) => w.as_club);
+  const wrongClub = weeks.filter((w) => w.xp != null && w.as_club);
   const formerClubs = [...new Set(wrongClub.map((w) => w.as_club))].join(" / ");
 
   // One scale for both marks, from the lowest score (points can go negative) to the highest
@@ -65,37 +65,29 @@ export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
     weeks.length <= 12 || i === 0 || i === weeks.length - 1 || w.gw % 5 === 0;
 
   return (
-    <div className="flex flex-col gap-2">
-      {projected.length > 0 ? (
-        <div className="grid grid-cols-3 gap-1.5">
-          <Total
-            label={`predicted · ${projected.length} GW${projected.length === 1 ? "" : "s"}`}
-            value={predicted.toFixed(1)}
-            emerald
-          />
-          <Total label="scored, same weeks" value={String(scored)} />
-          <Total label="scored − predicted" value={`${diff >= 0 ? "+" : "−"}${Math.abs(diff).toFixed(1)}`} />
-        </div>
-      ) : (
-        <span className="text-[11px] leading-relaxed text-black/55 dark:text-white/60">
-          We didn&apos;t project him in any finished gameweek, so there is nothing to total yet.
-        </span>
-      )}
+    <div className="flex flex-col gap-2.5">
+      <p className="text-[13px] leading-relaxed">
+        {n > 0 ? (
+          <>
+            Over {n} gameweek{n === 1 ? "" : "s"} he scored{" "}
+            <strong className="tabular-nums">{diff >= 0 ? `${diff.toFixed(1)} more` : `${Math.abs(diff).toFixed(1)} fewer`}</strong>{" "}
+            points than we predicted.
+          </>
+        ) : (
+          "We didn't project him in any finished gameweek, so there is nothing to total yet."
+        )}
+      </p>
 
       {wrongClub.length > 0 && (
-        <span className="text-[11px] leading-relaxed text-[var(--amber-fg)]">
-          {/* one string: the compiler dropped the space after {formerClubs} in JSX text */}
+        <p className="text-[12px] leading-relaxed text-[var(--amber-fg)]">
           {`In ${wrongClub.length} of these weeks we projected him as a ${formerClubs} player, ` +
             "from an out-of-date player list, so those projections were for the wrong club's matches."}
-        </span>
+        </p>
       )}
 
       {/* the chart: one column per finalised gameweek */}
       <div className="flex flex-col gap-1">
-        {/* the scale, above the plot so a tall first bar can never run into it */}
-        <span className="text-[9px] leading-none tabular-nums text-black/40 dark:text-white/40">
-          top of chart {top} pts
-        </span>
+        <span className="text-[11px] leading-none tabular-nums text-muted">{`top of chart ${top} pts`}</span>
         <div className="relative" style={{ height: CHART_H }}>
           <div
             className="absolute inset-x-0 border-t border-black/15 dark:border-white/20"
@@ -144,7 +136,7 @@ export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
         </div>
         <div className="flex gap-[2px]" aria-hidden>
           {weeks.map((w, i) => (
-            <span key={w.gw} className="min-w-0 flex-1 text-center text-[9px] tabular-nums text-black/40 dark:text-white/40">
+            <span key={w.gw} className="min-w-0 flex-1 text-center text-[11px] tabular-nums text-muted">
               {labelled(w, i) ? w.gw : ""}
             </span>
           ))}
@@ -152,10 +144,10 @@ export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
       </div>
 
       {/* readout for the tapped week, then the legend */}
-      <p className="text-[11px] font-semibold tabular-nums" aria-live="polite">
+      <p className="text-[12px] font-semibold tabular-nums" aria-live="polite">
         {weekNote(shown)}
       </p>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-black/55 dark:text-white/60">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-muted">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2.5 w-2 rounded-t-[2px] bg-black/30 dark:bg-white/35" />
           scored
@@ -167,14 +159,12 @@ export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
       </div>
 
       <details>
-        <summary className="cursor-pointer text-[11px] font-semibold text-black/55 dark:text-white/60">
-          Every gameweek
-        </summary>
-        <table className="mt-1 w-full text-[11px] tabular-nums">
+        <summary className="cursor-pointer text-[12px] font-semibold text-muted">Every gameweek</summary>
+        <table className="mt-1 w-full text-[12px] tabular-nums">
           <thead>
-            <tr className="text-[10px] text-black/40 dark:text-white/40">
+            <tr className="text-[11px] text-muted">
               <th className="py-1 text-left font-normal">GW</th>
-              <th className="py-1 text-left font-normal">vs</th>
+              <th className="py-1 text-left font-normal">v</th>
               <th className="py-1 text-right font-normal">predicted</th>
               <th className="py-1 text-right font-normal">scored</th>
               <th className="py-1 text-right font-normal">mins</th>
@@ -187,7 +177,7 @@ export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
                 <td className="py-[5px] font-mono">{vsLabel(w) ?? "–"}</td>
                 <td className="py-[5px] text-right">
                   {w.xp == null ? (
-                    <span className="text-black/40 dark:text-white/40">not projected</span>
+                    <span className="text-muted">not projected</span>
                   ) : (
                     <>
                       {w.xp.toFixed(1)}
@@ -202,16 +192,14 @@ export function SeasonHistory({ weeks }: { weeks: HistoryWeek[] }) {
           </tbody>
         </table>
         {wrongClub.length > 0 && (
-          <p className="mt-1 text-[10px] text-black/40 dark:text-white/40">
-            {`† projected as a ${formerClubs} player`}
-          </p>
+          <p className="mt-1 text-[12px] text-muted">{`† projected as a ${formerClubs} player`}</p>
         )}
       </details>
 
-      <p className="text-[10px] leading-relaxed text-black/40 dark:text-white/40">
-        Predicted is exactly what this site published before each deadline, never recalculated,
-        so earlier weeks show earlier versions of the model. One week says little: a 4-point
-        projection often ends 1 or 13. The totals are the fairer read.
+      <p className="text-[12px] leading-relaxed text-muted">
+        These are the projections this site published before each deadline, never recalculated,
+        so earlier weeks show earlier versions of the model. One week says little; the total is
+        the fairer read.
       </p>
     </div>
   );
