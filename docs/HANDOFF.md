@@ -93,6 +93,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **36** | **player rates should update in-season; recent form adds nothing** |
 | **37** | **predicted vs scored on the player sheet, as published** |
 | **38** | **the UI, simplified: answers first, the working one tap away** |
+| **39** | **team news only: an allowlist, not a blocklist, and FPL's flags first** |
 
 ---
 
@@ -2957,3 +2958,40 @@ a value or a tag needs an apostrophe, use a template string or an explicit `{" "
 - **Bright controls in dark mode.** With no `color-scheme: dark`, scrollbars, checkboxes and sliders rendered light.
 - **The page shifted sideways when a sheet opened.** `scrollbar-gutter: stable` fixes it.
 - **Controls and widths.** Mode switches share one segmented control (positions, fixture window and view, captain mode, horizon). News and the model page use a reading width.
+
+## 39. Team news only: an allowlist, not a blocklist, and FPL's flags first (2026-11-14)
+
+The news page still carried stories no FPL manager needs: the Christmas bear's name, shop sales,
+stadium tours, quizzes, shirt auctions, award votes. §38's blocklist (women's, youth, tickets,
+programme) could never keep up, because there is always another kind of junk. Of the 120 stories
+on the page on 14 Nov, about 8 were team news.
+
+**The rule (`fpledge/news_filter.py`).** A story stays only when its HEADLINE carries an
+availability or selection signal (injury, suspension, return, team news / line-up / press
+conference, manager change) and it is about the first team: it names a current player from that
+club, it is a team-news piece, or it is a manager change. Whole words only; anything about
+women's or youth sides is dropped even when a name matches (Lauren James is not Reece James).
+Only the last 7 days. Reworded copies of one story merge ("Carrick sacked by Manchester United"
+from the BBC and the Guardian). The old keyword cues matched fragments anywhere ("rest" in
+"Forest", "ban" in "urban") and agreed with FPL 24% of the time. The old name matcher skipped
+names under four letters, so it never found Tel.
+
+**Measured on the collected corpus, 14 Nov:**
+- Of 811 stories from the last week, 29 are team news: injuries and withdrawals (Manzambi,
+  Xhaka, Brobbey, Guéhi, Gvardiol), Thiago's failed appeal, confirmed line-ups, press
+  conferences, and the Man Utd and Palace manager changes.
+- Of the 11 injury and suspension stories that name a player, 7 name one FPL has flagged
+  itself. The other four were a disciplinary absence, an international-duty doubt, an
+  old-injury interview and a red-card debate.
+
+**The page.** Availability first: `flagged` in the digest is FPL's own list of doubtful,
+injured and suspended players (85 on 14 Nov; "unavailable" is left out because it is mostly
+loans), most-owned first, in FPL's words, with any story about each player underneath. Then
+the week's team news, labelled Injury / Suspension / Return / Team news / Manager. A saved squad
+narrows both to your players. The phone page went from about 6 screens (everything shown) to
+about 3 (8 flagged players and 10 stories, each with "Show all").
+
+`build_digest(..., team_news_only=True, bootstrap=boot)` is the page's mode; without it the
+digest keeps its older shape for analysis. `.github/workflows/capture-news.yml` runs a capture
+on demand (the Lambda still runs at 06/12/18 UTC).
+

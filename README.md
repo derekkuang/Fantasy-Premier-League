@@ -149,7 +149,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 642 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 654 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -243,7 +243,7 @@ recovered.
 | `/team/[id]` | A manager's dashboard: pitch, captain (compare folded), best transfer, squad health; the advisor shows only when it's switched on. `/team/0` is the demo squad |
 | `/players` | Every player, with views (All, Low owned, Budget, Penalty takers, Next 8 weeks) and a Filters sheet. `/predictions` and `/differentials` redirect here |
 | `/fixtures` | Up to 8 gameweeks of true FDR, one number per fixture; attack and defence one tap away |
-| `/news` | Team-news digest (beta), one collapsed row per club, first-team stories only |
+| `/news` | FPL's injured, doubtful and suspended players (most-owned first), then the week's team news; everything else is filtered out |
 | `/model` | This season's live record against FPL's own forecast; last season's test, experiments and limits folded below |
 | `/privacy` · `/terms` | Legal |
 
@@ -273,7 +273,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 642 tests
+make test       # 654 tests
 make lint
 ```
 
@@ -435,6 +435,6 @@ while the artifact reported the market as used.
 
 | doc | read it for | note |
 | --- | --- | --- |
-| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 38 numbered sections | Start with its section map, then §16, §24, §27 and §32–§38. Its header and §1–§4 describe the pre-deploy state of early August |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Every finding, retraction and decision, in 39 numbered sections | Start with its section map, then §16, §24, §27 and §32–§39. Its header and §1–§4 describe the pre-deploy state of early August |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | The runbook: schedules, alarms, smoke tests, key rotation | The cloud section is current; the launchd and cron sections are from the laptop era |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | The live API's configuration and how to ship it | The "blocking list" at the top predates the deploy |
