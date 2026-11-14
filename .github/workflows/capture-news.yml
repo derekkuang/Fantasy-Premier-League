@@ -1,0 +1,57 @@
+# Capture team news now, on demand.
+#
+# The news capture runs on its own schedule in AWS (06:00, 12:00 and 18:00 UTC, the fpledge-news
+# Lambda). This is the manual button for the times that isn't soon enough: after a change to how
+# the digest is built, or on deadline day after a late press conference. Same script, same S3
+# raw zone and serving store, so the result is indistinguishable from a scheduled run.
+#
+# Manual only. A capture on every push would hit the publishers' feeds for nothing (see ci.yml).
+
+name: Capture news
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC: the job exchanges its GitHub identity for the AWS role — no stored keys
+  contents: read
+
+concurrency:
+  group: capture-news
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    env:
+      FPLEDGE_RAW_URI: s3://fpledge-data-546712138633/raw
+      FPLEDGE_SERVING_URI: s3://fpledge-data-546712138633/serving
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[aws]"
+
+      - name: Assume the deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::546712138633:role/fpledge-gha
+          aws-region: us-east-1
+
+      - name: Capture and rebuild the digest
+        run: python scripts/capture_news.py
+
+      - name: The live API serves it
+        # The store caches for 60s. Require a digest built in this run, in the page's format.
+        run: |
+          sleep 70
+          curl -fsS --compressed --max-time 60 "https://wdvmpi4xw6.execute-api.us-east-1.amazonaws.com/news" \
+            | python -c "import json,sys,datetime; d=json.load(sys.stdin); age=(datetime.datetime.now(datetime.UTC)-datetime.datetime.fromisoformat(d['generated_at'])).total_seconds(); print('generated', d['generated_at'], 'flagged', len(d.get('flagged') or []), 'filter', d.get('filter')); sys.exit(0 if age < 900 and 'flagged' in d else 1)"
