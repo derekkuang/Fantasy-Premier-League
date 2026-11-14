@@ -6,7 +6,7 @@ import pytest
 
 from fpledge.api import store
 from fpledge.api.precompute import build_payload
-from fpledge.history import player_history, published_in_window
+from fpledge.history import live_record, player_history, published_in_window, spearman
 
 DEADLINES = {1: "2026-08-21T17:30:00Z", 2: "2026-08-29T10:00:00Z", 3: "2026-09-05T10:00:00Z"}
 
@@ -128,7 +128,68 @@ def test_the_refresh_reads_the_stored_artifacts_users_saw(_serving_tmp, monkeypa
         "fixture_teams": FIXTURES, "club_of": CLUB_OF,
     }
     monkeypatch.setattr("fpledge.api.precompute.assemble_for_serving", lambda gw, horizon=8: out)
+    monkeypatch.setattr("fpledge.api.precompute._fpl_forecasts", dict)
     payload = build_payload(3, narrate=False)
     assert payload["records"][0]["history"] == [
         {"gw": 2, "xp": 4.0, "pts": 9, "mins": 90, "vs": [{"opp": "Fulham", "home": True}],
          "as_club": None}]
+
+
+# --- the live record on the model page ------------------------------------------------------- #
+def _week(n=12, played=True):
+    """A gameweek where projection i scored i points: a perfect ranking."""
+    recs = [_rec(i, float(i)) for i in range(1, n + 1)]
+    live = _live(*[(i, i, 90 if played else 0) for i in range(1, n + 1)])
+    return recs, live
+
+
+def test_spearman_handles_ties_and_matches_a_known_value():
+    assert spearman([1, 2, 3, 4], [1, 2, 3, 4]) == 1.0
+    assert spearman([1, 2, 3, 4], [4, 3, 2, 1]) == -1.0
+    assert abs(spearman([1, 2, 2, 3], [1, 3, 2, 4]) - 0.9487) < 1e-4
+    assert spearman([1, 2], [1, 2]) is None
+
+
+def test_ours_is_scored_on_players_who_played_and_fpl_on_the_same_players():
+    recs, live = _week()
+    published = {2: _artifact("2026-08-28T12:00:00Z", recs)}
+    fpl = {(2, i): float(13 - i) for i in range(1, 13)}            # FPL got the order backwards
+    got = live_record(published, {2: live}, DEADLINES, fpl)
+    week = got["gws"][0]
+    assert week["n"] == 12 and week["ours"]["rho"] == 1.0 and week["fpl"]["rho"] == -1.0
+    assert got["summary"] == {"gws_compared": 1, "ours_rho": 1.0, "fpl_rho": -1.0, "ours_ahead": 1}
+
+
+def test_thin_fpl_coverage_leaves_fpl_out_rather_than_scoring_a_different_set():
+    recs, live = _week()
+    published = {2: _artifact("2026-08-28T12:00:00Z", recs)}
+    got = live_record(published, {2: live}, DEADLINES, {(2, 1): 1.0, (2, 2): 2.0})
+    assert got["gws"][0]["fpl"] is None and got["gws"][0]["n"] == 12 and got["summary"] is None
+
+
+def test_a_week_published_after_its_deadline_is_left_out():
+    recs, live = _week()
+    late = {2: _artifact("2026-08-29T12:00:00Z", recs)}
+    assert live_record(late, {2: live}, DEADLINES)["gws"] == []
+
+
+def test_the_refresh_publishes_the_record_beside_the_gameweek_not_inside_it(_serving_tmp, monkeypatch):
+    from fpledge.api.precompute import run
+
+    recs, live = _week()
+    store.write_gw(2, _artifact("2026-08-28T12:00:00Z", recs))
+    out = {
+        "records": [{"element_id": i, "xp": 5.0, "team_id": i % 20, "web_name": f"p{i}",
+                     "team_name": "A", "position": "MID", "price": 5.0, "ownership": 1.0}
+                    for i in range(500)],
+        "matches": [], "fallback": [], "fpl_teams": TEAMS, "fixture_ticker": {},
+        "source_report": {}, "live": {2: live}, "deadlines": DEADLINES,
+        "fixture_teams": FIXTURES, "club_of": CLUB_OF,
+    }
+    monkeypatch.setattr("fpledge.api.precompute.assemble_for_serving", lambda gw, horizon=8: out)
+    monkeypatch.setattr("fpledge.api.precompute._fpl_forecasts", dict)
+    result = run(3, narrate=False, allow_degraded=True)
+    assert result["published"]
+    assert "live_record" not in store.read_gw(3)
+    assert store.read_artifact("live_record.json")["gws"][0]["gw"] == 2
+

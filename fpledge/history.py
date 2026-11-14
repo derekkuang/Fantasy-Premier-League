@@ -85,3 +85,82 @@ def player_history(published: Mapping[int, Mapping], live_by_gw: Mapping[int, Ma
                             if vs and projected_for is not None and projected_for != club else None),
             })
     return out
+
+
+# --- the site's own record, week by week (the model page) ------------------------------------ #
+MIN_FPL_SHARE = 0.8   # FPL's forecast must cover this share of the scored players to be compared
+
+
+def _ranks(xs: list[float]) -> list[float]:
+    order = sorted(range(len(xs)), key=lambda i: xs[i])
+    out = [0.0] * len(xs)
+    i = 0
+    while i < len(xs):
+        j = i
+        while j + 1 < len(xs) and xs[order[j + 1]] == xs[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            out[order[k]] = (i + j) / 2 + 1     # ties share their average rank
+        i = j + 1
+    return out
+
+
+def spearman(a: list[float], b: list[float]) -> float | None:
+    """Rank correlation without numpy, so the precompute's import path stays light."""
+    if len(a) < 3:
+        return None
+    ra, rb = _ranks(a), _ranks(b)
+    ma, mb = sum(ra) / len(ra), sum(rb) / len(rb)
+    cov = sum((x - ma) * (y - mb) for x, y in zip(ra, rb, strict=True))
+    va = sum((x - ma) ** 2 for x in ra)
+    vb = sum((y - mb) ** 2 for y in rb)
+    return cov / (va * vb) ** 0.5 if va and vb else None
+
+
+def _score(pred: list[float], actual: list[int]) -> dict:
+    rho = spearman(pred, actual)
+    mae = sum(abs(p - a) for p, a in zip(pred, actual, strict=True)) / len(pred)
+    return {"rho": None if rho is None else round(rho, 4), "mae": round(mae, 3)}
+
+
+def live_record(published: Mapping[int, Mapping], live_by_gw: Mapping[int, Mapping],
+                deadlines: Mapping[int, str], fpl_forecasts: Mapping | None = None) -> dict:
+    """How what we published ranked the players who then played, gameweek by gameweek.
+
+    Scored on players we projected who got minutes, the same rule as every accuracy figure on
+    the site. Where this site captured FPL's own forecast before the deadline for at least
+    MIN_FPL_SHARE of those players, both are scored on exactly the players FPL covered;
+    otherwise FPL is None and ours stands alone. A gameweek with no artifact published inside
+    its own window is left out, never estimated.
+    """
+    fpl_forecasts = fpl_forecasts or {}
+    weeks = []
+    for gw in sorted(live_by_gw):
+        artifact = published.get(gw)
+        if artifact is None or not published_in_window(artifact, gw, deadlines):
+            continue
+        ours = {r["element_id"]: float(r["xp"]) for r in artifact.get("records", [])}
+        played = [(el["id"], int(el["stats"].get("total_points") or 0))
+                  for el in live_by_gw[gw].get("elements", [])
+                  if el["id"] in ours and int((el.get("stats") or {}).get("minutes") or 0) > 0]
+        if len(played) < 10:
+            continue
+        covered = [(i, pts) for i, pts in played if (gw, i) in fpl_forecasts]
+        if len(covered) >= MIN_FPL_SHARE * len(played):
+            rows = covered
+            fpl = _score([float(fpl_forecasts[(gw, i)]) for i, _ in rows], [p for _, p in rows])
+        else:
+            rows, fpl = played, None
+        weeks.append({"gw": gw, "n": len(rows),
+                      "ours": _score([ours[i] for i, _ in rows], [p for _, p in rows]),
+                      "fpl": fpl})
+    both = [w for w in weeks if w["fpl"] and w["fpl"]["rho"] is not None and w["ours"]["rho"] is not None]
+    summary = None
+    if both:
+        summary = {
+            "gws_compared": len(both),
+            "ours_rho": round(sum(w["ours"]["rho"] for w in both) / len(both), 4),
+            "fpl_rho": round(sum(w["fpl"]["rho"] for w in both) / len(both), 4),
+            "ours_ahead": sum(w["ours"]["rho"] > w["fpl"]["rho"] for w in both),
+        }
+    return {"gws": weeks, "summary": summary}

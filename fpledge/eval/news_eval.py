@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -179,6 +180,32 @@ DIGEST_ITEM_CAP = 6          # per club, newest first
 DIGEST_SUMMARY_CHARS = 320
 
 
+# Stories an FPL manager has no use for: the women's and youth sides, tickets, the matchday
+# programme. Measured on the live digest of 14 Nov 2026, about a third of the items matched, and
+# none of those named a current FPL player. The rule only drops an item that names no FPL player,
+# so a first-team story that happens to mention the academy is kept.
+_OFF_TOPIC = re.compile(
+    r"\b(women|women's|wsl|wsl2|u1[5-9]s?|u2[0-3]s?|under-?\d\d|academy|pl2|youth cup|"
+    r"tickets?|programme|hospitality|membership|retail|kit launch)\b",
+    re.IGNORECASE,
+)
+
+
+def off_topic(item: dict) -> bool:
+    """True for a story about something other than the first team, that names no FPL player."""
+    if item.get("mentions"):
+        return False
+    text = f"{item.get('title') or ''} {item.get('summary') or ''}"
+    return bool(_OFF_TOPIC.search(text))
+
+
+def _story_key(item: dict) -> str:
+    """The same story reaches us from a club's site and from the Premier League's feed, with the
+    same link. Key on the link without its query string, or on the title when there is none."""
+    link = (item.get("link") or "").split("?")[0].rstrip("/").lower()
+    return link or " ".join((item.get("title") or "").lower().split())
+
+
 def parse_published(value: str) -> datetime | None:
     """RFC-822 or ISO-8601 -> datetime. None when absent or unparseable, never a guess.
 
@@ -239,6 +266,8 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
         club = it.get("club") or "?"
         if allowed is not None and club not in allowed:
             continue
+        if off_topic(it):
+            continue
         by_club.setdefault(club, []).append(it)
 
     clubs = {}
@@ -248,12 +277,24 @@ def build_digest(items: list[dict], labels: dict, generated_at: str,
     for club, rows in by_club.items():
         rows = sorted(rows, key=lambda r: parse_published(r.get("published")) or oldest,
                       reverse=True)
+        # One entry per story, newest copy first, carrying every publisher that ran it.
+        stories: dict = {}
+        for r in rows:
+            key = _story_key(r)
+            if key in stories:
+                src = r.get("source")
+                if src and src not in stories[key]["sources"]:
+                    stories[key]["sources"].append(src)
+                continue
+            stories[key] = {"row": r, "sources": [r["source"]] if r.get("source") else []}
         out = []
-        for r in rows[:DIGEST_ITEM_CAP]:
+        for story in list(stories.values())[:DIGEST_ITEM_CAP]:
+            r = story["row"]
             out.append({
                 "title": r.get("title"),
                 "summary": _shorten(r.get("summary")),
                 "source": r.get("source"),
+                "sources": story["sources"],
                 "link": r.get("link"),
                 "published": r.get("published"),
                 "cues": r.get("cues") or [],

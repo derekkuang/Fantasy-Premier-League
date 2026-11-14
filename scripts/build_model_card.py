@@ -33,6 +33,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from fpledge.api import MODEL_VER, store
 from fpledge.eval.fpl_backtest import validate_xp
 from fpledge.ingest import vaastav
+from fpledge.model_notes import EXPERIMENTS, METHOD, NOT_MODELLED
 
 # 2024-25, not the latest season, because the comparison is only as good as FPL's side of it.
 # The clean pre-deadline baseline covers 29 of 30 scored gameweeks there and 4 in 2025-26
@@ -43,111 +44,8 @@ SEASON = sys.argv[1] if len(sys.argv) > 1 else "2024-25"
 # straight off local disk — present on the machine that built it and nowhere else.
 ARTIFACT = "model_card.json"
 
-# --- recorded experiments ------------------------------------------------------------- #
-# Every A/B that has been run against the validation harness, kept whether it worked or not.
-# The nulls are the point: a list containing only wins is a marketing page, not a model card.
-EXPERIMENTS = [
-    {
-        "name": "Recency-weighted minutes",
-        "question": "Does weighting recent appearances beat a season-long average?",
-        "delta": "+0.064 all-players per-GW Spearman (0.669 → 0.733)",
-        "verdict": "kept",
-        "measured": "2026-07-26",
-    },
-    {
-        "name": "Recency-weighted xG/xA",
-        "question": "Same idea, applied to attacking rates instead of minutes.",
-        "delta": "+0.002 played-only per-GW Spearman",
-        "verdict": "null — attacking form is not the gap",
-        "measured": "2026-07-26",
-    },
-    {
-        "name": "Returns-based expected bonus",
-        "question": "Estimate bonus from goal/assist involvement rather than a flat rate.",
-        "delta": "+0.002 played-only per-GW Spearman",
-        "verdict": "null",
-        "measured": "2026-07-27",
-    },
-    {
-        "name": "LightGBM points model",
-        "question": "Can a gradient booster learn single-gameweek points better than the structured model?",
-        "delta": "structured 0.320 vs LGBM-regression 0.277 vs LGBM-rank 0.244",
-        "verdict": "rejected — the learned model is WORSE; single-GW points are too noisy "
-                   "and the public feature set too thin, so it fits the noise",
-        "measured": "2026-07-27",
-    },
-    {
-        "name": "Goals-conceded penalty for GK/DEF",
-        "question": "Does modelling the −1 per 2 conceded help?",
-        "delta": "+0.009 played-only per-GW Spearman",
-        "verdict": "kept",
-        "measured": "2026-07-30",
-    },
-    {
-        "name": "Market-implied lambdas",
-        "question": "Blend de-vigged betting odds into the match model's expected goals.",
-        "delta": "+0.0085 played-only per-GW Spearman",
-        "verdict": "kept — dormant in preseason, activates when books post lines",
-        "measured": "2026-07-31",
-    },
-]
-
-# --- the honest limits ---------------------------------------------------------------- #
-NOT_MODELLED: dict[str, str] = {
-    "Price changes": (
-        "There is no price-change forecast here. The site shows what prices HAVE done, "
-        "never what they will do."
-    ),
-    "True effective ownership": (
-        "Ownership is `selected_by_percent` — how many managers own a player, not how many "
-        "captain them. Every differential and captain figure inherits that approximation."
-    ),
-    "Chip timing": (
-        "Wildcard, Bench Boost, Triple Captain and Free Hit are not simulated."
-    ),
-    "Multi-gameweek planning": (
-        "The optimiser maximises a single gameweek. It will not tell you to take a worse "
-        "week now for a better run later."
-    ),
-    "Bench order and auto-subs": (
-        "The bench is ranked but auto-substitution is not simulated, so a projection "
-        "assumes your XI plays."
-    ),
-    "Promoted and low-data clubs": (
-        "Clubs without enough history get a prior instead of estimated attacking shares, "
-        "and are excluded from rankings rather than shown with a made-up number."
-    ),
-    "Team news beyond the official flag": (
-        "Availability comes from FPL's own status field. A press-conference hint that "
-        "hasn't reached the API has not reached this model either."
-    ),
-    "Where a team attacks": (
-        "Shot-location and defensive-duel data would need Opta-grade inputs. The Understat "
-        "approximation is built but its fetch adapters are currently broken upstream."
-    ),
-}
-
-METHOD = {
-    "engine": "Dixon-Coles, fitted from scratch by maximum likelihood with time decay — not a "
-              "library import. It emits a full scoreline probability matrix per fixture; every "
-              "downstream number (clean sheet, BTTS, FDR) is a sum over that matrix.",
-    "xp": "Expected points is a structured expected-value calculation, not a learned regressor: "
-          "each scoring category is modelled separately and the terms sum to the total. That is "
-          "why every projection on the site can be opened up and read term by term.",
-    "validation": "Walk-forward on a completed season. For gameweek N the model sees only "
-                  "gameweeks before N — rolling rates and a match engine refit on earlier "
-                  "fixtures — then is scored against what actually happened. A leakage test "
-                  "guards the boundary.",
-    "metric": "Per-gameweek Spearman rank correlation against realised points, averaged over "
-              "gameweeks. Rank correlation rather than error, because picking a squad is a "
-              "ranking problem: what matters is the ORDER, not the absolute points.",
-    "baseline": "FPL's own published expected points for the gameweek, taken from the `xP` "
-                "column of the community dataset and scored on exactly the same players in "
-                "exactly the same gameweeks as ours. IMPORTANT: that column is not populated "
-                "for every gameweek — a gameweek only counts here when BOTH projections exist "
-                "for it, and `baseline_gws` says how many did. A thin baseline is reported as "
-                "thin rather than averaged around.",
-}
+# What we tried, what the model doesn't know and how it works live in fpledge/model_notes.py,
+# so the page's text can be corrected without rebuilding the measured card.
 
 
 def _r(x, n=3):
