@@ -97,6 +97,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
 | **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
 | **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
+| **43** | **cards and forwards' assists stopped at development; played-only scoring is biased against downward terms** |
 
 ---
 
@@ -3236,3 +3237,43 @@ top tens barely change; rotation-risk players with high defensive rates rise. Fo
 
 **What it leaves.** The split leans on `p_60` from the recent-minutes model, which is E6 in
 `docs/MODEL_FIXES.md`. A start-probability model will sharpen this term too.
+
+## 43. Cards and forwards' assists: stopped at development, and what the test itself got wrong (2026-11-14)
+
+**The test** (`fpledge/eval/cards_assists.py`, rule committed in `58862a6` before any run): a card
+term, -(yellows + 3 x reds per 90) x expected minutes / 90, with each rate blended towards last
+season's position rate; and a per-position factor on assist shares. Scored by squared error of
+total points over players who played, with the all-player Spearman guard. Held-out season
+2022-23, never reached.
+
+Development, 2023-24 to 2025-26. Assist factors measured: defenders 0.78, midfielders 0.84,
+forwards 1.32. Card k: the position rate alone (k = inf) had the lowest squared error of the grid.
+
+| candidate | squared error change [95%] | all-player ρ change [95%] |
+|---|---|---|
+| cards (position rate) | +0.0065 [-0.0040, +0.0165] | **+0.0012 [+0.0007, +0.0017]** |
+| assists | -0.0014 [-0.0079, +0.0046] | +0.0001 [-0.0002, +0.0005] |
+| cards + assists | +0.0175 [+0.0025, +0.0317] | +0.0011 [+0.0005, +0.0018] |
+
+Rule 4 chose assists (lowest squared error), which beat production in 2024-25 only (+0.0003,
+-0.0111, +0.0066). **Stopped: production stays, and 2022-23 is still unspent for both terms.**
+
+**What the test got wrong.** Scoring only players who played is biased against any term that
+lowers projections. A projection is an expectation over playing and not playing; the rows scored
+are the ones where he played. So on those rows every outfield position already comes out under
+by about 0.3 a game (defenders +0.31, midfielders +0.27, forwards +0.34; keepers, who nearly always
+play when projected, +0.06), while over every projected row the §41 audit has the model *over* by
+about the size of the missing cards. A card term moves the all-rows number towards zero and the
+played-rows number away from it, and squared error on played rows reads that as worse. The same
+effect is why rate+floor's keeper bias in §41 read +0.35. Every earlier test used played rows
+too; their ranking guard is unaffected (a rank correlation within a gameweek does not care about
+a level shift), but their accuracy halves are biased against downward terms.
+
+The cards' ranking gain (+0.0012, interval above zero) is real on these seasons, and it went
+nowhere because rule 4 chose by squared error. **A rerun under all-rows scoring is a change of
+standard after a failure, so it waits for the user's decision**, and if made it must be
+pre-registered with 2022-23 as the held-out.
+
+**Keeper save rounding (E5) is parked.** FPL's per-match rounding takes 0.30-0.34 save points
+off a keeper whatever his save volume (1.5 to 5 expected saves). A uniform shift changes no
+keeper's rank and no pick; it would only make keeper totals honest. Not worth a test on its own.
