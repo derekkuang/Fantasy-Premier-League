@@ -14,9 +14,10 @@ from __future__ import annotations
 import math
 import statistics
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 
+from .. import config
 from ..models import saves as saves_model
 from ..models.dixon_coles import DixonColesModel
 from ..models.minutes import RECENT_GWS, MinutesModel
@@ -28,6 +29,8 @@ from ..models.xpoints import (
     expected_bonus,
     expected_conceded_penalty,
     expected_points,
+    expected_points_breakdown,
+    expected_save_points,
 )
 
 
@@ -91,7 +94,8 @@ class _OracleMinutes:
         self.p_60 = 1.0 if minutes >= 60 else 0.0
 
 
-def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes):
+def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes,
+             per_goal=config.SAVES_PER_EXPECTED_GOAL):
     """Expected saves under the selected model.
 
     "lambda" is the shipped behaviour: saves proportional to expected goals conceded, which
@@ -110,7 +114,7 @@ def _x_saves(pos, mode, rates, team_id, opp_id, opp_lambda, x_minutes):
             # "lambda") times THIS fixture's opponent strength from the engine (absent from
             # "shots", which only knows the opponent's season-long average).
             return rates.expected_saves_vs_lambda(team_id, opp_lambda, x_minutes)
-    return opp_lambda * 3.0 * (x_minutes / 90.0)
+    return opp_lambda * per_goal * (x_minutes / 90.0)
 
 
 def validate_xp(
@@ -133,6 +137,9 @@ def validate_xp(
     prior_rates: dict | None = None,
     prior_k: float | None = None,
     rate_half_life: float | None = None,
+    saves_per_goal: float = config.SAVES_PER_EXPECTED_GOAL,
+    save_points_mode: str = "linear",
+    breakdown_sink: Callable[[int, int, dict, dict], None] | None = None,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
 
@@ -145,6 +152,13 @@ def validate_xp(
 
     With return_records=True, also returns the raw (gw, element, my_xp, fpl_xp, actual, pos)
     tuples — used by the point-in-time leakage test.
+
+    KEEPER SAVES (HANDOFF §41). `saves_per_goal` is the expected saves per goal the opponent is
+    expected to score ("lambda" mode only). `save_points_mode` "linear" scores x_saves / 3, as
+    production always has; "floor" applies FPL's per-match rounding (`expected_save_points`).
+
+    `breakdown_sink(gw, element, row, breakdown)`, when given, receives every fixture's
+    `expected_points_breakdown`, for audits of one term at a time. It changes no number.
 
     THE BASELINE IS `fpl_xp_prev`, NOT `fpl_xp`. The shipped `xP` column is scraped after the
     gameweek and absorbs that gameweek's points through FPL's `form` average, so scoring
@@ -317,12 +331,18 @@ def validate_xp(
                         )
                     else:
                         x_bonus = expected_bonus(bon90, mp.x_minutes)
+                    x_saves = _x_saves(
+                        pos, saves_mode, saves_rates, tid, opp, opp_lam, mp.x_minutes,
+                        saves_per_goal,
+                    )
                     ctx = PlayerContext(
                         position=pos, p_play=mp.p_play, p_60=mp.p_60, team_lambda=lam,
                         goal_share=sh["goal_share"], assist_share=sh["assist_share"],
                         p_clean_sheet=p_cs,
-                        x_saves=_x_saves(
-                            pos, saves_mode, saves_rates, tid, opp, opp_lam, mp.x_minutes
+                        x_saves=x_saves,
+                        x_save_points=(
+                            expected_save_points(x_saves, mp.x_minutes)
+                            if pos == "GK" and save_points_mode == "floor" else None
                         ),
                         p_dc_point=p_dc, x_bonus=x_bonus,
                         opp_lambda=opp_lam,
@@ -332,6 +352,8 @@ def validate_xp(
                         ),
                     )
                     my_xp += expected_points(ctx)
+                    if breakdown_sink is not None:
+                        breakdown_sink(n, el, r, expected_points_breakdown(ctx))
                     scored = True
                 if scored:
                     # Three cases, kept distinct on purpose:

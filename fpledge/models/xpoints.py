@@ -33,6 +33,9 @@ class PlayerContext:
     x_bonus: float = 0.0   # expected bonus points
     opp_lambda: float = 0.0  # opponent expected goals (for the goals-conceded penalty)
     x_conceded_penalty: float = 0.0  # expected goals-conceded points (<= 0), GK/DEF only
+    # Expected save points, when the caller computed them with FPL's per-match rounding
+    # (`expected_save_points`). None keeps the old linear x_saves / 3.
+    x_save_points: float | None = None
 
 
 def expected_points_breakdown(ctx: PlayerContext) -> dict:
@@ -58,8 +61,13 @@ def expected_points_breakdown(ctx: PlayerContext) -> dict:
     cs_points = ctx.p_clean_sheet * ctx.p_60 * config.CLEAN_SHEET_POINTS[pos]
     # Goals conceded: GK/DEF lose 1 point per 2 conceded while on the pitch (not 60-gated).
     conceded_points = ctx.x_conceded_penalty if pos in ("GK", "DEF") else 0.0
-    # Goalkeeping saves (1 point per 3)
-    save_points = ctx.x_saves / config.SAVES_PER_POINT if pos == "GK" else 0.0
+    # Goalkeeping saves (1 point per 3 in a match)
+    if pos != "GK":
+        save_points = 0.0
+    elif ctx.x_save_points is not None:
+        save_points = ctx.x_save_points
+    else:
+        save_points = ctx.x_saves / config.SAVES_PER_POINT
     # 2025/26 Defensive Contribution (+2 if threshold hit)
     dc_points = ctx.p_dc_point * config.DC_POINTS
     # Expected bonus points
@@ -133,6 +141,24 @@ def expected_conceded_penalty(opp_lambda: float, x_minutes: float, max_terms: in
     frac = max(0.0, min(x_minutes / 90.0, 1.0))
     e_units = sum(_poisson_sf(per * k, max(opp_lambda, 0.0)) for k in range(1, max_terms + 1))
     return -e_units * frac
+
+
+def expected_save_points(x_saves: float, x_minutes: float, max_terms: int = 10) -> float:
+    """Expected save points for a keeper, with FPL's rounding.
+
+    FPL pays 1 point per 3 saves IN A MATCH, rounded down, so two saves earn nothing. With the
+    match's saves S ~ Poisson(m), the points are floor(S / 3), whose mean is
+    sum_{k>=1} P(S >= 3k): the same construction as `expected_conceded_penalty`. `x_saves` is
+    already scaled by expected time on the pitch, so m = x_saves / (x_minutes / 90) and the
+    result is scaled back. x_saves / 3 ignores the rounding and overstates a keeper who makes
+    about three saves a game by roughly half (HANDOFF §41).
+    """
+    per = config.SAVES_PER_POINT
+    frac = max(0.0, min(x_minutes / 90.0, 1.0))
+    if frac <= 0.0 or x_saves <= 0.0:
+        return 0.0
+    m = x_saves / frac
+    return frac * sum(_poisson_sf(per * k, m) for k in range(1, max_terms + 1))
 
 
 def expected_bonus(bonus_per90: float, x_minutes: float) -> float:

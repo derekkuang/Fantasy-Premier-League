@@ -59,6 +59,9 @@ ASSIST_POINTS = 3
 CLEAN_SHEET_POINTS = {"GK": 4, "DEF": 4, "MID": 1, "FWD": 0}  # only if 60+ mins
 GOALS_CONCEDED_PER_PENALTY = 2  # -1 per 2 conceded (GK/DEF only)
 SAVES_PER_POINT = 3             # +1 per 3 saves (GK)
+# Expected saves per goal the opponent is expected to score (x_saves = this x opponent lambda).
+# 3.0 was never measured; HANDOFF §41 measures it.
+SAVES_PER_EXPECTED_GOAL = 3.0
 PENALTY_SAVE_POINTS = 5
 PENALTY_MISS_POINTS = -2
 YELLOW_CARD_POINTS = -1
