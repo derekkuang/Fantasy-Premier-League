@@ -10,7 +10,7 @@ Status: **found** → **rule written** → **tested** (verdict) → **PR** → *
 | # | Error | Size | Status |
 |---|---|---|---|
 | E1 | Keeper saves: 3 per expected goal, measured 2.02 | keepers −0.8 pts/game | **PR #11**: held out 2022-23, SHIP |
-| E2 | Defensive contribution: threshold chance computed on expected minutes | DEF/MID, player-specific | **in progress** |
+| E2 | Defensive contribution: threshold chance computed on expected minutes | DEF about 30% under; ranking +0.0033 | **PR #12**: held out 2026-27, SHIP |
 | E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | found |
 | E4 | Forwards' assists under-projected | FWD +0.1 pts/game | found |
 | E5 | Keeper save points ignore FPL's per-match rounding | keepers about −0.3 pts/game after E1 | found |
@@ -56,6 +56,12 @@ negative binomial (size fitted per position) is tested as a second variant.
 **Test.** Develop on 2025-26, the only finished season with the rule. Held out: 2026-27 GW2-10,
 whose defensive numbers have not been looked at. Primary: DC Brier score for defenders and
 midfielders. Guard: all-player ranking no worse than −0.002. Rule: `fpledge/eval/defensive_contribution.py`.
+
+**Result (HANDOFF §42).** Development chose the negative binomial (sizes 20 defenders, 39
+midfielders/forwards). Held out on 2026-27 GW2-10: Brier −0.0014 [−0.0022, −0.0004], ranking
++0.0033 [+0.0015, +0.0053]. SHIP. Defenders' DC points per fixture 0.157 → 0.202 against 0.219
+actual. The threefold size above was the development season's zero prior; the live error was
+about 30%.
 
 ## E3. Cards
 

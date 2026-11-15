@@ -96,6 +96,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **39** | **team news only: an allowlist, not a blocklist, and FPL's flags first** |
 | **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
 | **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
+| **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
 
 ---
 
@@ -3187,3 +3188,51 @@ Kroupi +29) are goals against xG, which the first part of this section shows doe
 2. A card term at the position rate, shrunk towards it per player; forwards' assist share.
 3. The start-probability model (`models/minutes.py` has promised a trained one since July): on
    these seasons, knowing who starts lifts ρ from 0.374 to 0.510, more than everything above.
+
+## 42. Defensive contribution: the chance taken case by case, not at expected minutes (2026-11-14)
+
+**§41's diagnosis was half wrong.** It blamed the Poisson curve and called the error threefold. On
+2025-26, at a player's known mean (15+ full games), Poisson matches the hit rate within 0.03 in
+every band: defenders averaging 8-10 actions hit 10 in 40% of full games, and Poisson says 40%.
+Counts are only mildly overdispersed (variance/mean 1.38 for defenders, 1.13 for midfielders).
+And the threefold size came from the development season's prior: 2024-25 had no defensive stat,
+so 2025-26 rates started from zero and stayed shrunk. The held-out run below puts production's
+real error at about 30% for defenders.
+
+**What was actually wrong.** `dc_point_probability` takes the tail at the mean for EXPECTED
+minutes, and expected minutes include the chance the player does not play. The tail is steep,
+so for a rotation player that is far from "his chance if he plays, times the chance he plays": 60%
+to start at 9 actions a full game gave 0.05 instead of about 0.22.
+
+**The fix.** `xpoints.dc_point_probability_by_case` splits the minutes prediction into plays 60+
+(`p_60`, at the minutes that leaves, clamped to 60-90) and comes on (`p_play - p_60`, at 22
+minutes, the 2025-26 average for a 1-59 minute appearance), takes the tail in each and weights
+them. The negative binomial is a second variant. Rule in `fpledge/eval/defensive_contribution.py`,
+committed in `a33057d` before any run; scored by the DC Brier score over defender and midfielder
+fixtures (MAE on total points is not a proper score for a mean and would punish raising a
+too-low projection), with the usual all-player Spearman guard.
+
+Development, 2025-26 (sizes fitted: defenders 20, midfielders and forwards 39):
+
+| variant | Brier | change [95%] | all-player ρ change [95%] |
+|---|---|---|---|
+| by case | 0.0531 → 0.0513 | -0.0018 [-0.0022, -0.0014] | +0.0024 [+0.0015, +0.0033] |
+| by case, NB | 0.0531 → 0.0507 | -0.0024 [-0.0028, -0.0020] | +0.0025 [+0.0016, +0.0035] |
+
+The NB version was chosen and beat production in both halves (-0.0020, -0.0028).
+
+**Held out, 2026-27 GW2-10, run once: SHIP.** Brier 0.0560 → 0.0545, -0.0014 [-0.0022, -0.0004];
+all-player ρ 0.3870 → 0.3902, **+0.0033 [+0.0015, +0.0053]**, the first fix of this round to
+move the ranking as well as the accuracy. DC points per projected fixture: defenders 0.157 →
+0.202 against 0.219 actual, midfielders 0.059 → 0.085 against 0.083. Defender/midfielder MAE
+barely moved (2.230 → 2.229, 1.876 → 1.882), as expected for a term that raises projections.
+
+**In production.** `xp_table` calls `dc_point_probability_by_case` with
+`config.DC_NB_SIZE = {"DEF": 20, "MID": 39, "FWD": 39}` and `config.SUB_APPEARANCE_MINUTES = 22`.
+On live GW11 (recomputed from the published probabilities): nailed starters do not move and the
+top tens barely change; rotation-risk players with high defensive rates rise. Fofana 2.36 →
+2.85, Mendy 2.26 from 1.79, Disasi 2.42 → 2.83, Van Dijk 3.03 → 3.36; Mainoo 1.77 → 2.25, Lavia
+2.09 → 2.46, Xhaka 2.18 → 2.48. Defenders +0.06 on average, midfielders +0.035, at most +0.49.
+
+**What it leaves.** The split leans on `p_60` from the recent-minutes model, which is E6 in
+`docs/MODEL_FIXES.md`. A start-probability model will sharpen this term too.

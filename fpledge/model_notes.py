@@ -91,6 +91,15 @@ EXPERIMENTS = [
         "verdict": "kept — every keeper had been projected about 0.8 points a game too high",
         "measured": "2026-11-14",
     },
+    {
+        "name": "Defensive contribution for rotation players",
+        "question": "Is a player's chance of the defensive-contribution points his chance if he plays, "
+                    "times his chance of playing?",
+        "delta": "+0.0033 ranking score held out on 2026-27 gameweeks 2–10",
+        "verdict": "kept — the old sum shrank a rotation player's average before asking whether it "
+                   "reached the threshold, which almost ruled him out",
+        "measured": "2026-11-14",
+    },
 ]
 
 NOT_MODELLED: dict[str, str] = {
