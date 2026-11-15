@@ -36,6 +36,7 @@ class PlayerContext:
     # Expected save points, when the caller computed them with FPL's per-match rounding
     # (`expected_save_points`). None keeps the old linear x_saves / 3.
     x_save_points: float | None = None
+    x_card_points: float = 0.0  # expected yellow/red card points (<= 0); 0 = no card term
 
 
 def expected_points_breakdown(ctx: PlayerContext) -> dict:
@@ -72,10 +73,12 @@ def expected_points_breakdown(ctx: PlayerContext) -> dict:
     dc_points = ctx.p_dc_point * config.DC_POINTS
     # Expected bonus points
     bonus_points = ctx.x_bonus
+    # Yellow (-1) and red (-3) cards, when the caller supplies a card term
+    card_points = ctx.x_card_points
 
     total = (
         appearance + goal_points + assist_points + cs_points + conceded_points
-        + save_points + dc_points + bonus_points
+        + save_points + dc_points + bonus_points + card_points
     )
     return {
         # expected quantities (for display)
@@ -87,6 +90,7 @@ def expected_points_breakdown(ctx: PlayerContext) -> dict:
         "appearance": appearance, "goal_points": goal_points, "assist_points": assist_points,
         "cs_points": cs_points, "conceded_points": conceded_points,
         "save_points": save_points, "dc_points": dc_points, "bonus_points": bonus_points,
+        "card_points": card_points,
         "total": total,
     }
 
@@ -205,6 +209,12 @@ def expected_save_points(x_saves: float, x_minutes: float, max_terms: int = 10) 
         return 0.0
     m = x_saves / frac
     return frac * sum(_poisson_sf(per * k, m) for k in range(1, max_terms + 1))
+
+
+def expected_card_points(yellow_per90: float, red_per90: float, x_minutes: float) -> float:
+    """Expected card points (<= 0): -1 a yellow, -3 a red, at the player's rates per 90."""
+    return -(max(yellow_per90, 0.0) * -config.YELLOW_CARD_POINTS
+             + max(red_per90, 0.0) * -config.RED_CARD_POINTS) * (max(x_minutes, 0.0) / 90.0)
 
 
 def expected_bonus(bonus_per90: float, x_minutes: float) -> float:
