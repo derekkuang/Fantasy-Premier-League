@@ -12,6 +12,7 @@ import math
 from collections import defaultdict
 from collections.abc import Sequence
 
+from .. import config
 from ..playermeta import EMPTY_META
 from . import rank
 from .minutes import RECENT_GWS, MinutesModel
@@ -172,7 +173,8 @@ def compute_xp_records(
                     goal_share=sh["goal_share"],
                     assist_share=sh["assist_share"],
                     p_clean_sheet=p_cs,
-                    x_saves=(opp_lambda * 3.0 * (mp.x_minutes / 90.0) if p["position"] == "GK" else 0.0),
+                    x_saves=(opp_lambda * config.SAVES_PER_EXPECTED_GOAL * (mp.x_minutes / 90.0)
+                             if p["position"] == "GK" else 0.0),
                     p_dc_point=dc_point_probability(dc_per90, mp.x_minutes, p["position"]),
                     x_bonus=expected_bonus(bonus_per90, mp.x_minutes),
                     opp_lambda=opp_lambda,
