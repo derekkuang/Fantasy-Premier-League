@@ -129,6 +129,52 @@ def dc_point_probability(dc_per90: float, x_minutes: float, position: str) -> fl
     return _poisson_sf(threshold, expected_actions)
 
 
+def _nbinom_sf(k: int, mean: float, size: float) -> float:
+    """P(X >= k) for a negative binomial with this mean and size (variance = mean + mean^2/size)."""
+    if mean <= 0:
+        return 1.0 if k <= 0 else 0.0
+    p = size / (size + mean)
+    term = p ** size  # P(X = 0)
+    cdf = 0.0
+    for i in range(k):
+        cdf += term
+        term *= (i + size) / (i + 1) * (1.0 - p)
+    return max(0.0, 1.0 - cdf)
+
+
+def dc_point_probability_by_case(
+    dc_per90: float, p_play: float, p_60: float, x_minutes: float, position: str,
+    sub_minutes: float = config.SUB_APPEARANCE_MINUTES, size: float | None = None,
+) -> float:
+    """P(a player hits the defensive-contribution threshold), taken case by case.
+
+    `dc_point_probability` applies the tail to the mean at EXPECTED minutes, which already
+    include the chance he does not play. The tail is steep, so that crushes a rotation player:
+    a defender averaging 9 a full game reaches 10 about 41% of the time, but at 60% of that mean
+    about 5%, where the right answer is 60% x 41% (HANDOFF §42). Here the minutes prediction is
+    split into "plays 60+" (`p_60`, at the minutes that leaves) and "comes on" (`p_play - p_60`,
+    at `sub_minutes`), the tail is taken in each, and the cases are weighted. `size` switches the
+    Poisson tail for a negative binomial.
+    """
+    if position == "DEF":
+        threshold = config.DC_THRESHOLD_DEF
+    elif position in ("MID", "FWD"):
+        threshold = config.DC_THRESHOLD_MID_FWD
+    else:
+        return 0.0
+    rate = max(dc_per90, 0.0) / 90.0
+
+    def tail(mean: float) -> float:
+        return _poisson_sf(threshold, mean) if size is None else _nbinom_sf(threshold, mean, size)
+
+    p_sub = max(p_play - p_60, 0.0)
+    out = p_sub * tail(rate * sub_minutes)
+    if p_60 > 0:
+        full = min(max((x_minutes - p_sub * sub_minutes) / p_60, 60.0), 90.0)
+        out += p_60 * tail(rate * full)
+    return min(out, 1.0)
+
+
 def expected_conceded_penalty(opp_lambda: float, x_minutes: float, max_terms: int = 6) -> float:
     """Expected goals-conceded points for a GK/DEF (<= 0), from the opponent's goal distribution.
 

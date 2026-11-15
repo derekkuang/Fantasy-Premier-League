@@ -79,6 +79,10 @@ DC_POINTS = 2
 DC_THRESHOLD_DEF = 10
 DC_THRESHOLD_MID_FWD = 12
 
+# Minutes in a 1-59 minute appearance, mostly off the bench: 22.2 on average for outfield players
+# in 2025-26. Splits a minutes prediction into "plays 60+" and "comes on" (HANDOFF §42).
+SUB_APPEARANCE_MINUTES = 22.0
+
 # --------------------------------------------------------------------------- #
 # Match engine defaults
 # --------------------------------------------------------------------------- #

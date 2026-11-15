@@ -26,6 +26,7 @@ from ..models.xpoints import (
     PlayerContext,
     bonus_from_returns,
     dc_point_probability,
+    dc_point_probability_by_case,
     expected_bonus,
     expected_conceded_penalty,
     expected_points,
@@ -140,6 +141,8 @@ def validate_xp(
     saves_per_goal: float = config.SAVES_PER_EXPECTED_GOAL,
     save_points_mode: str = "linear",
     breakdown_sink: Callable[[int, int, dict, dict], None] | None = None,
+    dc_mode: str = "expected",
+    dc_size: dict | None = None,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
 
@@ -156,6 +159,10 @@ def validate_xp(
     KEEPER SAVES (HANDOFF §41). `saves_per_goal` is the expected saves per goal the opponent is
     expected to score ("lambda" mode only). `save_points_mode` "linear" scores x_saves / 3, as
     production always has; "floor" applies FPL's per-match rounding (`expected_save_points`).
+
+    DEFENSIVE CONTRIBUTION (HANDOFF §42). `dc_mode` "expected" takes the threshold tail at expected
+    minutes, as production always has; "by_case" splits plays-60+ from comes-on
+    (`dc_point_probability_by_case`), with `dc_size` ({position: size}) for a negative binomial.
 
     `breakdown_sink(gw, element, row, breakdown)`, when given, receives every fixture's
     `expected_points_breakdown`, for audits of one term at a time. It changes no number.
@@ -324,7 +331,13 @@ def validate_xp(
                     else:
                         pr = engine.predict(str(opp), str(tid))
                         lam, p_cs, opp_lam = pr.lam_away, pr.clean_sheet_away, pr.lam_home
-                    p_dc = dc_point_probability(dc90, mp.x_minutes, pos)
+                    if dc_mode == "by_case":
+                        p_dc = dc_point_probability_by_case(
+                            dc90, mp.p_play, mp.p_60, mp.x_minutes, pos,
+                            size=(dc_size or {}).get(pos),
+                        )
+                    else:
+                        p_dc = dc_point_probability(dc90, mp.x_minutes, pos)
                     if bonus_mode == "returns":
                         x_bonus = bonus_from_returns(
                             sh["goal_share"] * lam, sh["assist_share"] * lam, p_cs * mp.p_60, p_dc
