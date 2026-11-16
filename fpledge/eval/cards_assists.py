@@ -75,6 +75,21 @@ THE RETEST, WRITTEN BEFORE ITS RUN (2026-11-16), at the user's request.
   the new rows in place of played rows. Held out, 2022-23, run once
   (`compare_cards_assists.py --retest --held-out`). Reported beside it, deciding nothing:
   played-row squared error, the bias by position on the new rows, and 2026-27 GW2-10.
+
+RESULT OF THE RETEST (HANDOFF §43). Development chose cards + assists (card k = position rate alone;
+assist factors 0.78 / 0.84 / 1.32): squared error -0.111 [-0.124, -0.096], better in all three
+seasons, ranking +0.0011 [+0.0005, +0.0018]. Held out on 2022-23: -0.047 [-0.103, +0.009], ranking
++0.0004 [-0.0006, +0.0014]: INCONCLUSIVE, production stays. 2022-23 is spent for cards and assists.
+
+CONFIRMATION ON UNPLAYED GAMEWEEKS, WRITTEN 2026-11-16 BEFORE GW11 IS PLAYED.
+
+  The same candidate, fixed: cards at the position rate alone, assist factors DEF 0.78, MID 0.84,
+  FWD 1.32. Production's analogue on 2026-27 (k=3 rate blend with 2025-26 as the prior, closing
+  odds, saves 2.02, defensive contribution by case). Scored on players expected to play, exactly as
+  the retest, but only gameweeks 11 to 18; earlier gameweeks feed the rates and are not scored.
+  Run once, after GW18 is final (`compare_cards_assists.py --confirm`); it refuses before.
+    SHIP / DO NOT SHIP / INCONCLUSIVE as in the retest's verdict. INCONCLUSIVE leaves production
+    as it is, and E3/E4 are closed until a new reason, not a new season, reopens them.
 """
 
 from __future__ import annotations
@@ -88,6 +103,8 @@ N_BOOT = 2000
 SPEARMAN_MARGIN = -0.002
 MIN_PRIOR_MINUTES = 270
 CARD_K_GRID = (10.0, 20.0, 40.0, float("inf"))
+CONFIRM_GWS = (11, 18)
+CONFIRM_SPEC = {"card_k": float("inf"), "assist_scale": {"DEF": 0.78, "MID": 0.84, "FWD": 1.32}}
 EXPECTED_TO_PLAY = 0.5   # the retest's rows: p_play at or above this before the deadline
 
 

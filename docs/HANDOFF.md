@@ -97,7 +97,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
 | **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
 | **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
-| **43** | **cards and forwards' assists stopped at development; played-only scoring is biased against downward terms** |
+| **43** | **cards and forwards' assists: played-only scoring is biased; the retest is inconclusive, confirmation on GW11-18** |
 
 ---
 
@@ -3277,3 +3277,36 @@ pre-registered with 2022-23 as the held-out.
 **Keeper save rounding (E5) is parked.** FPL's per-match rounding takes 0.30-0.34 save points
 off a keeper whatever his save volume (1.5 to 5 expected saves). A uniform shift changes no
 keeper's rank and no pick; it would only make keeper totals honest. Not worth a test on its own.
+
+### The retest, scored on players expected to play (2026-11-16)
+
+The user asked for the retest, and for it to focus on players who are actually going to play. Both
+point the same way: score every player the model **expected** to play (p_play >= 0.5 before the
+deadline), whether or not he then did. The rows are chosen by the forecast, not by the result, so
+the zeros of expected starters who missed out stay in. Rule committed in `2b7da80` before the run.
+
+Development, 2023-26, on those rows:
+
+| candidate | squared error change [95%] | all-player ρ change [95%] |
+|---|---|---|
+| cards (position rate) | -0.093 [-0.103, -0.083] | +0.0012 [+0.0007, +0.0017] |
+| assists (0.78 / 0.84 / 1.32) | -0.031 [-0.037, -0.025] | +0.0001 [-0.0002, +0.0005] |
+| cards + assists | **-0.111 [-0.124, -0.096]** | +0.0011 [+0.0005, +0.0018] |
+
+Cards + assists was chosen and beat production in every season (-0.129, -0.124, -0.079).
+
+**Held out, 2022-23, run once: INCONCLUSIVE.** Squared error -0.047 [-0.103, +0.009], ranking
++0.0004 [-0.0006, +0.0014]. Production stays. 2022-23 was a weaker stage than intended: with no
+xG the season before, its rates run without a prior, and its midfielders and forwards were already
+under-projected (+0.06, +0.22) where every other season had them over. 2026-27 GW2-10, reported
+only: -0.125 [-0.150, -0.096], ranking -0.0012 [-0.0024, +0.0002].
+
+**Confirmation, written before GW11 is played.** The same candidate, fixed, scored on 2026-27
+GW11-18 only, run once after GW18 (`compare_cards_assists.py --confirm`, which refuses before).
+Inconclusive again closes E3/E4.
+
+**A finding for the minutes model (E6).** On players expected to play, the model is too high for
+every position: development keepers -0.62 a game, defenders -0.35, midfielders -0.30, forwards
+-0.25 (actual minus projected). Cards explain about 0.15 of the outfield gap and save rounding
+about 0.3 of the keepers'; the rest says `from_recent` is too sure that a likely starter plays.
+That is what a start-probability model should fix.

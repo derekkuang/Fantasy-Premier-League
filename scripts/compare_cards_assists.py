@@ -4,6 +4,7 @@
 Usage: python scripts/compare_cards_assists.py              development seasons, every variant
        python scripts/compare_cards_assists.py --held-out   2022-23, the chosen candidate; once only
        add --retest to either: the 2026-11-16 retest, scored on players expected to play
+       python scripts/compare_cards_assists.py --confirm    2026-27 GW11-18, after GW18; once only
 
 Offline apart from public data fetches. Changes nothing in production.
 """
@@ -28,8 +29,10 @@ from fpledge.eval.fpl_backtest import validate_xp
 
 DEV = cpr.DEV
 HELD_OUT = ("2022-23", "2021-22", "2223")
-RETEST = "--retest" in sys.argv[1:]
+CONFIRM = "--confirm" in sys.argv[1:]
+RETEST = "--retest" in sys.argv[1:] or CONFIRM
 _STEM = "cards_assists_retest" if RETEST else "cards_assists"
+CONFIRM_OUT = config.DATA_DIR / "eval" / "cards_assists_confirm.json"
 DEV_OUT = config.DATA_DIR / "eval" / f"{_STEM}_dev.json"
 HELD_OUT_OUT = config.DATA_DIR / "eval" / f"{_STEM}_held_out.json"
 SCORE = "expected" if RETEST else "played"   # which rows the squared error is scored on
@@ -85,7 +88,7 @@ def _line(label: str, m: dict, r: dict | None) -> str:
            f"[{m['ci'][0]:+.4f}, {m['ci'][1]:+.4f}]")
     if r:
         out += f"  | all ρ diff {r['diff']:+.4f} [{r['ci'][0]:+.4f}, {r['ci'][1]:+.4f}]"
-    return out + f"\n{'':<19}bias (actual - xP, played): {bias}"
+    return out + f"\n{'':<19}bias (actual - xP, scored rows): {bias}"
 
 
 def _split(s: dict, season: str) -> dict:
@@ -177,8 +180,35 @@ def held_out() -> None:
     print(f"wrote {HELD_OUT_OUT}")
 
 
+def confirm() -> None:
+    """The confirmation on 2026-27 GW11-18 written in `cards_assists` before GW11 was played."""
+    if CONFIRM_OUT.exists():
+        raise SystemExit(f"{CONFIRM_OUT} exists, so the confirmation has been run.")
+    lo, hi = ca.CONFIRM_GWS
+    data = cpr.load_this_season()
+    final = max(r["gw"] for r in data["rows"])
+    if final < hi:
+        raise SystemExit(f"landed results run to GW{final}; the confirmation waits for GW{hi}.")
+    specs = {"production": {}, "cards + assists": dict(ca.CONFIRM_SPEC)}
+    rho, mse, _ = _score([data], specs, use_prior=True)
+
+    def window(scores: dict) -> dict:
+        return {k: v for k, v in scores.items() if lo <= k[1] <= hi}
+
+    m = ca.compare_mse(window(mse["production"]), window(mse["cards + assists"]))
+    r = pr.compare(window(rho["production"]), window(rho["cards + assists"]))
+    decision = ca.verdict(m, r)
+    CONFIRM_OUT.write_text(json.dumps({"gws": [lo, hi], "mse": m, "spearman": r,
+                                       "verdict": decision}, indent=2))
+    print(f"\ncards + assists against production, 2026-27 GW{lo}-{hi} (players expected to play):")
+    print(_line(f"GW{lo}-{hi}", m, r))
+    print(f"\nVERDICT: {decision}\nwrote {CONFIRM_OUT}")
+
+
 if __name__ == "__main__":
-    if "--held-out" in sys.argv[1:]:
+    if CONFIRM:
+        confirm()
+    elif "--held-out" in sys.argv[1:]:
         held_out()
     else:
         development()
