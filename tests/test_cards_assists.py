@@ -50,3 +50,13 @@ def test_verdict():
     assert ca.verdict({"ci": [-0.02, -0.01]}, {"ci": [-0.001, 0.003]}) == "SHIP"
     assert ca.verdict({"ci": [-0.02, 0.01]}, {"ci": [-0.001, 0.003]}) == "INCONCLUSIVE"
     assert ca.verdict({"ci": [0.01, 0.02]}, {"ci": [0.0, 0.003]}) == "DO NOT SHIP"
+
+
+def test_expected_to_play_rows_keep_the_zeros():
+    # an expected starter who did not play stays in, scored against his 0
+    recs = [(2, 1, 4.0, 0, 6, "MID", 90), (2, 2, 3.0, 0, 0, "MID", 0), (2, 3, 0.5, 0, 2, "DEF", 20)]
+    played = ca.mse_by_gw(recs, "s")[("s", 2)]
+    expected = ca.mse_by_gw(recs, "s", include={(2, 1), (2, 2)})[("s", 2)]
+    assert played["n"] == 2 and played["keys"] == frozenset({1, 3})
+    assert expected["n"] == 2 and expected["keys"] == frozenset({1, 2})
+    assert expected["sq"] == pytest.approx(4 + 9)
