@@ -28,6 +28,7 @@ from ..models.xpoints import (
     dc_point_probability,
     dc_point_probability_by_case,
     expected_bonus,
+    expected_card_points,
     expected_conceded_penalty,
     expected_points,
     expected_points_breakdown,
@@ -143,6 +144,9 @@ def validate_xp(
     breakdown_sink: Callable[[int, int, dict, dict], None] | None = None,
     dc_mode: str = "expected",
     dc_size: dict | None = None,
+    card_k: float | None = None,
+    card_prior: dict | None = None,
+    assist_scale: dict | None = None,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
 
@@ -163,6 +167,12 @@ def validate_xp(
     DEFENSIVE CONTRIBUTION (HANDOFF §42). `dc_mode` "expected" takes the threshold tail at expected
     minutes, as production always has; "by_case" splits plays-60+ from comes-on
     (`dc_point_probability_by_case`), with `dc_size` ({position: size}) for a negative binomial.
+
+    CARDS AND ASSISTS (docs/MODEL_FIXES.md E3, E4). `card_k` None leaves cards out, as production
+    always has. Otherwise a player's yellow and red rates per 90 are this season's blended with
+    `card_prior` ({position: (yellow per 90, red per 90)}) as if worth `card_k` full games;
+    `card_k` = inf uses the position rate alone. `assist_scale` ({position: factor})
+    multiplies each player's assist share.
 
     `breakdown_sink(gw, element, row, breakdown)`, when given, receives every fixture's
     `expected_points_breakdown`, for audits of one term at a time. It changes no number.
@@ -307,6 +317,18 @@ def validate_xp(
                         mode=mode,
                     )
                 sh = shares.get(el, {"goal_share": 0.0, "assist_share": 0.0})
+                pos = rows[0]["position"]
+                if assist_scale:
+                    sh = {**sh, "assist_share": sh["assist_share"] * assist_scale.get(pos, 1.0)}
+                yc90 = rc90 = 0.0
+                if card_k is not None:
+                    py, pr_ = (card_prior or {}).get(pos, (0.0, 0.0))
+                    if math.isinf(card_k):
+                        yc90, rc90 = py, pr_
+                    else:
+                        n90 = a["minutes"] / 90.0
+                        yc90 = (a["yc"] + card_k * py) / (n90 + card_k)
+                        rc90 = (a["rc"] + card_k * pr_) / (n90 + card_k)
                 dc90 = _player_rate(el, a, "dc")
                 bon90 = _player_rate(el, a, "bonus")
                 pos, tid = rows[0]["position"], rows[0]["team_id"]
@@ -358,6 +380,8 @@ def validate_xp(
                             if pos == "GK" and save_points_mode == "floor" else None
                         ),
                         p_dc_point=p_dc, x_bonus=x_bonus,
+                        x_card_points=(expected_card_points(yc90, rc90, mp.x_minutes)
+                                       if card_k is not None else 0.0),
                         opp_lambda=opp_lam,
                         x_conceded_penalty=(
                             expected_conceded_penalty(opp_lam, mp.x_minutes)
@@ -402,6 +426,7 @@ def validate_xp(
             a = acc.setdefault(
                 el,
                 {"minutes": 0, "starts": 0, "xg": 0.0, "xa": 0.0, "dc": 0, "bonus": 0, "games": 0,
+                 "yc": 0, "rc": 0,
                  "recent": [], "recent_xg": [], "recent_xa": [], "recent_dc": [], "recent_bonus": [],
                  "team_id": rows[0]["team_id"]},
             )
@@ -419,6 +444,8 @@ def validate_xp(
                 a["xa"] += r["xa"]
                 a["dc"] += r["dc"]
                 a["bonus"] += r["bonus"]
+                a["yc"] += r.get("yellow_cards", 0)
+                a["rc"] += r.get("red_cards", 0)
 
     metrics = _score(records, st)
     metrics["baseline_clean"] = baseline_clean

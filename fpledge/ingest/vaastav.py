@@ -69,6 +69,9 @@ def fetch_player_gws(season: str) -> list[dict]:
                 "dc": _i(r.get("defensive_contribution")),
                 "bonus": _i(r.get("bonus")),
                 "saves": _i(r.get("saves")),
+                "assists": _i(r.get("assists")),
+                "yellow_cards": _i(r.get("yellow_cards")),
+                "red_cards": _i(r.get("red_cards")),
                 "total_points": _i(r.get("total_points")),
                 "fpl_xp": _f(r.get("xP")),
                 # Price at that gameweek, in tenths of a million (50 = £5.0m). Needed by the
@@ -138,6 +141,8 @@ def fetch_players_raw(season: str) -> list[dict]:
             "xa": _f(r.get("expected_assists")),
             "dc": _i(r.get("defensive_contribution")),
             "bonus": _i(r.get("bonus")),
+            "yellow_cards": _i(r.get("yellow_cards")),
+            "red_cards": _i(r.get("red_cards")),
         }
         for r in csv.DictReader(io.StringIO(text))
     ]

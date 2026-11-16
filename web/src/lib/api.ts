@@ -33,6 +33,7 @@ export type Breakdown = {
   save_points: number;
   dc_points: number;
   bonus_points: number;
+  card_points?: number;
   total: number;
 };
 

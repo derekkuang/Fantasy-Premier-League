@@ -11,12 +11,13 @@ Status: **found** → **rule written** → **tested** (verdict) → **PR** → *
 |---|---|---|---|
 | E1 | Keeper saves: 3 per expected goal, measured 2.02 | keepers −0.8 pts/game | **PR #11**: held out 2022-23, SHIP |
 | E2 | Defensive contribution: threshold chance computed on expected minutes | DEF about 30% under; ranking +0.0033 | **PR #12**: held out 2026-27, SHIP |
-| E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | found |
-| E4 | Forwards' assists under-projected | FWD +0.1 pts/game | found |
-| E5 | Keeper save points ignore FPL's per-match rounding | keepers about −0.3 pts/game after E1 | found |
+| E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | **PR #13: live on the owner's decision** after an inconclusive held-out; GW11-18 confirms or reverts |
+| E4 | Forwards' assists under-projected | FWD +0.1 pts/game | with E3, same status |
+| E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.30 to −0.34, uniform | parked: changes no pick |
 | E6 | Starts: minutes are a recent average, not a start probability | knowing starters lifts ρ 0.374 → 0.510 | found |
 | E7 | Pre-deadline data is about 23 hours old | Friday team news missed | found |
 | E8 | Penalty saves have no term | keepers +0.07 pts/game, cancelled by their cards | parked |
+| E9 | Expected starters play less than projected | about −0.3 pts/game on players expected to play | found; part of E6 |
 
 Not errors, measured (HANDOFF §41): pulling a player's projection towards his misses (never
 better than +0.0006, up to −0.014), and goals against xG (does not carry over within a season).
@@ -89,14 +90,36 @@ position.
 
 **Test.** Bundled with E3: develop on 2023-26, held out 2022-23.
 
+**Result for E3 and E4 (HANDOFF §43).** Stopped at development; production stays; 2022-23 is still
+unspent for both. Assist factors measured: defenders 0.78, midfielders 0.84, forwards 1.32; they
+helped one season of three. The card term improved the ranking (+0.0012 [+0.0007, +0.0017]) but
+made squared error on played rows worse, and that score turned out to be biased against any term
+that lowers projections: on played rows every outfield position is already 0.3 under, because a
+projection includes the chance of not playing. A rerun scored over every projected row is a
+change of standard after a failure, so it is the user's call.
+
+**Retest (2026-11-16, at the user's request; HANDOFF §43).** Scored on every player the model
+expected to play (p_play ≥ 0.5 before the deadline), whether or not he did. Development chose cards
++ assists: squared error −0.111 [−0.124, −0.096], better every season, ranking +0.0011. Held out on
+2022-23: −0.047 [−0.103, +0.009], INCONCLUSIVE; production stays. 2022-23 was a weak stage (no
+rate prior, and its attackers were under-projected where every other season had them over).
+**Next:** the fixed candidate is confirmed or closed on 2026-27 GW11-18, rule written before GW11
+was played: `python scripts/compare_cards_assists.py --confirm` once GW18 is final.
+
+**Live on the owner's decision (2026-11-16).** The tested candidate went live without passing its
+held-out test, because the model over-projects players expected to play and cards are a real
+deduction. If the GW11-18 confirmation says DO NOT SHIP, revert `CARD_RATES_PER90` and
+`ASSIST_SCALE` use in `xp_table`.
+
 ## E5. Keeper save rounding
 
 **What is wrong.** FPL pays 1 point per 3 saves in a match, rounded down. Production pays a third
 of a point per expected save, so a keeper making about 2 a game is still credited for saves that
 earn nothing. Code exists and is unused: `xpoints.expected_save_points`.
 
-**Test.** 2022-23 is spent for saves. Judge on gameweeks not yet played (2026-27 GW11 onwards),
-on keeper save-term calibration, under a rule written before those gameweeks finish.
+**Parked.** The rounding takes 0.30-0.34 points off every keeper whatever his save volume (1.5
+to 5 expected saves), so it changes no keeper's rank and no pick. It would only make keeper
+totals honest; fold it into an all-rows calibration test if one is run.
 
 ## E6. Start probability
 
@@ -118,6 +141,14 @@ The precompute is scheduled for 04:30 UTC but GitHub starts it around 12:00-13:1
 11:00 Saturday deadline the newest projection is about 23 hours old. Fix: the snapshot Lambda
 already knows the deadline and wakes every 3 hours; have it dispatch the precompute 2-4 hours
 before. Needs a fine-grained GitHub token stored in AWS. Operational, not a model test.
+
+## E9. Expected starters play less than projected
+
+Found by the E3 retest. On players the model expected to play, it is too high at every position
+(development: keepers −0.62 a game, defenders −0.35, midfielders −0.30, forwards −0.25). Cards account
+for about 0.15 of the outfield gap and save rounding about 0.3 of the keepers'; the rest is the
+minutes model being too sure a likely starter plays. Folded into E6, whose test should report this
+bias before and after.
 
 ## E8. Penalty saves
 

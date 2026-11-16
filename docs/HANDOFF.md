@@ -97,6 +97,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
 | **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
 | **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
+| **43** | **cards and forwards' assists: played-only scoring is biased; retest inconclusive; live on the owner's decision, confirmation on GW11-18** |
 
 ---
 
@@ -3236,3 +3237,94 @@ top tens barely change; rotation-risk players with high defensive rates rise. Fo
 
 **What it leaves.** The split leans on `p_60` from the recent-minutes model, which is E6 in
 `docs/MODEL_FIXES.md`. A start-probability model will sharpen this term too.
+
+## 43. Cards and forwards' assists: stopped at development, and what the test itself got wrong (2026-11-14)
+
+**The test** (`fpledge/eval/cards_assists.py`, rule committed in `58862a6` before any run): a card
+term, -(yellows + 3 x reds per 90) x expected minutes / 90, with each rate blended towards last
+season's position rate; and a per-position factor on assist shares. Scored by squared error of
+total points over players who played, with the all-player Spearman guard. Held-out season
+2022-23, never reached.
+
+Development, 2023-24 to 2025-26. Assist factors measured: defenders 0.78, midfielders 0.84,
+forwards 1.32. Card k: the position rate alone (k = inf) had the lowest squared error of the grid.
+
+| candidate | squared error change [95%] | all-player ρ change [95%] |
+|---|---|---|
+| cards (position rate) | +0.0065 [-0.0040, +0.0165] | **+0.0012 [+0.0007, +0.0017]** |
+| assists | -0.0014 [-0.0079, +0.0046] | +0.0001 [-0.0002, +0.0005] |
+| cards + assists | +0.0175 [+0.0025, +0.0317] | +0.0011 [+0.0005, +0.0018] |
+
+Rule 4 chose assists (lowest squared error), which beat production in 2024-25 only (+0.0003,
+-0.0111, +0.0066). **Stopped: production stays, and 2022-23 is still unspent for both terms.**
+
+**What the test got wrong.** Scoring only players who played is biased against any term that
+lowers projections. A projection is an expectation over playing and not playing; the rows scored
+are the ones where he played. So on those rows every outfield position already comes out under
+by about 0.3 a game (defenders +0.31, midfielders +0.27, forwards +0.34; keepers, who nearly always
+play when projected, +0.06), while over every projected row the §41 audit has the model *over* by
+about the size of the missing cards. A card term moves the all-rows number towards zero and the
+played-rows number away from it, and squared error on played rows reads that as worse. The same
+effect is why rate+floor's keeper bias in §41 read +0.35. Every earlier test used played rows
+too; their ranking guard is unaffected (a rank correlation within a gameweek does not care about
+a level shift), but their accuracy halves are biased against downward terms.
+
+The cards' ranking gain (+0.0012, interval above zero) is real on these seasons, and it went
+nowhere because rule 4 chose by squared error. **A rerun under all-rows scoring is a change of
+standard after a failure, so it waits for the user's decision**, and if made it must be
+pre-registered with 2022-23 as the held-out.
+
+**Keeper save rounding (E5) is parked.** FPL's per-match rounding takes 0.30-0.34 save points
+off a keeper whatever his save volume (1.5 to 5 expected saves). A uniform shift changes no
+keeper's rank and no pick; it would only make keeper totals honest. Not worth a test on its own.
+
+### The retest, scored on players expected to play (2026-11-16)
+
+The user asked for the retest, and for it to focus on players who are actually going to play. Both
+point the same way: score every player the model **expected** to play (p_play >= 0.5 before the
+deadline), whether or not he then did. The rows are chosen by the forecast, not by the result, so
+the zeros of expected starters who missed out stay in. Rule committed in `2b7da80` before the run.
+
+Development, 2023-26, on those rows:
+
+| candidate | squared error change [95%] | all-player ρ change [95%] |
+|---|---|---|
+| cards (position rate) | -0.093 [-0.103, -0.083] | +0.0012 [+0.0007, +0.0017] |
+| assists (0.78 / 0.84 / 1.32) | -0.031 [-0.037, -0.025] | +0.0001 [-0.0002, +0.0005] |
+| cards + assists | **-0.111 [-0.124, -0.096]** | +0.0011 [+0.0005, +0.0018] |
+
+Cards + assists was chosen and beat production in every season (-0.129, -0.124, -0.079).
+
+**Held out, 2022-23, run once: INCONCLUSIVE.** Squared error -0.047 [-0.103, +0.009], ranking
++0.0004 [-0.0006, +0.0014]. Production stays. 2022-23 was a weaker stage than intended: with no
+xG the season before, its rates run without a prior, and its midfielders and forwards were already
+under-projected (+0.06, +0.22) where every other season had them over. 2026-27 GW2-10, reported
+only: -0.125 [-0.150, -0.096], ranking -0.0012 [-0.0024, +0.0002].
+
+**Confirmation, written before GW11 is played.** The same candidate, fixed, scored on 2026-27
+GW11-18 only, run once after GW18 (`compare_cards_assists.py --confirm`, which refuses before).
+Inconclusive again closes E3/E4.
+
+**A finding for the minutes model (E6).** On players expected to play, the model is too high for
+every position: development keepers -0.62 a game, defenders -0.35, midfielders -0.30, forwards
+-0.25 (actual minus projected). Cards explain about 0.15 of the outfield gap and save rounding
+about 0.3 of the keepers'; the rest says `from_recent` is too sure that a likely starter plays.
+That is what a start-probability model should fix.
+
+### Live on the owner's decision (2026-11-16)
+
+After the inconclusive held-out run, the owner chose to put the tested candidate live: the model
+over-projects every position on players expected to play, and cards are a real FPL deduction the
+model ignored. **This did not pass its held-out test**, and is recorded as a decision, not a
+result. The GW11-18 confirmation still runs once after GW18; if it says DO NOT SHIP, revert.
+
+What went live is exactly the tested candidate: `config.CARD_RATES_PER90` (2025-26 regulars'
+yellows and reds per 90 by position: keepers 0.073/0.0013, defenders 0.181/0.0083, midfielders
+0.187/0.0048, forwards 0.147/0) through `expected_card_points`, and `config.ASSIST_SCALE` (0.78 /
+0.84 / 1.32) on assist shares. The player sheet shows a Cards line so the parts still add to the
+total. Refresh the card rates each summer.
+
+On live GW11 (players above 2.5 xP): defenders -0.24 on average (-0.16 to -0.42), midfielders
+-0.26 (-0.15 to -0.42), forwards -0.04 (-0.09 to +0.10). Forwards rise against midfielders:
+Haaland 7.31 → 7.30 while Groß goes 6.39 → 5.97 and Palmer 5.66 → 5.35. The 2026-27 descriptive
+run had the ranking slightly down (-0.0012 [-0.0024, +0.0002]); that is the risk being taken.

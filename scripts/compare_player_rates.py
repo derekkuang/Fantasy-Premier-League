@@ -105,6 +105,8 @@ def load_this_season() -> dict:
                 "xg": float(s["expected_goals"]), "xa": float(s["expected_assists"]),
                 "dc": int(s["defensive_contribution"]), "bonus": int(s["bonus"]),
                 "saves": int(s["saves"]),
+                "assists": int(s["assists"]), "yellow_cards": int(s["yellow_cards"]),
+                "red_cards": int(s["red_cards"]),
                 "total_points": int(s["total_points"]), "fpl_xp": 0.0,
                 "fpl_xp_prev": ep.get((gw, e["id"]), {}).get("ep_next", 0.0),
             })
@@ -117,7 +119,7 @@ def load_this_season() -> dict:
 def _bundle(season, rows, fixtures, teams, players, previous, fd_code) -> dict:
     prev = vaastav.fetch_players_raw(previous)
     return {"season": season, "rows": rows, "fixtures": fixtures, "teams": teams,
-            "lambdas": _lambdas(fd_code, teams, fixtures),
+            "lambdas": _lambdas(fd_code, teams, fixtures), "previous": prev,
             "priors": {"zero": pr.priors(prev, players, "zero"),
                        "position": pr.priors(prev, players, "position")}}
 
