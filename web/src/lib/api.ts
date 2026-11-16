@@ -346,6 +346,9 @@ export type Match = {
   most_likely_score: [number, number];
   scorelines: Scoreline[];
   scorelines_p: number;         // probability mass the listed scorelines cover — the rest is tail
+  /** Our engine's own view of a bookmaker-priced match (HANDOFF §45); null when the engine is the
+   *  source, absent in payloads built before the field existed. */
+  model?: { lam_home: number; lam_away: number; result: { home_win: number; draw: number; away_win: number } } | null;
   fdr: {
     home: { attack: number; defence: number };
     away: { attack: number; defence: number };

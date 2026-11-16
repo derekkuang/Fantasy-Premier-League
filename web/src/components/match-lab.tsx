@@ -1,5 +1,6 @@
 "use client";
-// One match (HANDOFF §40): the odds, the predicted lineups, and the FPL picks it holds.
+// One match (HANDOFF §40, §45): the odds, our model's second opinion, the predicted lineups, the
+// set-piece takers and the FPL picks it holds.
 //
 // Everything here is a number the engine already produced; nothing is written by a model. The
 // lineups are our minutes model's eleven in the shape the club has started with most in its
@@ -72,6 +73,56 @@ function OddsTiles({ m }: { m: Match }) {
       <Tile value={`${pct(m.clean_sheet.home)} · ${pct(m.clean_sheet.away)}`} label={`Clean sheet, ${h} · ${a}`} />
       <Tile value={pct(m.over_2_5)} label={`Over 2.5 goals · both score ${pct(m.btts)}`} />
     </div>
+  );
+}
+
+// --- our model's second opinion ------------------------------------------------------- //
+/** One sentence on where our engine and the bookmakers part ways, in expected goals. */
+function disagreement(m: Match, mo: NonNullable<Match["model"]>): string {
+  const sides = [
+    { team: m.home ?? "the home side", book: m.lam_home, ours: mo.lam_home },
+    { team: m.away ?? "the away side", book: m.lam_away, ours: mo.lam_away },
+  ];
+  const big = sides.reduce((x, y) => (Math.abs(y.ours - y.book) > Math.abs(x.ours - x.book) ? y : x));
+  if (Math.abs(big.ours - big.book) < 0.2) return "Our model broadly agrees with the bookmakers.";
+  const way = big.ours > big.book ? "more" : "fewer";
+  return `Our model expects ${way} ${big.team} goals: ${big.ours.toFixed(1)} against the bookmakers' ${big.book.toFixed(1)}.`;
+}
+
+function SecondOpinion({ m }: { m: Match }) {
+  const mo = m.model;
+  if (m.source !== "market" || !mo) return null;
+  const h = getClub(m.home).shortCode, a = getClub(m.away).shortCode;
+  const rows: [string, string, string][] = [
+    [`${h} expected goals`, m.lam_home.toFixed(1), mo.lam_home.toFixed(1)],
+    [`${a} expected goals`, m.lam_away.toFixed(1), mo.lam_away.toFixed(1)],
+    [`${h} win`, pct(m.result.home_win), pct(mo.result.home_win)],
+    ["Draw", pct(m.result.draw), pct(mo.result.draw)],
+    [`${a} win`, pct(m.result.away_win), pct(mo.result.away_win)],
+  ];
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="t-title text-[17px] font-semibold">Our model&apos;s view</h2>
+      <Explained label="Why lead with the bookmakers?"
+        head={<span className="text-[13px] text-muted">{disagreement(m, mo)}</span>}>
+        {"The odds above are the bookmakers', with their margin taken out. Tested on 1,900 matches from " +
+          "2018–23, their closing odds were more accurate than our model (log-loss 0.952 against 0.970; " +
+          "lower is better), so this page leads with them and our model is a second opinion. Our model " +
+          "rates teams from results and expected goals alone. This isn't betting advice."}
+      </Explained>
+      <div className="grid grid-cols-[1fr_auto_auto] rounded-2xl border border-[var(--line)] px-4 py-1.5 text-[14px] tabular-nums lg:max-w-[560px]">
+        <span className="py-1.5 text-[12px] text-muted" />
+        <span className="py-1.5 pl-4 text-right text-[12px] text-muted">Bookmakers</span>
+        <span className="py-1.5 pl-4 text-right text-[12px] text-muted">Our model</span>
+        {rows.map(([label, book, ours]) => (
+          <div key={label} className="contents">
+            <span className="border-t border-[var(--line)] py-1.5">{label}</span>
+            <span className="border-t border-[var(--line)] py-1.5 pl-4 text-right font-semibold">{book}</span>
+            <span className="border-t border-[var(--line)] py-1.5 pl-4 text-right">{ours}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -214,6 +265,86 @@ function Picks({ assets, onOpen }: { assets: Prediction[]; onOpen: (id: number) 
   );
 }
 
+// --- set-piece takers ------------------------------------------------------------------- //
+const DUTIES = [
+  ["penalties", "Penalties"],
+  ["freekicks", "Direct free kicks"],
+  ["corners", "Corners and indirect free kicks"],
+] as const;
+const OUT = new Set(["i", "s", "u", "n"]);
+
+function SetPieceCard({ team, assets, xi, onOpen }: {
+  team: string | null; assets: Prediction[]; xi: Set<number> | null; onOpen: (id: number) => void;
+}) {
+  const club = getClub(team);
+  const mine = assets.filter((p) => p.team === team);
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--line)] px-4 py-3">
+      <span className="flex min-w-0 items-center gap-2">
+        <Jersey primary={club.primary} secondary={club.secondary} pattern={club.pattern} width={20} height={19} className="block flex-none" />
+        <span className="truncate text-[14px] font-semibold">{team}</span>
+      </span>
+      {DUTIES.map(([duty, label]) => {
+        const takers = mine
+          .filter((p) => p.set_pieces[duty] != null)
+          .sort((x, y) => (x.set_pieces[duty] ?? 99) - (y.set_pieces[duty] ?? 99))
+          .slice(0, 3);
+        const out = (p: Prediction) => OUT.has(p.availability.status ?? "");
+        const playing = (p: Prediction) => !out(p) && (xi == null || xi.has(p.element_id));
+        const likely = takers.find(playing);
+        return (
+          <div key={duty} className="flex flex-col gap-1 border-t border-[var(--line)] pt-2">
+            <span className="text-[12px] text-muted">{label}</span>
+            {takers.length === 0 ? (
+              <span className="text-[13px] text-muted">None listed by FPL</span>
+            ) : (
+              <span className="flex flex-wrap gap-1.5">
+                {takers.map((p) => {
+                  const on = p === likely;
+                  const note = on ? ", the likely taker" : out(p) ? ", out per FPL"
+                    : !playing(p) ? ", not in our predicted eleven" : "";
+                  return (
+                    <button key={p.element_id} type="button" onClick={() => onOpen(p.element_id)}
+                      title={`${p.web_name}: number ${p.set_pieces[duty]} on FPL's list${note}`}
+                      className={`press rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${
+                        on ? "border-emerald-600 bg-emerald-600 text-white"
+                          : out(p) ? "border-[var(--line)] text-muted line-through"
+                            : !playing(p) ? "border-[var(--line)] text-muted" : "border-[var(--line)] hover:border-emerald-600"}`}>
+                      {`${p.set_pieces[duty]}. ${p.web_name}`}
+                    </button>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SetPieces({ m, assets, onOpen }: { m: Match; assets: Prediction[]; onOpen: (id: number) => void }) {
+  const lineups = [m.lineups?.home, m.lineups?.away];
+  const xi = lineups.some(Boolean) ? new Set(lineups.flatMap((l) => l?.xi.map((p) => p.element_id) ?? [])) : null;
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="t-title text-[17px] font-semibold">Set-piece takers</h2>
+      <Explained label="Where does this come from?"
+        head={<span className="text-[13px] text-muted">FPL&apos;s order of takers; the first one in our predicted eleven is marked.</span>}>
+        {"FPL lists each club's order of takers for penalties, direct free kicks, and corners and indirect " +
+          "free kicks. The highlighted player is the first on that list who is in our predicted eleven and " +
+          "not ruled out by FPL. A struck-through name is injured or suspended; a faded one is fit but not in " +
+          "our predicted eleven, and could still take one off the bench. Clubs change their takers without " +
+          "notice, so this is FPL's latest list, not a certainty."}
+      </Explained>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <SetPieceCard team={m.home} assets={assets} xi={xi} onOpen={onOpen} />
+        <SetPieceCard team={m.away} assets={assets} xi={xi} onOpen={onOpen} />
+      </div>
+    </section>
+  );
+}
+
 function Scorelines({ m }: { m: Match }) {
   const rows = m.scorelines.slice(0, 6);
   const max = Math.max(...rows.map((r) => r.p), 0.0001);
@@ -252,10 +383,12 @@ export function MatchLab({ match, assets, gw }: { match: Match; assets: Predicti
         <ResultBar m={match} />
         <OddsTiles m={match} />
       </div>
+      <SecondOpinion m={match} />
       {thisWeek ? (
         <>
           <Lineups m={match} onOpen={onOpen} />
           {assets.length > 0 && <Picks assets={assets} onOpen={onOpen} />}
+          {assets.length > 0 && <SetPieces m={match} assets={assets} onOpen={onOpen} />}
         </>
       ) : (
         <p className="rounded-2xl border border-[var(--line)] p-4 text-[14px] text-muted">

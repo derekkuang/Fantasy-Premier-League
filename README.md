@@ -149,7 +149,7 @@ recovered.
 | --- | --- |
 | [`fpledge/`](fpledge/) | The Python package. Everything the product computes lives here |
 | [`scripts/`](scripts/) | Command-line entrypoints: production jobs, validation, research. Thin wrappers over `fpledge` |
-| [`tests/`](tests/) | 692 pytest tests, ~10s, no network |
+| [`tests/`](tests/) | 693 pytest tests, ~10s, no network |
 | [`web/`](web/) | Next.js 16 · React 19 · Tailwind v4 front end |
 | [`infra/`](infra/) | Terraform describing the AWS stack, adopted from hand-built resources via `imports.tf` |
 | [`docs/`](docs/) | The research record, the runbook, deploy notes (see [Documentation](#documentation)) |
@@ -243,7 +243,7 @@ recovered.
 | `/team/[id]` | A manager's dashboard: pitch, captain (compare folded), best transfer, squad health; the advisor shows only when it's switched on. `/team/0` is the demo squad |
 | `/players` | Every player, with views (All, Low owned, Budget, Penalty takers, Next 8 weeks) and a Filters sheet. `/predictions` and `/differentials` redirect here |
 | `/fixtures` | Up to 8 gameweeks, one number per fixture: difficulty, or the win, goals or clean-sheet chance |
-| `/fixtures/[match]` | One match: result and clean-sheet chances, likeliest scores, both predicted XIs, the best FPL picks |
+| `/fixtures/[match]` | One match: result and clean-sheet chances, our model's view beside the bookmakers', likeliest scores, both predicted XIs, the best FPL picks, the set-piece takers |
 | `/news` | FPL's injured, doubtful and suspended players (most-owned first), then the week's team news; everything else is filtered out |
 | `/model` | This season's live record against FPL's own forecast; last season's test, experiments and limits folded below |
 | `/privacy` · `/terms` | Legal |
@@ -274,7 +274,7 @@ Needs Python ≥ 3.11 (CI uses 3.13) and Node 22.
 
 ```bash
 make setup      # .venv + pip install -e ".[dev,api]"
-make test       # 692 tests
+make test       # 693 tests
 make lint
 ```
 
