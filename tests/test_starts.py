@@ -68,3 +68,45 @@ def test_fit_learns_that_starters_start():
 
 def test_expected_rows_is_the_union():
     assert sm.expected_rows({(1, 1): 0.6, (1, 2): 0.2}, {(1, 2): 0.7, (1, 3): 0.1}) == {(1, 1), (1, 2)}
+
+
+def test_shipped_model_loads():
+    m = starts.load()
+    assert m.trained_on == ["2023-24", "2024-25", "2025-26"]
+    nailed = m.predict([(90, 1)] * 8, "DEF")
+    benched = m.predict([(0, 0)] * 8, "DEF")
+    # a player who started all eight is likely but not certain to play (§44: 0.90, not 1.00)
+    assert 0.8 < nailed.p_play < 0.97 and 70 < nailed.x_minutes <= 90
+    assert benched.p_play < 0.3
+
+
+class _Engine:
+    def knows(self, _team):
+        return True
+
+    def predict(self, _h, _a):
+        return type("P", (), {"lam_home": 1.4, "lam_away": 1.1,
+                              "clean_sheet_home": 0.33, "clean_sheet_away": 0.25})()
+
+
+def _xmin(recent_minutes=None, starts_by_gw=None):
+    from fpledge.models.xp_table import compute_xp_records
+
+    player = {"code": 1, "element_id": 11, "team_id": 1, "position": "MID", "web_name": "P",
+              "minutes": 3000, "starts": 34, "xg": 8.0, "xa": 6.0, "dc": 40, "bonus": 12,
+              "ownership": 20.0}
+    recs, _, _ = compute_xp_records([player], {1: "A", 2: "B"}, [(1, 2)], _Engine(),
+                                    {"A": "A", "B": "B"}, {1: 7.5}, recent_minutes=recent_minutes,
+                                    starts_by_gw=starts_by_gw)
+    return recs[0]["x_minutes"]
+
+
+def test_production_takes_the_start_model_after_the_switch():
+    from fpledge.models.minutes import MinutesModel
+
+    mins, sts = [90] * 6, [1] * 6
+    model = starts.load().predict(list(zip(mins, sts, strict=True)), "MID").x_minutes
+    assert _xmin({1: mins}, {1: sts}) == pytest.approx(model)
+    assert _xmin({1: mins}) == pytest.approx(MinutesModel().from_recent(mins).x_minutes)  # no starts: old path
+    assert _xmin({1: [0] * 6}, {1: [0] * 6}) == _xmin()          # the all-zero guard still holds
+    assert _xmin({1: [90] * 3}, {1: [1] * 3}) == _xmin()         # so does the four-gameweek switch
