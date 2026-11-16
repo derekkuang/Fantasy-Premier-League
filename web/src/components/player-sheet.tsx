@@ -282,6 +282,7 @@ export function PlayerSheet({
                   {player.position === "GK" && <Line label="Saves" sub={`${b.x_saves.toFixed(1)} expected`} value={f2(b.save_points)} />}
                   {b.dc_points > 0.001 && <Line label="Defensive contribution" sub={`${pct(b.p_dc_point)} chance`} value={f2(b.dc_points)} />}
                   <Line label="Bonus" value={f2(b.bonus_points)} />
+                  {(b.card_points ?? 0) < -0.001 && <Line label="Cards" sub="yellow and red, at his position's rate" value={f2(b.card_points ?? 0)} />}
                   <Line label="Total" value={b.total.toFixed(2)} strong />
                   <p className="mt-1 text-[12px] text-muted">Each line is the average points from that way of scoring. They add up to the total.</p>
                 </div>

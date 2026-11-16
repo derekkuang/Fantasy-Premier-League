@@ -21,6 +21,7 @@ from .xpoints import (
     PlayerContext,
     dc_point_probability_by_case,
     expected_bonus,
+    expected_card_points,
     expected_conceded_penalty,
     expected_points_breakdown,
 )
@@ -157,6 +158,7 @@ def compute_xp_records(
                     # "Diop" artifact). We can't trust attacking attribution here — drop it.
                     # Appearance / clean-sheet / defensive-contribution stay (fixture-based).
                     sh = {"goal_share": 0.0, "assist_share": 0.0}
+                sh = {**sh, "assist_share": sh["assist_share"] * config.ASSIST_SCALE.get(p["position"], 1.0)}
                 if rates is None:
                     per90 = p["minutes"] / 90.0
                     trust = p["minutes"] >= min_rate_minutes
@@ -180,6 +182,8 @@ def compute_xp_records(
                         size=config.DC_NB_SIZE.get(p["position"]),
                     ),
                     x_bonus=expected_bonus(bonus_per90, mp.x_minutes),
+                    x_card_points=expected_card_points(
+                        *config.CARD_RATES_PER90.get(p["position"], (0.0, 0.0)), mp.x_minutes),
                     opp_lambda=opp_lambda,
                     x_conceded_penalty=(
                         expected_conceded_penalty(opp_lambda, mp.x_minutes)

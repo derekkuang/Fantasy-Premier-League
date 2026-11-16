@@ -11,8 +11,8 @@ Status: **found** → **rule written** → **tested** (verdict) → **PR** → *
 |---|---|---|---|
 | E1 | Keeper saves: 3 per expected goal, measured 2.02 | keepers −0.8 pts/game | **PR #11**: held out 2022-23, SHIP |
 | E2 | Defensive contribution: threshold chance computed on expected minutes | DEF about 30% under; ranking +0.0033 | **PR #12**: held out 2026-27, SHIP |
-| E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | **retest INCONCLUSIVE** on 2022-23; confirmation on GW11-18 written |
-| E4 | Forwards' assists under-projected | FWD +0.1 pts/game | tested with E3, same status |
+| E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | **PR #13: live on the owner's decision** after an inconclusive held-out; GW11-18 confirms or reverts |
+| E4 | Forwards' assists under-projected | FWD +0.1 pts/game | with E3, same status |
 | E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.30 to −0.34, uniform | parked: changes no pick |
 | E6 | Starts: minutes are a recent average, not a start probability | knowing starters lifts ρ 0.374 → 0.510 | found |
 | E7 | Pre-deadline data is about 23 hours old | Friday team news missed | found |
@@ -105,6 +105,11 @@ expected to play (p_play ≥ 0.5 before the deadline), whether or not he did. De
 rate prior, and its attackers were under-projected where every other season had them over).
 **Next:** the fixed candidate is confirmed or closed on 2026-27 GW11-18, rule written before GW11
 was played: `python scripts/compare_cards_assists.py --confirm` once GW18 is final.
+
+**Live on the owner's decision (2026-11-16).** The tested candidate went live without passing its
+held-out test, because the model over-projects players expected to play and cards are a real
+deduction. If the GW11-18 confirmation says DO NOT SHIP, revert `CARD_RATES_PER90` and
+`ASSIST_SCALE` use in `xp_table`.
 
 ## E5. Keeper save rounding
 

@@ -86,6 +86,18 @@ SUB_APPEARANCE_MINUTES = 22.0
 # fitted on 2025-26 full games. Held out on 2026-27 with the case split: SHIP (HANDOFF §42).
 DC_NB_SIZE = {"DEF": 20, "MID": 39, "FWD": 39}
 
+# Cards (docs/MODEL_FIXES.md E3): yellows and reds per 90 by position, from the previous season's
+# regulars (270+ minutes). Every player of a position gets his position's rate: the test chose it
+# over any blend with a player's own record, which is only weakly his. Refresh each summer from the
+# season just finished (`eval.cards_assists.card_prior`). These are 2025-26's.
+CARD_RATES_PER90 = {"GK": (0.0729, 0.0013), "DEF": (0.1814, 0.0083),
+                    "MID": (0.1871, 0.0048), "FWD": (0.1467, 0.0)}
+# Assist factor by position (E4): FPL assists / projected assists over 2023-26. FPL credits assists
+# xA cannot see (a won penalty, a parried shot scored from), most of them to forwards.
+ASSIST_SCALE = {"DEF": 0.78, "MID": 0.84, "FWD": 1.32}
+# Cards and assists went live on the owner's decision after an inconclusive held-out test (HANDOFF
+# §43); `scripts/compare_cards_assists.py --confirm` on 2026-27 GW11-18 decides whether they stay.
+
 # --------------------------------------------------------------------------- #
 # Match engine defaults
 # --------------------------------------------------------------------------- #

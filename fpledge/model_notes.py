@@ -100,6 +100,15 @@ EXPERIMENTS = [
                    "reached the threshold, which almost ruled him out",
         "measured": "2026-11-14",
     },
+    {
+        "name": "Cards, and forwards' assists",
+        "question": "Should projections take off expected yellow and red cards, and give forwards "
+                    "the assists FPL credits beyond expected assists?",
+        "delta": "error on players expected to play −0.111 on 2023–26; on the held-out 2022–23 "
+                 "−0.047, too close to zero to call",
+        "verdict": "live as a judgement call, not a passed test — rechecked on gameweeks 11–18",
+        "measured": "2026-11-16",
+    },
 ]
 
 NOT_MODELLED: dict[str, str] = {

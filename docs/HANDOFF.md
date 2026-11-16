@@ -97,7 +97,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
 | **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
 | **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
-| **43** | **cards and forwards' assists: played-only scoring is biased; the retest is inconclusive, confirmation on GW11-18** |
+| **43** | **cards and forwards' assists: played-only scoring is biased; retest inconclusive; live on the owner's decision, confirmation on GW11-18** |
 
 ---
 
@@ -3310,3 +3310,21 @@ every position: development keepers -0.62 a game, defenders -0.35, midfielders -
 -0.25 (actual minus projected). Cards explain about 0.15 of the outfield gap and save rounding
 about 0.3 of the keepers'; the rest says `from_recent` is too sure that a likely starter plays.
 That is what a start-probability model should fix.
+
+### Live on the owner's decision (2026-11-16)
+
+After the inconclusive held-out run, the owner chose to put the tested candidate live: the model
+over-projects every position on players expected to play, and cards are a real FPL deduction the
+model ignored. **This did not pass its held-out test**, and is recorded as a decision, not a
+result. The GW11-18 confirmation still runs once after GW18; if it says DO NOT SHIP, revert.
+
+What went live is exactly the tested candidate: `config.CARD_RATES_PER90` (2025-26 regulars'
+yellows and reds per 90 by position: keepers 0.073/0.0013, defenders 0.181/0.0083, midfielders
+0.187/0.0048, forwards 0.147/0) through `expected_card_points`, and `config.ASSIST_SCALE` (0.78 /
+0.84 / 1.32) on assist shares. The player sheet shows a Cards line so the parts still add to the
+total. Refresh the card rates each summer.
+
+On live GW11 (players above 2.5 xP): defenders -0.24 on average (-0.16 to -0.42), midfielders
+-0.26 (-0.15 to -0.42), forwards -0.04 (-0.09 to +0.10). Forwards rise against midfielders:
+Haaland 7.31 → 7.30 while Groß goes 6.39 → 5.97 and Palmer 5.66 → 5.35. The 2026-27 descriptive
+run had the ranking slightly down (-0.0012 [-0.0024, +0.0002]); that is the risk being taken.
