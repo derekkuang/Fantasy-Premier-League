@@ -131,6 +131,7 @@ class _Client:
         self.responses = list(responses)
         self.calls = 0
         self.messages = self
+        self.beta = self   # brief.py calls client.beta.messages.create (server-side fallbacks)
 
     def create(self, **kw):
         self.calls += 1

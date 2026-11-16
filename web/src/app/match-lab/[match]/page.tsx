@@ -1,8 +1,10 @@
-// One match (HANDOFF §40): reached from any fixture on the Fixtures grid.
+// One match in the Match Lab (HANDOFF §40, §45, docs/MATCH_LAB.md). Reached from the Match Lab hub
+// and from any fixture on the Fixtures grid; /fixtures/{id} redirects here.
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getLatestGw, getMatch, type MatchResponse } from "@/lib/api";
+import { getLatestGw, getMatch, getNews, type MatchResponse, type NewsResponse } from "@/lib/api";
+import { kickoffLabel } from "@/lib/match-lab";
 import { JerseyDefs } from "@/components/jersey";
 import { MatchLab } from "@/components/match-lab";
 import { PageError, PageShell } from "@/components/page-shell";
@@ -30,8 +32,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const m = got.data.match;
   return {
     title: `${m.home} v ${m.away}, gameweek ${m.gw} — FPL Edge`,
-    description: `Win, draw and clean-sheet chances, the likeliest scores and both predicted lineups for ${m.home} v ${m.away}.`,
-    alternates: { canonical: `/fixtures/${match}` },
+    description: `${m.home} v ${m.away}: the odds, our model's view, form, team news, both predicted lineups, set-piece takers and the best FPL picks.`,
+    alternates: { canonical: `/match-lab/${match}` },
   };
 }
 
@@ -42,14 +44,17 @@ export default async function MatchPage({ params }: Params) {
   if (got === "error") return <PageError message="This match couldn't be loaded. Try again in a minute." />;
   const { gw, data } = got;
   const m = data.match;
+  // Team news is a nice-to-have: the page renders without it if the digest is unavailable.
+  const news: NewsResponse | null = await getNews().catch(() => null);
+  const when = kickoffLabel(m.kickoff);
   return (
     <PageShell
-      back={{ href: "/fixtures", label: "Fixtures" }}
+      back={{ href: "/match-lab", label: "Match Lab" }}
       title={`${m.home} v ${m.away}`}
-      subtitle={`Gameweek ${m.gw} · ${m.source === "market" ? "odds from the bookmakers" : "odds from our match model"}`}
+      subtitle={`${when ? `${when} · ` : ""}Gameweek ${m.gw} · ${m.source === "market" ? "odds from the bookmakers" : "odds from our match model"}`}
     >
       <JerseyDefs />
-      <MatchLab match={m} assets={data.assets} gw={gw} />
+      <MatchLab match={m} assets={data.assets} gw={gw} news={news} />
     </PageShell>
   );
 }

@@ -20,7 +20,7 @@ export default async function FixturesPage() {
   return (
     <PageShell
       title="Fixtures"
-      subtitle="How hard each team's next games are, best runs first. Tap a fixture for the match."
+      subtitle="How hard each team's next games are, best runs first. Tap a fixture for its Match Lab."
     >
       {/* defines the #jerseyBody clip path every <Jersey/> references — render once */}
       <JerseyDefs />

@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     return [
       { source: "/predictions", destination: "/players", permanent: true },
       { source: "/differentials", destination: "/players?view=low-owned", permanent: true },
+      // The match page moved into the Match Lab (docs/MATCH_LAB.md); old links keep working.
+      { source: "/fixtures/:match(\\d{1,2}-\\d{1,2}-\\d{1,2})", destination: "/match-lab/:match", permanent: true },
     ];
   },
 };

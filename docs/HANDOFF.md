@@ -100,6 +100,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **43** | **cards and forwards' assists: played-only scoring is biased; retest inconclusive; live on the owner's decision, confirmation on GW11-18** |
 | **44** | **minutes from a start-probability model: ranking +0.007 held out, the expected-starter bias gone** |
 | **45** | **the match page: our model's second opinion beside the bookmakers', and the set-piece takers** |
+| **46** | **Match Lab, its own page: the hub, the match page's five sections, and a nav that had stopped sticking** |
 
 ---
 
@@ -3411,3 +3412,65 @@ desktop 1440, dark and light, no horizontal overflow, no glued words.
 **Still not built from the plan:** the written read (`brief.py` exists with its numeric guard; it
 needs an Anthropic API key in the precompute), and key matchups (needs shot-location data, would
 always be an approximation).
+
+## 46. Match Lab, its own page (2026-11-16)
+
+The owner asked for Match Lab as a destination of its own rather than a page reached by tapping a
+fixture. The plan and its checklist are `docs/MATCH_LAB.md`; this is what was built.
+
+**Two pages.** `/match-lab` is the hub: one card per match in a gameweek, kickoff order (UK time), with
+the win/draw/win bar, expected goals, clean-sheet chances, the best pick from each side, an "our model
+disagrees" flag when the engine's expected goals differ from the bookmakers' by 0.3 or more, and how
+many of the two squads FPL has injured, doubtful or suspended. Arrows step through the eight
+gameweeks in the payload; later ones are odds only. Sorting: kickoff, goals, clean sheet, model gap.
+The cards are built on the server from `/matches` and `/predictions`, so the full player list never
+reaches the browser. `/match-lab/[match]` is the match page moved from `/fixtures/[match]`, which now
+redirects permanently (308) in `next.config.ts`; the Fixtures grid links to the new address.
+
+**The match page's five sections**, under a sticky strip of links:
+
+- Overview: the odds and tiles (§40), the written read when one exists, our model's view (§45), and
+  form, each club's last five results, newest last, with goals for and against.
+- Team news: FPL's injured, doubtful and suspended players for both clubs (as the projection used
+  them), then up to three of the week's stories per club from the News digest.
+- Lineups: the predicted XIs (§40, §44) and set-piece takers (§45).
+- FPL: the captain pick (highest expected points in the match), a differential (highest under 10%
+  owned), the best six picks, and each player's chance to score, to assist, or of a clean sheet while
+  playing 60+. Score and assist chances are 1 − e^−x from the breakdown's expected goals and assists,
+  which already allow for the chance he doesn't play; labelled as our model's.
+- Scores: the likeliest six scores, both to score, over 2.5.
+
+A later gameweek shows Overview and Scores and says the rest arrives in its week.
+
+**Backend.** `matches.match_previews` gained `kickoff` (from `fixtures.kickoff_utc`) and `form`
+(`matches.club_form`, every finished result this season, last five per club, newest first, unscored
+rows skipped); previews now sort by kickoff within a gameweek. Both need a precompute after merge;
+until then the hub shows "Gameweek N" in place of the time and form is absent.
+
+**The flag count was wrong at first.** "Flagged" counted every player FPL lists as unavailable,
+which is how it marks loanees and players who have left: one card said 22. The Match Lab now counts
+only injured, doubtful and suspended (`lib/match-lab.ts isFlagged`), the News page's rule; cards read
+4 to 11.
+
+**A site-wide bug, found by the strip.** The main nav carries `sticky top-0`, but `.chrome-edge {
+position: relative }` in `globals.css` sits outside Tailwind's layers and beat it, so the nav had
+scrolled away with the page on every route since the interface pass of 2026-08-05; every second bar
+written to stick at `--nav-h` stuck 48px below nothing. The rule now applies only to bars that are
+not sticky or fixed, and the nav moved from z-30 to z-40 so in-page sticky rows (the Fixtures grid's
+header) slide under it rather than over it; the sheet stays at z-50. Checked on Players, Fixtures,
+News and My team at 390 and 1440: nav at the top, no overflow.
+
+**The written read (Phase 4), wired but off.** `brief.py` now calls Claude Opus 5.5 (`claude-opus-5-5`,
+effort low set explicitly since this model defaults to medium, `max_tokens` 16000 because it always
+thinks) through `client.beta.messages.create` with `fallbacks="default"`, so a declined request is
+re-run server-side on another model, and `generated_by` records the model that answered. The
+precompute installs the `llm` extra and passes `ANTHROPIC_API_KEY` from a repository secret; with no
+secret every briefing is the template and the page hides it. The run logs `n_briefs_written`: with a
+key set and that at zero, narration is failing silently. The template itself said "The model makes
+Arsenal 62% to win" when those were the bookmakers' odds; it now names whose odds they are. Never
+run live: the first gameweek with a key must be read by hand before the section is trusted.
+
+**Checked** locally against the live API, with a proxy adding this branch's kickoff and form:
+phone 390 and desktop 1440, dark and light, no overflow, no glued words; the gameweek arrows, the
+sort, the strip's anchors, a set-piece chip opening the sheet, the 308 redirect, and both empty
+states (a later gameweek; a model-priced match with no comparison).

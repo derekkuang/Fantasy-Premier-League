@@ -167,7 +167,7 @@ function FixtureCell({
           const tile = "flex flex-col overflow-hidden rounded-lg border border-[var(--line)]";
           // Not prefetched: a hundred visible cells would each fetch a match page.
           return o ? (
-            <Link key={`${f.opp}-${f.home}`} href={`/fixtures/${o.id}`} prefetch={false} title={title}
+            <Link key={`${f.opp}-${f.home}`} href={`/match-lab/${o.id}`} prefetch={false} title={title}
               className={`${tile} press hover:border-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-600`}>
               {body}
             </Link>

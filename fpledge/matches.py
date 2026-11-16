@@ -48,6 +48,29 @@ def _label(team_id, fpl_teams, tmap):
     return tmap.get(fpl_teams.get(team_id)) or f"__unknown__:{team_id}"
 
 
+FORM_MATCHES = 5
+
+
+def club_form(results: Sequence[tuple], fpl_teams: dict, last: int = FORM_MATCHES) -> dict:
+    """{team_id: [his club's last `last` results, newest first]} from finished fixtures.
+
+    `results` are (gw, home_id, away_id, home_goals, away_goals, kickoff) rows, any order. Each
+    entry is {gw, opp_id, opp, home, gf, ga, result} with result "W", "D" or "L", from the club's
+    side. A row without both scores is skipped rather than guessed.
+    """
+    rows = sorted((r for r in results if r[3] is not None and r[4] is not None),
+                  key=lambda r: (str(r[5] or ""), r[0]), reverse=True)
+    out: dict = {}
+    for gw, h, a, hg, ag, _k in rows:
+        for team, opp, home, gf, ga in ((h, a, True, hg, ag), (a, h, False, ag, hg)):
+            seq = out.setdefault(team, [])
+            if len(seq) < last:
+                seq.append({"gw": gw, "opp_id": opp, "opp": fpl_teams.get(opp), "home": home,
+                            "gf": int(gf), "ga": int(ga),
+                            "result": "W" if gf > ga else "D" if gf == ga else "L"})
+    return out
+
+
 def match_previews(
     engine,
     fixtures: Sequence[dict],
@@ -56,8 +79,14 @@ def match_previews(
     start_gw: int,
     horizon: int = 8,
     market_lambdas: dict | None = None,
+    kickoffs: dict | None = None,
+    form: dict | None = None,
 ) -> list[dict]:
     """One preview per fixture in [start_gw, start_gw+horizon), ordered by gameweek.
+
+    `kickoffs` ({(gw, home_id, away_id): ISO time in UTC}) and `form` (`club_form`'s output) add
+    the kickoff and each club's recent results for the Match Lab (docs/MATCH_LAB.md); without
+    them the preview carries `kickoff: None` and empty form, as before.
 
     `fixtures` are dicts with gw/home_id/away_id — the same shape `fixture_ticker` takes.
 
@@ -89,6 +118,8 @@ def match_previews(
             "gw": fx["gw"],
             "home_id": h, "home": fpl_teams.get(h),
             "away_id": a, "away": fpl_teams.get(a),
+            "kickoff": (kickoffs or {}).get((fx["gw"], h, a)),
+            "form": {"home": (form or {}).get(h, []), "away": (form or {}).get(a, [])},
             "source": source,
             "lam_home": round(probs.lam_home, 3),
             "lam_away": round(probs.lam_away, 3),
@@ -123,5 +154,5 @@ def match_previews(
                 "away": {"attack": attack_fdr(probs.lam_away), "defence": defence_fdr(probs.lam_home)},
             },
         })
-    out.sort(key=lambda m: (m["gw"], m["home"] or ""))
+    out.sort(key=lambda m: (m["gw"], m["kickoff"] or "", m["home"] or ""))
     return out

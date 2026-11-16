@@ -331,11 +331,26 @@ export type MatchBrief = {
 
 export type Scoreline = { home: number; away: number; p: number };
 
+/** One finished match from a club's side, for the Match Lab's form strip. */
+export type FormResult = {
+  gw: number;
+  opp_id: number;
+  opp: string | null;
+  home: boolean;
+  gf: number;
+  ga: number;
+  result: "W" | "D" | "L";
+};
+
 export type Match = {
   match_id: string;
   gw: number;
   home_id: number; home: string | null;
   away_id: number; away: string | null;
+  /** ISO kickoff in UTC; absent in payloads built before the Match Lab page. */
+  kickoff?: string | null;
+  /** Each club's last five results, newest first. */
+  form?: { home: FormResult[]; away: FormResult[] };
   source: "market" | "model";   // de-vigged betting line, or the Dixon-Coles engine
   lam_home: number; lam_away: number;
   result: { home_win: number; draw: number; away_win: number };

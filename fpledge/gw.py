@@ -13,7 +13,7 @@ from .betting.market_lambda import market_lambdas as _market_lambdas
 from .fdr import fixture_ticker
 from .ingest import footballdata, oddsapi
 from .lineup import projected_xi, recent_starts
-from .matches import match_previews
+from .matches import club_form, match_previews
 from .models.dixon_coles import DixonColesModel
 from .models.rates import PRIOR_K, blended_rates, season_totals
 from .models.teammap import build_odds_team_map, build_team_map
@@ -243,6 +243,21 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         "SELECT gw, home_id, away_id FROM fixtures WHERE season = ? AND gw < ? AND finished",
         [config.SEASON, gw],
     ).fetchall()
+    # For the Match Lab: each upcoming fixture's kickoff, and every finished result for the
+    # clubs' recent form (docs/MATCH_LAB.md).
+    kickoffs = {
+        (g, h, a): (k.isoformat() + "Z") if k is not None else None
+        for g, h, a, k in con.execute(
+            "SELECT gw, home_id, away_id, kickoff_utc FROM fixtures "
+            "WHERE season = ? AND gw >= ? AND gw < ?",
+            [config.SEASON, gw, gw + horizon],
+        ).fetchall()
+    }
+    results = con.execute(
+        "SELECT gw, home_id, away_id, home_goals, away_goals, CAST(kickoff_utc AS VARCHAR) "
+        "FROM fixtures WHERE season = ? AND finished",
+        [config.SEASON],
+    ).fetchall()
     # Every finished fixture by FPL id, for the player sheet's history: which match each
     # player's points came from (fpledge/history.py).
     fixture_teams = {
@@ -309,6 +324,7 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
         "prices": prices, "availability": availability, "meta": meta,
         "recent_minutes": recent_minutes, "starts_by_gw": starts_by_gw,
+        "kickoffs": kickoffs, "results": results,
         "usual_shapes": usual_shapes, "recent_starts": starts_recent,
         "engine": engine, "tmap": tmap, "source_report": source_report, "rates": rates,
         # carried through for the player sheet's predicted-vs-actual history (fpledge/history.py)
@@ -368,6 +384,7 @@ def assemble_for_serving(
     previews = match_previews(
         inp["engine"], ticker_fixtures, inp["fpl_teams"], inp["tmap"],
         start_gw=gw, horizon=horizon, market_lambdas=market,
+        kickoffs=inp.get("kickoffs"), form=club_form(inp.get("results") or [], inp["fpl_teams"]),
     )
 
     # Per-player xP for each upcoming GW (same engine/shares, different opponent), so the
