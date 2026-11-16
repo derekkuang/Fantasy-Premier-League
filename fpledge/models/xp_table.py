@@ -19,7 +19,7 @@ from .minutes import RECENT_GWS, MinutesModel
 from .shares import match_shares, rate_shares, team_minutes
 from .xpoints import (
     PlayerContext,
-    dc_point_probability,
+    dc_point_probability_by_case,
     expected_bonus,
     expected_conceded_penalty,
     expected_points_breakdown,
@@ -175,7 +175,10 @@ def compute_xp_records(
                     p_clean_sheet=p_cs,
                     x_saves=(opp_lambda * config.SAVES_PER_EXPECTED_GOAL * (mp.x_minutes / 90.0)
                              if p["position"] == "GK" else 0.0),
-                    p_dc_point=dc_point_probability(dc_per90, mp.x_minutes, p["position"]),
+                    p_dc_point=dc_point_probability_by_case(
+                        dc_per90, mp.p_play, mp.p_60, mp.x_minutes, p["position"],
+                        size=config.DC_NB_SIZE.get(p["position"]),
+                    ),
                     x_bonus=expected_bonus(bonus_per90, mp.x_minutes),
                     opp_lambda=opp_lambda,
                     x_conceded_penalty=(
