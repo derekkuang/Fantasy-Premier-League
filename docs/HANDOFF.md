@@ -98,6 +98,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
 | **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
 | **43** | **cards and forwards' assists: played-only scoring is biased; retest inconclusive; live on the owner's decision, confirmation on GW11-18** |
+| **44** | **minutes from a start-probability model: ranking +0.007 held out, the expected-starter bias gone** |
 
 ---
 
@@ -3328,3 +3329,55 @@ On live GW11 (players above 2.5 xP): defenders -0.24 on average (-0.16 to -0.42)
 -0.26 (-0.15 to -0.42), forwards -0.04 (-0.09 to +0.10). Forwards rise against midfielders:
 Haaland 7.31 → 7.30 while Groß goes 6.39 → 5.97 and Palmer 5.66 → 5.35. The 2026-27 descriptive
 run had the ranking slightly down (-0.0012 [-0.0024, +0.0002]); that is the risk being taken.
+
+## 44. Minutes from a start-probability model (2026-11-16)
+
+**What was wrong (E6, E9).** `MinutesModel.from_recent` averages the last six gameweeks, so a
+player who played all six is certain to play: p_play 1.00. On 2025-26 those 6,549 player-matches
+played 90% of the time and reached 60 minutes 87% of the time. That overconfidence sits on the
+most-picked players, and it is why the cards retest found every position projected too high on
+players expected to play. §19's oracle had already said knowing who starts is the largest gain
+available (ρ 0.374 → 0.510).
+
+**The model** (`fpledge/models/starts.py`). Four parts, each learned from a player's season-to-date
+starts and minutes (14 features: starts and minutes over the last 1, 3 and 5, gameweeks since his
+last start and appearance, season start rate, minutes when starting, position):
+P(start), P(comes on | no start), P(60+ | start) by logistic regression, and minutes given a start
+by linear regression; minutes off the bench are the training average. They combine into the same
+`MinutesPrediction` as before. Serving is arithmetic on `models/start_model.json`; scikit-learn
+is used only to fit, offline.
+
+**The test** (`fpledge/eval/start_model.py`, rule committed in `0a78390` before any run). Scored by
+squared error over every player either model expected to play, whether or not he did, with the
+usual ranking guard. Exploration on 2025-26 had been looked at first and is disclosed in the rule.
+
+- Rule 1: regularisation C barely mattered (log-loss 0.2476 / 0.2475 / 0.2476); C = 1.
+- Rule 2, 2025-26 with the 2023-25 fit: squared error 8.243 → 7.902, -0.339 [-0.420, -0.261];
+  **ranking ρ 0.3498 → 0.3716, +0.0219 [+0.0132, +0.0307]**; plays Brier 0.096 → 0.084.
+- Rule 3: refit on 2023-26; that fit is `start_model.json`.
+
+**Held out, 2026-27 GW2-10, run once: SHIP.** Squared error 7.666 → 7.463, -0.204 [-0.292,
+-0.112]; ranking ρ 0.3891 → 0.3963, **+0.0073 [+0.0011, +0.0135]**; plays Brier 0.120 → 0.104.
+The bias on players expected to play went from keepers -0.04, defenders -0.08, midfielders -0.17,
+forwards -0.18 to +0.10, +0.01, -0.05, -0.07: E9 is gone. The ranking gain held out is a third of
+development's.
+
+**In production.** `gw.recent_history_by_code` reads starts beside minutes from event-live, and
+`compute_xp_records(starts_by_gw=...)` uses the start model wherever it used `from_recent`. The
+switch around it is unchanged: four gameweeks of evidence, and the all-zero guard, so Saliba
+(no minutes this season) still gets last season's average and that question stays open.
+
+GW11 built locally both ways (engine lambdas, no market odds): 672 players, mean change -0.01;
+the 131 above 3.0 xP fall 0.33 on average, the old certainty taken out. The largest moves follow
+the last match. Back from injury and coming off the bench: Collins 0.38 → 3.10, Wieffer 0.59 →
+3.23, Ahoka 1.10 → 2.58. Off early last time: Xhaka 2.27 → 0.62 (3 minutes, calf), Dango 3.45 →
+2.24 (four starts, the last two hooked at 45 or so).
+
+**Is that right?** On 2023-26, a player who started and played under 30 minutes started the next
+match 12% of the time (18% if he had started the three before); 30-55 minutes, 36% (40%); 85+,
+88% (91%). Early exits are mostly knocks and tactical hooks, so the model reads them as history
+says. **What it cannot do is use FPL's flag.** It was fitted without flags, and production then
+multiplies by FPL's chance of playing, so a player flagged after an early exit is discounted
+twice (Xhaka: the model's 0.36 to play, times FPL's 75%), and a player FPL calls fully fit gets
+no credit for it. That is E6b in `docs/MODEL_FIXES.md`: fit with FPL's pre-deadline flags as
+features, from our own snapshots, and test it on gameweeks not yet played.

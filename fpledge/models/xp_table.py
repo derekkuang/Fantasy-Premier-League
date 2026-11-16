@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from .. import config
 from ..playermeta import EMPTY_META
 from . import rank
+from . import starts as start_model_mod
 from .minutes import RECENT_GWS, MinutesModel
 from .shares import match_shares, rate_shares, team_minutes
 from .xpoints import (
@@ -64,8 +65,13 @@ def compute_xp_records(
     recent_minutes: dict | None = None,
     min_recent_gws: int = MIN_RECENT_GWS,
     rates: dict | None = None,
+    starts_by_gw: dict | None = None,
 ):
     """Return (records, skipped_fixtures, coverage).
+
+    `starts_by_gw` ({code: [starts per GW]}, aligned with `recent_minutes`) puts a player who has
+    crossed the recency switch on the start model (`models.starts`, HANDOFF §44) instead of
+    `from_recent`. The switch itself, its four gameweeks and its all-zero guard, is unchanged.
 
     `rates` ({code: per-90 xg, xa, dc, bonus, plus this season's minutes}, from
     `models.rates.blended_rates`) replaces last season's totals as the source of every per-90
@@ -90,11 +96,16 @@ def compute_xp_records(
     """
     minutes_model = MinutesModel()
     recent_minutes = recent_minutes or {}
+    start_model = start_model_mod.load() if starts_by_gw is not None else None
 
     def _pred(p):
         rec = recent_minutes.get(p["code"]) or []
+        st = (starts_by_gw or {}).get(p["code"])
         if len(rec) >= min_recent_gws and any(rec):
-            mp = minutes_model.from_recent(rec[-RECENT_GWS:])
+            if start_model is not None and st is not None and len(st) == len(rec):
+                mp = start_model.predict(list(zip(rec, st, strict=True)), p["position"])
+            else:
+                mp = minutes_model.from_recent(rec[-RECENT_GWS:])
         else:
             mp = minutes_model.from_season(p["minutes"], p["starts"])
         if availability:
@@ -234,6 +245,7 @@ def compute_multi_gw_xp(
     availability: dict | None = None,
     market_lambdas: dict | None = None,
     recent_minutes: dict | None = None,
+    starts_by_gw: dict | None = None,
     rates: dict | None = None,
 ):
     """Per-player xP for each upcoming gameweek, joined to the fixture + true FDR.
@@ -249,7 +261,7 @@ def compute_multi_gw_xp(
         recs, _, _ = compute_xp_records(
             players, fpl_teams, fixtures_by_gw.get(g, []), engine, tmap, prices,
             availability=availability, market_lambdas=market_lambdas,
-            recent_minutes=recent_minutes, rates=rates,
+            recent_minutes=recent_minutes, rates=rates, starts_by_gw=starts_by_gw,
         )
         xp_by_el: dict = defaultdict(float)
         meta: dict = {}

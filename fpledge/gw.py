@@ -136,7 +136,16 @@ PLAYER_COLS = [
 
 def recent_minutes_by_code(elements: list[dict], live_by_gw: dict,
                            past_fixtures: list[tuple]) -> dict:
-    """{code: [minutes per GW, oldest -> newest]} from landed event-live payloads.
+    """{code: [minutes per GW, oldest -> newest]}: `recent_history_by_code`'s minutes."""
+    return {code: [m for m, _s in h]
+            for code, h in recent_history_by_code(elements, live_by_gw, past_fixtures).items()}
+
+
+def recent_history_by_code(elements: list[dict], live_by_gw: dict,
+                           past_fixtures: list[tuple]) -> dict:
+    """{code: [(minutes, starts) per GW, oldest -> newest]} from landed event-live payloads.
+
+    The start model (`models.starts`) reads the pairs; the minutes alone feed everything else.
 
     A gameweek contributes to a player's list only when his team had a fixture that week:
     event-live reports 0 minutes both for "benched" and for "his club had a blank", and folding
@@ -160,7 +169,8 @@ def recent_minutes_by_code(elements: list[dict], live_by_gw: dict,
             code, team = ident.get(el.get("id"), (None, None))
             if code is None or team not in teams:
                 continue
-            out[code].append(int((el.get("stats") or {}).get("minutes") or 0))
+            stats = el.get("stats") or {}
+            out[code].append((int(stats.get("minutes") or 0), int(stats.get("starts") or 0)))
     return dict(out)
 
 
@@ -265,7 +275,10 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     # gameweeks < N, so re-precomputing a past week never sees (or pays to fetch) data that
     # postdates its own deadline. Preseason this is {} and every projection is unchanged.
     live = storeload.landed_event_live(max_gw=gw - 1)
-    recent_minutes = recent_minutes_by_code(boot["elements"], live, past_fixtures)
+    history = recent_history_by_code(boot["elements"], live, past_fixtures)
+    recent_minutes = {code: [m for m, _s in h] for code, h in history.items()}
+    # Starts per GW, aligned with the minutes, for the start model (HANDOFF §44).
+    starts_by_gw = {code: [st for _m, st in h] for code, h in history.items()}
     # Each club's usual shape and each player's recent starts, for the projected XIs.
     usual_shapes, starts_recent = recent_starts(boot["elements"], live, past_fixtures)
     rates = blended_rates(players, season_totals(boot["elements"], live))
@@ -295,7 +308,7 @@ def _load_inputs(gw: int, horizon: int, seasons: list[str] | None) -> dict | Non
     return {
         "players": players, "fpl_teams": fpl_teams, "fixtures": fixtures,
         "prices": prices, "availability": availability, "meta": meta,
-        "recent_minutes": recent_minutes,
+        "recent_minutes": recent_minutes, "starts_by_gw": starts_by_gw,
         "usual_shapes": usual_shapes, "recent_starts": starts_recent,
         "engine": engine, "tmap": tmap, "source_report": source_report, "rates": rates,
         # carried through for the player sheet's predicted-vs-actual history (fpledge/history.py)
@@ -316,6 +329,7 @@ def records_for_gw(gw: int, seasons: list[str] | None = None) -> dict | None:
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], meta=inp["meta"],
         recent_minutes=inp["recent_minutes"], rates=inp["rates"],
+        starts_by_gw=inp.get("starts_by_gw"),
     )
     return {
         "records": records, "fallback": fallback, "coverage": coverage,
@@ -342,6 +356,7 @@ def assemble_for_serving(
         inp["players"], inp["fpl_teams"], gw_fixtures, inp["engine"], inp["tmap"],
         inp["prices"], availability=inp["availability"], market_lambdas=market,
         meta=inp["meta"], recent_minutes=inp["recent_minutes"], rates=inp["rates"],
+        starts_by_gw=inp.get("starts_by_gw"),
     )
     ticker_fixtures = [{"gw": g, "home_id": h, "away_id": a} for (g, h, a) in inp["fixtures"]]
     ticker = fixture_ticker(
@@ -364,6 +379,7 @@ def assemble_for_serving(
         inp["players"], inp["fpl_teams"], fixtures_by_gw, inp["engine"], inp["tmap"],
         inp["prices"], ticker, sorted(fixtures_by_gw), availability=inp["availability"],
         market_lambdas=market, recent_minutes=inp["recent_minutes"], rates=inp["rates"],
+        starts_by_gw=inp.get("starts_by_gw"),
     )
     for r in records:
         fx = multi.get(r["element_id"], [])

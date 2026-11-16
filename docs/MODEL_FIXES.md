@@ -14,10 +14,11 @@ Status: **found** → **rule written** → **tested** (verdict) → **PR** → *
 | E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | **PR #13: live on the owner's decision** after an inconclusive held-out; GW11-18 confirms or reverts |
 | E4 | Forwards' assists under-projected | FWD +0.1 pts/game | with E3, same status |
 | E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.30 to −0.34, uniform | parked: changes no pick |
-| E6 | Starts: minutes are a recent average, not a start probability | knowing starters lifts ρ 0.374 → 0.510 | found |
+| E6 | Starts: minutes are a recent average, not a start probability | ranking +0.0073 held out | **PR #14**: held out 2026-27, SHIP |
+| E6b | The start model cannot use FPL's flags | flagged early exits discounted twice | found |
 | E7 | Pre-deadline data is about 23 hours old | Friday team news missed | found |
 | E8 | Penalty saves have no term | keepers +0.07 pts/game, cancelled by their cards | parked |
-| E9 | Expected starters play less than projected | about −0.3 pts/game on players expected to play | found; part of E6 |
+| E9 | Expected starters play less than projected | about −0.3 pts/game on players expected to play | fixed by E6 (bias within 0.1 at every position) |
 
 Not errors, measured (HANDOFF §41): pulling a player's projection towards his misses (never
 better than +0.0006, up to −0.014), and goals against xG (does not carry over within a season).
@@ -134,6 +135,21 @@ given a start. Then the DC and appearance terms use the start probability direct
 
 **Test.** Train on 2023-25, choose on 2025-26, held out on 2026-27 to date. Measured against the
 current minutes model on start log-loss and the ranking.
+
+**Result (HANDOFF §44).** Development, 2025-26: squared error on players expected to play −0.339
+[−0.420, −0.261], ranking +0.0219 [+0.0132, +0.0307]. Refit on 2023-26 and held out on 2026-27
+GW2-10: −0.204 [−0.292, −0.112], ranking +0.0073 [+0.0011, +0.0135]. SHIP. The expected-starter
+bias (E9) is within 0.1 at every position.
+
+## E6b. The start model and FPL's flags
+
+The start model was fitted without FPL's injury flags; production multiplies its prediction by
+FPL's chance of playing. A starter who went off early last time is already marked down by the
+model (history: 12-18% start next), so when FPL then flags him the injury counts twice (Xhaka,
+GW11: 0.36 × 75%). And a player FPL calls fully fit gets no credit for it. Fix: add the
+pre-deadline flag (status, chance of playing) as features, fitted on the snapshots we have
+captured since 2026-08-21. Test on gameweeks not yet played, since every past season lacks the
+flags and 2026-27 GW2-10 is spent for minutes.
 
 ## E7. Refresh timing
 

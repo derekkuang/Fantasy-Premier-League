@@ -109,6 +109,15 @@ EXPERIMENTS = [
         "verdict": "live as a judgement call, not a passed test — rechecked on gameweeks 11–18",
         "measured": "2026-11-16",
     },
+    {
+        "name": "Who starts",
+        "question": "Should minutes come from a model of who starts, learned from past seasons, "
+                    "instead of an average of the last six gameweeks?",
+        "delta": "+0.0073 ranking score held out on 2026-27 gameweeks 2–10 (+0.022 on 2025-26)",
+        "verdict": "kept — a player who played all six had been treated as certain to play; "
+                   "such players play nine times in ten",
+        "measured": "2026-11-16",
+    },
 ]
 
 NOT_MODELLED: dict[str, str] = {
