@@ -95,6 +95,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **38** | **the UI, simplified: answers first, the working one tap away** |
 | **39** | **team news only: an allowlist, not a blocklist, and FPL's flags first** |
 | **40** | **the match page: odds in plain numbers, predicted XIs in each club's own shape** |
+| **41** | **chasing a player's misses fails; keeper saves were wrong; defensive contribution is under-projected** |
 
 ---
 
@@ -3071,3 +3072,118 @@ fallback in `xp_table.compute_xp_records`: an all-zero minutes record cannot be 
 a new signing's missing data, so the player gets last season's average. For a player returning
 from a long injury it is probably generous for his first games back. Changing it changes
 projections, so it needs a measurement first, not a guess.
+
+## 41. Chasing misses fails, keeper saves were wrong, and defensive contribution is under-projected (2026-11-14)
+
+**The question.** If a player keeps scoring below his projection, should the projection come down?
+Measured on the development seasons 2023-24 to 2025-26 with production's analogue (k=3 rate blend,
+closing-odds lambdas), 111 gameweeks:
+
+- A player's season-average miss (actual minus xP, weeks he played) is mostly noise: split-half
+  reliability +0.33, +0.01 and +0.11.
+- After GW10, the worst 10% had missed in 84% of their weeks, by 1.65 a week. Over the rest of the
+  season they scored 0.11 a week *above* projection. The slope of later miss on earlier miss is
+  +0.02 (after GW10) and +0.06 (after GW19).
+- Adding a shrunk share of past misses, xP + β·Σmiss/(n+k) over k in 5-40 and β in 0.25-1, never
+  beat production by more than +0.0006 and lost up to 0.014 at β = 1; MAE was worse every time.
+- Finishing is not a within-season trait either: goals minus xG, first half against second half,
+  r = +0.00, +0.06, -0.09.
+
+So the model does not chase points. What a player does that lasts (minutes, xG, xA, defensive
+actions, bonus) already reaches it through §36's rates and the recent-minutes model.
+
+**But a persistent miss can be the model's own formula.** Roefs (Sunderland) scored 33 over
+GW1-10 against about 42 projected, under in 8 of 10 weeks. His minutes were right (900 of 900),
+Sunderland conceded 17 against 16.4 xGC, and he kept more clean sheets than expected. The whole
+gap was saves: 20 saves for 4 save points, against about 17 projected. Two things were wrong:
+
+- `x_saves = 3 x opponent lambda` used a constant nobody had measured. Keepers make about 2 saves
+  per expected goal conceded (1.94 in 2026-27 to GW10; 2.09 in 2023-26).
+- Save points were `x_saves / 3`, but FPL pays 1 per 3 saves in a match, rounded down. The
+  goals-conceded penalty already does this rounding; saves never did.
+
+Every keeper was projected about 0.8 save points a game too high (actual 0.62-0.67 a full game
+against the formula's 1.46-1.47), most of all keepers of clubs that concede, whose high opponent
+lambda bought them saves to cancel their missing clean sheets. In live GW11 all 19 starting keepers
+sat between 3.87 and 4.80. §18's shots-based saves test addressed neither flaw.
+
+### The test (`fpledge/eval/keeper_saves.py`, `scripts/compare_keeper_saves.py`)
+
+The rule was committed in `34173c1` before any run. The harness gained `saves_per_goal`,
+`save_points_mode` and a `breakdown_sink` for term-by-term audits; every default is unchanged.
+
+Development, 2023-24 to 2025-26. Rule 1 measured c = **2.02** saves per expected goal conceded
+(9,428 keeper fixtures). Against production:
+
+| variant | keeper MAE | diff [95%] | keeper bias | all-player ρ change [95%] |
+|---|---|---|---|---|
+| floor (3.0, rounded) | 2.457 → 2.340 | -0.117 [-0.128, -0.106] | -0.36 → -0.07 | +0.0001 [-0.0004, +0.0006] |
+| rate (2.02, linear) | 2.457 → 2.274 | -0.183 [-0.201, -0.167] | -0.36 → +0.06 | +0.0002 [-0.0007, +0.0011] |
+| rate+floor | 2.457 → 2.176 | -0.281 [-0.309, -0.255] | -0.36 → +0.35 | -0.0009 [-0.0023, +0.0005] |
+
+rate+floor had the lowest keeper MAE but its Spearman lower bound (-0.0023) missed the -0.002
+margin, so rule 2 chose **rate**, which beat production in every season (-0.201, -0.173, -0.175).
+
+**Held out, 2022-23, run once: SHIP.** Keeper MAE 2.757 → 2.594, -0.165 [-0.194, -0.135]; bias
+-0.31 → +0.13; all-player ρ 0.3620 → 0.3619, -0.0001 [-0.0010, +0.0009]. 2026-27 GW2-10,
+descriptive only because its keeper totals had been looked at: -0.168 [-0.225, -0.109], ρ
+unchanged.
+
+**In production.** `config.SAVES_PER_EXPECTED_GOAL = 2.02`, used by `xp_table`. Save points stay
+linear, as the rule chose. On the live GW11 artifact every keeper falls by a third of his save
+points: Verbruggen 4.80 → 4.50, Raya 4.78 → 4.47, Roefs 4.21 → 3.63, Leno 4.16 → 3.38, Walton
+3.87 → 3.18. The spread widens from 0.93 to 1.32 points.
+
+**What it leaves.** The rounding is still missing. The term audit below shows saves with the
+measured constant but linear points still about 0.08 a keeper fixture above actual (roughly 0.3 a
+game played). rate+floor's +0.35 played-only bias does not contradict that: on played rows only,
+a backup who unexpectedly plays scores far above his projection, which inflates every
+played-only bias. Testing the rounding needs a fresh rule judged on term-level calibration, on
+weeks not yet played.
+
+### The term audit: where else the formula, not the player, misses
+
+Production's analogue on the development seasons, each expected term against the points FPL
+actually awarded for it (`scratchpad audit`; not in the repo). Per player-fixture, all rows:
+
+| | GK | DEF | MID | FWD |
+|---|---|---|---|---|
+| saves | 0.357 vs 0.158 | | | |
+| defensive contribution | | 0.019 vs 0.058 | 0.008 vs 0.031 | |
+| cards (no term) | -0.019 | -0.069 | -0.063 | -0.043 |
+| assists | | 0.091 vs 0.072 | 0.176 vs 0.148 | 0.087 vs 0.115 |
+| penalty saves (no term) | +0.018 | | | |
+
+Everything else is within 0.03. 235 of 84,562 rows' rebuilt terms did not sum to FPL's total;
+they were left in.
+
+**Defensive contribution is the large one.** Pooled, it is diluted by the two seasons before the
+rule. In 2025-26 alone, per game played: defenders expected 0.13, actual 0.42; midfielders 0.06
+and 0.22. Part of that is the prior (2024-25 had no DC column, so the blend started at zero), but
+not most: in GW21-38, with the prior down to about a tenth of the weight, defenders at full
+games whom the model gave under a 10% chance hit the threshold 22% of the time, 10-20% calls hit
+35%, and 20-30% calls hit 39%. `dc_point_probability` takes a Poisson tail of the player's
+per-90 rate; defensive actions are far more variable game to game than Poisson (a centre-back
+under siege clears 15), so the tail is too thin. The 2025-26 replay's largest defender misses
+are this term: Mavropanos +23 points over the season, Truffert +15, Struijk +15, Hill +14,
+Gabriel +12, Mukiele +12; and defensive midfielders: Palhinha +21, Casemiro +19.
+
+**Cards** cost -0.21 points per 90 for defenders, -0.23 midfielders, -0.18 forwards, -0.08
+keepers, and the model has no term for them. A player's own yellow rate is weakly a trait
+(split-half +0.22, +0.11, +0.27). Casemiro -12, Cucurella -11 and Enzo Fernández -10 over 2025-26.
+
+**Forwards' assists** run about 50% above the model (0.094 a game against 0.062); defenders' and
+midfielders' are slightly below. FPL credits assists xA does not see (a won penalty, a shot
+parried in), which xA-based shares cannot know about.
+
+**Goals are not on this list.** The largest single misses (Haaland -37 over 2025-26, Gakpo -22,
+Kroupi +29) are goals against xG, which the first part of this section shows does not carry over.
+
+### Next
+
+1. **Defensive contribution.** Replace the Poisson tail with an overdispersed one fitted on
+   2025-26, the only finished season with the rule. 2026-27 GW2-10 is the held-out test: nothing
+   here looked at this season's defensive numbers. Pre-register before running.
+2. A card term at the position rate, shrunk towards it per player; forwards' assist share.
+3. The start-probability model (`models/minutes.py` has promised a trained one since July): on
+   these seasons, knowing who starts lifts ρ from 0.374 to 0.510, more than everything above.

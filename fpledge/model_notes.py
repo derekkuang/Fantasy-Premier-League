@@ -75,6 +75,22 @@ EXPERIMENTS = [
         "verdict": "null — recent form adds nothing",
         "measured": "2026-11-13",
     },
+    {
+        "name": "Adjust for a player's misses",
+        "question": "If a player keeps scoring below his projection, should the projection come down?",
+        "delta": "never better than +0.0006 ranking score, and up to −0.014 when applied in full",
+        "verdict": "rejected — players who missed most by gameweek 10 scored slightly above "
+                   "projection for the rest of the season",
+        "measured": "2026-11-14",
+    },
+    {
+        "name": "Goalkeeper saves",
+        "question": "How many saves does a keeper make per goal the opponent is expected to score?",
+        "delta": "2.02, not the assumed 3: goalkeeper error 2.76 → 2.59 held out on 2022-23, "
+                 "ranking unchanged",
+        "verdict": "kept — every keeper had been projected about 0.8 points a game too high",
+        "measured": "2026-11-14",
+    },
 ]
 
 NOT_MODELLED: dict[str, str] = {

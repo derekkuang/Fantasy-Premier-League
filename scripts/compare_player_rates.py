@@ -104,6 +104,7 @@ def load_this_season() -> dict:
                 "minutes": int(s["minutes"]), "starts": int(s["starts"]),
                 "xg": float(s["expected_goals"]), "xa": float(s["expected_assists"]),
                 "dc": int(s["defensive_contribution"]), "bonus": int(s["bonus"]),
+                "saves": int(s["saves"]),
                 "total_points": int(s["total_points"]), "fpl_xp": 0.0,
                 "fpl_xp_prev": ep.get((gw, e["id"]), {}).get("ep_next", 0.0),
             })
