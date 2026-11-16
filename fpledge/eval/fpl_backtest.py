@@ -147,6 +147,7 @@ def validate_xp(
     card_k: float | None = None,
     card_prior: dict | None = None,
     assist_scale: dict | None = None,
+    start_model=None,
 ):
     """Walk-forward score of model xP vs realized points, with FPL's xP as the baseline.
 
@@ -167,6 +168,9 @@ def validate_xp(
     DEFENSIVE CONTRIBUTION (HANDOFF §42). `dc_mode` "expected" takes the threshold tail at expected
     minutes, as production always has; "by_case" splits plays-60+ from comes-on
     (`dc_point_probability_by_case`), with `dc_size` ({position: size}) for a negative binomial.
+
+    MINUTES (docs/MODEL_FIXES.md E6). `minutes_mode="starts"` takes minutes from `start_model`
+    (`models.starts.StartModel`) on the player's season-to-date (minutes, starts) history.
 
     CARDS AND ASSISTS (docs/MODEL_FIXES.md E3, E4). `card_k` None leaves cards out, as production
     always has. Otherwise a player's yellow and red rates per 90 are this season's blended with
@@ -201,6 +205,9 @@ def validate_xp(
     minutes_model = MinutesModel()
 
     def _mp(a):
+        if minutes_mode == "starts":
+            return start_model.predict(list(zip(a["recent"], a["recent_starts"], strict=True)),
+                                       a["position"])
         if minutes_mode == "recent":
             # RECENT_GWS is shared with the serving path so harness and production score
             # the same window — a re-tune here without the constant is a silent divergence.
@@ -426,13 +433,14 @@ def validate_xp(
             a = acc.setdefault(
                 el,
                 {"minutes": 0, "starts": 0, "xg": 0.0, "xa": 0.0, "dc": 0, "bonus": 0, "games": 0,
-                 "yc": 0, "rc": 0,
+                 "yc": 0, "rc": 0, "recent_starts": [], "position": rows[0]["position"],
                  "recent": [], "recent_xg": [], "recent_xa": [], "recent_dc": [], "recent_bonus": [],
                  "team_id": rows[0]["team_id"]},
             )
             a["team_id"] = rows[0]["team_id"]
             a["games"] += len(rows)
             a["recent"].append(sum(r["minutes"] for r in rows))       # per-GW minutes (recency)
+            a["recent_starts"].append(sum(r.get("starts", 0) for r in rows))
             a["recent_xg"].append(sum(r["xg"] for r in rows))         # per-GW xG (recency)
             a["recent_xa"].append(sum(r["xa"] for r in rows))         # per-GW xA (recency)
             a["recent_dc"].append(sum(r["dc"] for r in rows))
