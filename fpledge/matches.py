@@ -64,6 +64,12 @@ def match_previews(
     When a de-vigged betting line is available the market's lambdas replace the engine's and
     the row is tagged `source: "market"`; the distribution is then derived from those lambdas
     the same way, so a market-sourced preview is the market's own implied scoreline spread.
+
+    A market-sourced preview also carries `model`: the engine's own expected goals and result
+    chances for the same match, so the match page can show where the two disagree. The page leads
+    with the market because it has been the more accurate (HANDOFF §35: log-loss 0.952 against
+    the engine's 0.970 on 1,900 held-out matches). An engine-sourced preview has `model: None`,
+    since there is nothing to compare.
     """
     out: list[dict] = []
     for fx in fixtures:
@@ -71,10 +77,11 @@ def match_previews(
             continue
         h, a = fx["home_id"], fx["away_id"]
         mkt = market_lambdas.get((h, a)) if market_lambdas else None
+        own = engine.predict(_label(h, fpl_teams, tmap), _label(a, fpl_teams, tmap))
         if mkt is not None:
             probs, source = derive(mkt[0], mkt[1]), "market"
         else:
-            probs, source = engine.predict(_label(h, fpl_teams, tmap), _label(a, fpl_teams, tmap)), "model"
+            probs, source = own, "model"
 
         scorelines, covered = _top_scorelines(probs.matrix)
         out.append({
@@ -101,6 +108,16 @@ def match_previews(
             "most_likely_score": list(probs.most_likely_score),
             "scorelines": scorelines,
             "scorelines_p": covered,   # mass covered by `scorelines`; the rest is the tail
+            # the engine's view of a market-priced match; None when the engine IS the source
+            "model": None if source == "model" else {
+                "lam_home": round(own.lam_home, 3),
+                "lam_away": round(own.lam_away, 3),
+                "result": {
+                    "home_win": round(own.home_win, 4),
+                    "draw": round(own.draw, 4),
+                    "away_win": round(own.away_win, 4),
+                },
+            },
             "fdr": {
                 "home": {"attack": attack_fdr(probs.lam_home), "defence": defence_fdr(probs.lam_away)},
                 "away": {"attack": attack_fdr(probs.lam_away), "defence": defence_fdr(probs.lam_home)},

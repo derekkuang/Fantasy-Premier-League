@@ -113,3 +113,17 @@ def test_each_sides_fdr_reads_from_the_right_lambda():
     home, away = lopsided["fdr"]["home"], lopsided["fdr"]["away"]
     assert home["attack"] < away["attack"]      # home has the easier job scoring
     assert home["defence"] < away["defence"]    # ...and the easier clean sheet
+
+
+def test_a_market_priced_match_keeps_the_models_own_view():
+    got = match_previews(
+        _FakeEngine(), FIXTURES, TEAMS, TMAP, start_gw=1, horizon=8,
+        market_lambdas={(1, 2): (0.9, 2.4)},
+    )
+    priced = next(m for m in got if m["gw"] == 1)
+    engine_only = next(m for m in got if m["gw"] == 2)
+    own = derive(1.8, 1.1)                          # what _FakeEngine predicts
+    assert priced["model"]["lam_home"] == pytest.approx(1.8, abs=1e-3)
+    assert priced["model"]["lam_away"] == pytest.approx(1.1, abs=1e-3)
+    assert priced["model"]["result"]["home_win"] == pytest.approx(own.home_win, abs=1e-4)
+    assert engine_only["model"] is None             # nothing to compare against

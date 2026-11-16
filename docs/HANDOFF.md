@@ -99,6 +99,7 @@ Branch `feat/match-lab-and-advisor`, 41 ahead of `main`, never pushed, no remote
 | **42** | **defensive contribution: the threshold chance taken case by case, not at expected minutes** |
 | **43** | **cards and forwards' assists: played-only scoring is biased; retest inconclusive; live on the owner's decision, confirmation on GW11-18** |
 | **44** | **minutes from a start-probability model: ranking +0.007 held out, the expected-starter bias gone** |
+| **45** | **the match page: our model's second opinion beside the bookmakers', and the set-piece takers** |
 
 ---
 
@@ -3381,3 +3382,32 @@ multiplies by FPL's chance of playing, so a player flagged after an early exit i
 twice (Xhaka: the model's 0.36 to play, times FPL's 75%), and a player FPL calls fully fit gets
 no credit for it. That is E6b in `docs/MODEL_FIXES.md`: fit with FPL's pre-deadline flags as
 features, from our own snapshots, and test it on gameweeks not yet played.
+
+## 45. The match page: a second opinion, and who takes the set pieces (2026-11-16)
+
+Two sections from the original Match Lab plan ([[ai-match-analysis-plan]] in memory; §40 shipped
+the rest), both built from numbers the pipeline already had. Nothing on the page is written by a
+model.
+
+**Our model's view.** A bookmaker-priced match shows the bookmakers' numbers, which the engine's
+own prediction used to replace and discard. `matches.match_previews` now keeps the engine's
+expected goals and result chances as `model` on every market-sourced preview (`None` when the engine
+is the source, since there is nothing to compare). The page shows the two side by side, with one
+sentence on the larger expected-goals gap ("Our model expects fewer Arsenal goals: 1.7 against the
+bookmakers' 2.0"; under 0.2 either way reads "broadly agrees"). The explanation is the measured one:
+on 1,900 held-out matches the bookmakers' closing odds scored log-loss 0.952 against the engine's
+0.970 (§35), so the page leads with theirs and the model is a second opinion, not betting advice.
+`model` reaches the page only after a precompute on this code; until then the section is hidden.
+
+**Set-piece takers.** FPL's own order for penalties, direct free kicks, and corners and indirect free
+kicks (`playermeta.set_pieces`, already on every asset). For each club the first taker who is in our
+predicted eleven and not ruled out is highlighted. An injured or suspended taker is struck through
+(Saka, thigh, GW11); a fit one outside the predicted eleven is faded, since he can still take one
+off the bench (Gyökeres, Wissa). Shown for the current gameweek only, like the lineups.
+
+Checked locally against the live API with the engine's GW11 view added by a proxy: phone 390 and
+desktop 1440, dark and light, no horizontal overflow, no glued words.
+
+**Still not built from the plan:** the written read (`brief.py` exists with its numeric guard; it
+needs an Anthropic API key in the precompute), and key matchups (needs shot-location data, would
+always be an approximation).
