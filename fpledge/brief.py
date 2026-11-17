@@ -26,8 +26,14 @@ import os
 import re
 from typing import Any
 
-MODEL = "claude-opus-5"
+# Claude Opus 5.5 (2026-11-16, docs/MATCH_LAB.md Phase 4). It always thinks: effort is the only
+# control, and its default is `medium`, so `low` is set explicitly; `max_tokens` leaves room for the
+# thinking as well as the reply. A declined request falls back server-side to another model
+# (`fallbacks="default"`), and `generated_by` records the model that actually wrote the briefing.
+MODEL = "claude-opus-5-5"
 EFFORT = "low"
+MAX_TOKENS = 16000
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_ATTEMPTS = 2
 
 # Numbers as a reader would write them: 83, 83%, 2.7, -0.3, 1,200
@@ -251,6 +257,11 @@ def classify_problem(message: str) -> str:
 
 
 # --- the deterministic fallback ------------------------------------------------------- #
+def _odds_owner(pack: dict) -> str:
+    """Whose odds these are: a market-priced match's numbers are the bookmakers', not ours."""
+    return "The bookmakers make" if pack.get("source") == "market" else "Our model makes"
+
+
 def render_template(pack: dict) -> dict:
     """A correct briefing with no model involved — the floor the page never drops below."""
     home, away = pack["home_team"], pack["away_team"]
@@ -260,7 +271,7 @@ def render_template(pack: dict) -> dict:
     )
     angles = [{
         "text": (
-            f"The model makes {favourite} {fav_pct}% to win, with the draw at "
+            f"{_odds_owner(pack)} {favourite} {fav_pct}% to win, with the draw at "
             f"{pack['draw_pct']}%. Most likely score {pack['most_likely_score']} "
             f"at {pack['most_likely_score_pct']}%."
         ),
@@ -345,10 +356,12 @@ def narrate(pack: dict, client=None, trace: list | None = None,
                 "\nUse ONLY numbers that appear in the fact pack, written exactly as they appear."
             )
         try:
-            resp = client.messages.create(
+            resp = client.beta.messages.create(
                 model=model,
-                max_tokens=4000,
+                max_tokens=MAX_TOKENS,
                 system=SYSTEM,
+                betas=[FALLBACK_BETA],
+                fallbacks="default",
                 output_config={
                     "format": {"type": "json_schema", "schema": BRIEF_SCHEMA},
                     "effort": effort,
@@ -381,7 +394,8 @@ def narrate(pack: dict, client=None, trace: list | None = None,
 
         last = verify(brief, pack)
         if not last:
-            brief["generated_by"] = model
+            # the model that answered: a fallback may have written it after a decline
+            brief["generated_by"] = getattr(resp, "model", None) or model
             brief["attempts"] = attempt
             record(attempt, "ok", usage=usage)
             return brief

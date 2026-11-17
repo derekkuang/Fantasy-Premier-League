@@ -57,7 +57,7 @@ jobs:
       - name: Install (the full heavy stack — this is the job the Lambdas can't do)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[aws]"
+          pip install -e ".[aws,llm]"
 
       - name: Assume the deploy role via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -83,8 +83,12 @@ jobs:
       - name: Fit, gate, publish
         # The key is the standby for market odds when football-data's file has no Premier League
         # rows (HANDOFF §34). Scoped to this step: nothing else in the job calls the Odds API.
+        # ANTHROPIC_API_KEY switches on the Match Lab's written read (docs/MATCH_LAB.md Phase 4). With
+        # the secret unset it is an empty string, brief.py sees no key, and every briefing is the
+        # template, which the page hides: the precompute never depends on it.
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/precompute.py
 
       - name: The live API serves the new artifact

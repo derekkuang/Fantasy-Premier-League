@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from fpledge.matches import TOP_SCORELINES, match_id, match_previews
+from fpledge.matches import TOP_SCORELINES, club_form, match_id, match_previews
 from fpledge.models.match_engine import derive
 
 
@@ -127,3 +127,27 @@ def test_a_market_priced_match_keeps_the_models_own_view():
     assert priced["model"]["lam_away"] == pytest.approx(1.1, abs=1e-3)
     assert priced["model"]["result"]["home_win"] == pytest.approx(own.home_win, abs=1e-4)
     assert engine_only["model"] is None             # nothing to compare against
+
+
+def test_club_form_is_each_clubs_last_results_newest_first():
+    results = [
+        (1, 1, 2, 2, 0, "2026-08-16 15:00:00"),
+        (2, 3, 1, 1, 1, "2026-08-23 15:00:00"),
+        (3, 1, 3, 0, 3, "2026-08-30 15:00:00"),
+        (4, 2, 3, None, None, "2026-09-13 15:00:00"),   # no score: skipped, not guessed
+    ]
+    form = club_form(results, {1: "Alpha", 2: "Beta", 3: "Gamma"}, last=2)
+    assert [f["gw"] for f in form[1]] == [3, 2]                     # newest first, only two
+    assert form[1][0] == {"gw": 3, "opp_id": 3, "opp": "Gamma", "home": True, "gf": 0, "ga": 3, "result": "L"}
+    assert form[1][1]["result"] == "D" and form[1][1]["home"] is False
+    assert [f["result"] for f in form[2]] == ["L"]                  # the unscored match is absent
+
+
+def test_previews_carry_kickoff_and_form_when_given():
+    kick = {(1, 1, 2): "2026-08-16T15:00:00Z"}
+    form = {1: [{"gw": 0, "result": "W"}]}
+    got = _previews(kickoffs=kick, form=form)
+    first = next(m for m in got if m["gw"] == 1)
+    assert first["kickoff"] == "2026-08-16T15:00:00Z"
+    assert first["form"] == {"home": [{"gw": 0, "result": "W"}], "away": []}
+    assert next(m for m in got if m["gw"] == 2)["kickoff"] is None

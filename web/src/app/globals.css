@@ -193,7 +193,11 @@ html { scrollbar-gutter: stable; }
   -webkit-backdrop-filter: blur(28px) saturate(180%);
 }
 
-.chrome-edge { position: relative; }
+/* Positioned so the ::after edge has a box to hang from. Only when the bar is not already sticky
+   or fixed: this rule sits outside Tailwind's layers, so it beat `sticky` and the main nav scrolled
+   away with the page from 2026-08-05 until the Match Lab's section strip exposed it (2026-11-16).
+   A sticky or fixed bar is positioned already. */
+.chrome-edge:not(.sticky):not(.fixed) { position: relative; }
 .chrome-edge::after {
   content: "";
   position: absolute;

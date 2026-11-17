@@ -173,6 +173,7 @@ class _Client:
         self.texts = list(texts)
         self.calls = 0
         self.messages = self
+        self.beta = self   # brief.py calls client.beta.messages.create (server-side fallbacks)
 
     def create(self, **kw):
         self.calls += 1
@@ -212,6 +213,7 @@ def test_a_second_attempt_can_succeed():
 def test_an_api_failure_falls_back_silently():
     class _Broken:
         messages = property(lambda self: self)
+        beta = property(lambda self: self)
 
         def create(self, **kw):
             raise RuntimeError("network down")

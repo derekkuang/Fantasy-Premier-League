@@ -57,6 +57,12 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
     n_briefs = 0
     if narrate:
         n_briefs = brief_matches(out["matches"], _assets_by_match(out["matches"], out["records"]))
+    # How many a model wrote and the guard passed; the rest are the template, which the Match Lab
+    # hides. With a key set and this at zero, narration is failing silently (docs/MATCH_LAB.md).
+    n_briefs_written = sum(1 for m in out["matches"]
+                           if (m.get("brief") or {}).get("generated_by") not in (None, "template"))
+    if n_briefs:
+        print(f"  briefings: {n_briefs_written} of {n_briefs} written by a model, the rest the template")
 
     # Predicted vs actual for the player sheet: every finalised gameweek's stored artifact (what
     # users saw before that deadline) against what each player then scored.
@@ -81,6 +87,7 @@ def build_payload(gw: int, horizon: int = 8, run_ts: str | None = None,
             "n_records": len(out["records"]),
             "n_matches": len(out["matches"]),
             "n_briefs": n_briefs,
+            "n_briefs_written": n_briefs_written,
             "fallback_fixtures": len(out["fallback"]),
             # Everything the caller needs to decide whether this artifact is fit to publish.
             # A dropped source season used to be invisible from here.
