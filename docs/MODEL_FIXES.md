@@ -13,7 +13,7 @@ Status: **found** → **rule written** → **tested** (verdict) → **PR** → *
 | E2 | Defensive contribution: threshold chance computed on expected minutes | DEF about 30% under; ranking +0.0033 | **PR #12**: held out 2026-27, SHIP |
 | E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | **PR #13: live on the owner's decision** after an inconclusive held-out; GW11-18 confirms or reverts |
 | E4 | Forwards' assists under-projected | FWD +0.1 pts/game | with E3, same status |
-| E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.30 to −0.34, uniform | parked: changes no pick |
+| E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.33 a fixture, uniform; their whole over-projection | **rule written** 2026-11-22; confirms on 2026-27 GW12-15 |
 | E6 | Starts: minutes are a recent average, not a start probability | ranking +0.0073 held out | **PR #14**: held out 2026-27, SHIP |
 | E6b | The start model cannot use FPL's flags | flagged early exits discounted twice | found |
 | E7 | Pre-deadline data is about 23 hours old | Friday team news missed | found |
@@ -121,6 +121,19 @@ earn nothing. Code exists and is unused: `xpoints.expected_save_points`.
 **Parked.** The rounding takes 0.30-0.34 points off every keeper whatever his save volume (1.5
 to 5 expected saves), so it changes no keeper's rank and no pick. It would only make keeper
 totals honest; fold it into an all-rows calibration test if one is run.
+
+**Unparked 2026-11-22.** A term audit on 2023-26 at production's settings, over keepers the
+model expected to start: save points 0.906 a fixture projected, 0.611 with the rounding, 0.599
+awarded. Keepers' total is 3.297 projected against 2.966 scored, and the save term is the whole
+of that −0.33. Keepers are the one position the site shows as plainly over-projected every week,
+and the boom/bust distribution already rounds, so its centre and xP disagree for keepers.
+
+**Test** (`fpledge/eval/save_rounding.py`, `scripts/compare_save_rounding.py`). Judged on the
+term itself, against the save points FPL awarded, over keepers the model expected to start.
+Development 2023-26: the rounded term must reach within ±0.05 of awarded in every season, beat
+production's keeper squared error pooled, and pass the usual ranking guard. Confirmation:
+2026-27 GW12-15, the first four gameweeks not yet played when the rule was committed, run once
+after GW15 is final (`--confirm`).
 
 ## E6. Start probability
 
