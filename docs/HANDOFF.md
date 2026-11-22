@@ -3474,3 +3474,58 @@ run live: the first gameweek with a key must be read by hand before the section 
 phone 390 and desktop 1440, dark and light, no overflow, no glued words; the gameweek arrows, the
 sort, the strip's anchors, a set-piece chip opening the sheet, the 308 redirect, and both empty
 states (a later gameweek; a model-priced match with no comparison).
+
+## 49. Keeper save rounding (E5), and what is and is not wrong with clean sheets (2026-11-22)
+
+§47-48 (boom/bust) are on `feat/boom-bust`, not yet merged; hence the jump.
+
+**Why now.** Boom/bust's second rule failed development (§48): defenders' bust and one keeper
+10+ window. The plan agreed with the owner was to fix clean sheets and E5 in xP first, each as its
+own tested fix, then write a third boom/bust rule on top. Looking closer changed the clean-sheet
+half.
+
+**Clean sheets: no change at team level.** exp(−λ_opp) from closing odds against team clean
+sheets, 2022-23 to 2025-26: 25.8% against 24.2% pooled, but 2023-24 alone is 25.0% against
+20.7%, and every other season is within 1.2 points (−0.3, −1.2, −0.7). In 2023-24 goals ran above
+the market's line until about GW26 (1.64 a team against 1.55 priced, GW1-25), and the market then
+caught up. That is the market misjudging a season, not the formula. In 2025-26 keepers' clean
+sheets ran 1.3 points under and defenders' 0.8 over on the same teams' matches, which is the noise
+level. Goals given the market's rate are slightly less spread than Poisson (dispersion about 0.94
+across parts of seasons), worth about a point: too small to tell from a season's noise. A
+constant correction fitted on 2023-26 would over-correct 2025-26 and still miss most of 2023-24.
+
+**What is wrong, and small: E10.** FPL counts a clean sheet over the minutes a player is on the
+pitch. Midfielders who came off before 85 kept one 33.5% of the time, against 25.4% for the full
+match and 32.8% over their minutes (3,656 fixtures, every season). Defenders who came off did not
+(25.0%), because a defender comes off when his side is chasing or hurt. Midfielders' clean-sheet
+points run 0.016 a fixture under; changes no pick, parked (`docs/MODEL_FIXES.md`).
+
+**E5, keeper save rounding.** Rule committed first (`64875fe`, `fpledge/eval/save_rounding.py`),
+judged on the term itself against the save points FPL awarded, over keepers the model expected
+to start, at production's settings.
+
+| 2023-26, development | 2023-24 | 2024-25 | 2025-26 | pooled |
+|---|---|---|---|---|
+| awarded save points a fixture | 0.668 | 0.589 | 0.541 | 0.599 |
+| production (x_saves / 3), gap | −0.263 | −0.330 | −0.327 | −0.307 [−0.334, −0.279] |
+| rounded, gap | +0.030 | −0.036 | −0.030 | −0.012 [−0.039, +0.016] |
+
+Keeper squared error 7.640 → 7.539, −0.10 [−0.17, −0.03]; keeper bias −0.34 → −0.04. All-player
+ρ 0.3939 → 0.3931, −0.0008 [−0.0015, −0.0001]: inside the −0.002 guard, and reliably a touch
+negative, because honest keeper numbers rank keepers slightly lower against outfielders. All
+three rules pass.
+
+**In code, not merged.** `compute_xp_records` pays `expected_save_points(x_saves, x_minutes)`
+(`2936980`, branch `fix/save-rounding`). GW12 built locally (engine lambdas): every keeper falls
+0.24-0.31, Trafford 4.47 → 4.17, Raya 4.17 → 3.87, Walton 2.77 → 2.48; one pair swaps by 0.02.
+**Next:** `python scripts/compare_save_rounding.py --confirm` once GW15 is final (about
+2026-12-14), run once: SHIP if the rounded term's interval reaches within ±0.05 of awarded and
+production's does not. Or the owner ships it first as a decision and the confirmation still runs.
+
+**What this means for boom/bust.** E5 brings xP's keeper mean into line with the distribution,
+which already rounds. It does not touch the cells that failed: defenders' bust in 2023-24 and in
+GW2-12 of 2023-24 and 2024-25 follows the market's clean-sheet level in those stretches, and the
+keeper 10+ window (2025-26 GW13-25) is the keeper tail. A third rule under the second rule's bar
+would fail the same defender cells, since no formula change moves them. Whether the bar should
+allow for the market's own season-level error is a change of standard after a failure, so it is
+the owner's call.

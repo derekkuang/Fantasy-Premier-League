@@ -13,15 +13,18 @@ Status: **found** → **rule written** → **tested** (verdict) → **PR** → *
 | E2 | Defensive contribution: threshold chance computed on expected minutes | DEF about 30% under; ranking +0.0033 | **PR #12**: held out 2026-27, SHIP |
 | E3 | Cards have no term | −0.18 to −0.23 pts/90 outfield | **PR #13: live on the owner's decision** after an inconclusive held-out; GW11-18 confirms or reverts |
 | E4 | Forwards' assists under-projected | FWD +0.1 pts/game | with E3, same status |
-| E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.33 a fixture, uniform; their whole over-projection | **rule written** 2026-11-22; confirms on 2026-27 GW12-15 |
+| E5 | Keeper save points ignore FPL's per-match rounding | keepers −0.33 a fixture, uniform; their whole over-projection | **development passed** 2026-11-22; branch `fix/save-rounding`; confirms on 2026-27 GW12-15 |
 | E6 | Starts: minutes are a recent average, not a start probability | ranking +0.0073 held out | **PR #14**: held out 2026-27, SHIP |
 | E6b | The start model cannot use FPL's flags | flagged early exits discounted twice | found |
 | E7 | Pre-deadline data is about 23 hours old | Friday team news missed | found |
 | E8 | Penalty saves have no term | keepers +0.07 pts/game, cancelled by their cards | parked |
 | E9 | Expected starters play less than projected | about −0.3 pts/game on players expected to play | fixed by E6 (bias within 0.1 at every position) |
+| E10 | Midfielders' clean sheets priced over the whole match; FPL counts only his minutes on the pitch | MID +0.016 a fixture | found; parked: changes no pick |
 
 Not errors, measured (HANDOFF §41): pulling a player's projection towards his misses (never
 better than +0.0006, up to −0.014), and goals against xG (does not carry over within a season).
+And (§49) the clean-sheet chance from closing odds: off by 4.3 points in 2023-24, when goals ran
+above the market's line until about GW26, and within 1.2 in every other season since 2022-23.
 
 ---
 
@@ -135,6 +138,15 @@ production's keeper squared error pooled, and pass the usual ranking guard. Conf
 2026-27 GW12-15, the first four gameweeks not yet played when the rule was committed, run once
 after GW15 is final (`--confirm`).
 
+**Development (2026-11-22, HANDOFF §49): passes all three rules.** Save term, awarded minus
+projected a fixture: production −0.263, −0.330, −0.327; rounded +0.030, −0.036, −0.030, each
+interval inside ±0.05. Keeper squared error 7.640 → 7.539, −0.10 [−0.17, −0.03]; keeper bias
+−0.34 → −0.04. All-player ρ −0.0008 [−0.0015, −0.0001]: inside the guard, and reliably a touch
+negative, because honest keeper numbers rank keepers slightly lower against outfielders.
+Production change committed on `fix/save-rounding` (`xp_table` pays `expected_save_points`);
+GW12 built locally moves every keeper −0.30 with their order unchanged. Not merged: it waits
+for the confirmation, or for the owner to ship it first as a decision.
+
 ## E6. Start probability
 
 **What is wrong.** `MinutesModel.from_recent` averages the last six gameweeks. It does not know
@@ -183,3 +195,23 @@ bias before and after.
 
 +5 per saved penalty, no term: about +0.07 a game for keepers, roughly equal across keepers and
 cancelled by their −0.08 in cards. Parked.
+
+## E10. Clean sheets while on the pitch
+
+**What is wrong.** FPL gives a clean sheet to a player who plays 60+ minutes if his team concedes
+nothing *while he is on the pitch*. Production prices it as the team's full-match chance,
+exp(−λ_opp), for every position. On 2023-26, midfielders who played 60+ and came off before 85
+minutes kept a clean sheet 33.5% of the time: the full-match chance said 25.4%, the chance over
+the minutes they played 32.8% (3,656 fixtures, the same in every season). Over every midfielder
+who played 60+: 28.3% actual, 25.7% full match, 28.6% on the pitch.
+
+**Defenders are different.** Defenders who came off before 85 kept clean sheets 25.0% of the time,
+the full-match rate (25.2%), not the on-pitch one (32.1%). A defender comes off when his side is
+chasing or hurt, so coming off goes with conceding, and for defenders the full-match chance is
+right. Keepers almost never come off.
+
+**Size and status.** Midfielders expected to start: clean-sheet points 0.140 a fixture projected,
+0.156 awarded, about +0.016 a game, most for midfielders of strong defences who are often
+withdrawn. It changes no pick, so it is parked. The fix when it is picked up: in the "plays 60+"
+case, exp(−λ_opp × m / 90) with m from `full_game_minutes`, for midfielders only, judged on the
+term as E5 was.
