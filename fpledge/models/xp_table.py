@@ -25,6 +25,7 @@ from .xpoints import (
     expected_card_points,
     expected_conceded_penalty,
     expected_points_breakdown,
+    expected_save_points,
 )
 
 LOW_COVERAGE = 9000       # current-squad last-season minutes below this -> shares unreliable
@@ -178,6 +179,9 @@ def compute_xp_records(
                 else:
                     dc_per90 = rates.get(p["code"], {}).get("dc", 0.0)
                     bonus_per90 = rates.get(p["code"], {}).get("bonus", 0.0)
+                is_gk = p["position"] == "GK"
+                x_saves = (opp_lambda * config.SAVES_PER_EXPECTED_GOAL * (mp.x_minutes / 90.0)
+                           if is_gk else 0.0)
                 ctx = PlayerContext(
                     position=p["position"],
                     p_play=mp.p_play,
@@ -186,8 +190,9 @@ def compute_xp_records(
                     goal_share=sh["goal_share"],
                     assist_share=sh["assist_share"],
                     p_clean_sheet=p_cs,
-                    x_saves=(opp_lambda * config.SAVES_PER_EXPECTED_GOAL * (mp.x_minutes / 90.0)
-                             if p["position"] == "GK" else 0.0),
+                    x_saves=x_saves,
+                    # FPL pays 1 per 3 saves in a match, rounded down (E5, MODEL_FIXES.md)
+                    x_save_points=expected_save_points(x_saves, mp.x_minutes) if is_gk else None,
                     p_dc_point=dc_point_probability_by_case(
                         dc_per90, mp.p_play, mp.p_60, mp.x_minutes, p["position"],
                         size=config.DC_NB_SIZE.get(p["position"]),

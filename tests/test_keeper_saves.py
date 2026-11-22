@@ -53,3 +53,33 @@ def test_verdict():
     assert ks.verdict(good, {"ci": [-0.003, 0.004]}) == "INCONCLUSIVE"
     assert ks.verdict({"ci": [0.01, 0.2]}, {"ci": [0.0, 0.01]}) == "DO NOT SHIP"
     assert ks.verdict(good, {"ci": [-0.01, -0.001]}) == "DO NOT SHIP"
+
+
+class _Engine:
+    def knows(self, _team):
+        return True
+
+    def predict(self, _h, _a):
+        return type("P", (), {"lam_home": 1.4, "lam_away": 1.1,
+                              "clean_sheet_home": 0.33, "clean_sheet_away": 0.25})()
+
+
+def test_production_pays_rounded_save_points():
+    """E5: compute_xp_records pays a keeper E[floor(S/3)], not x_saves / 3."""
+    from fpledge import config
+    from fpledge.models.xp_table import compute_xp_records
+
+    def player(code, pos):
+        return {"code": code, "element_id": code, "team_id": 1, "position": pos, "web_name": pos,
+                "minutes": 3000, "starts": 34, "xg": 0.5, "xa": 0.5, "dc": 40, "bonus": 6,
+                "ownership": 5.0}
+
+    recs, _, _ = compute_xp_records([player(1, "GK"), player(2, "DEF")], {1: "A", 2: "B"},
+                                    [(1, 2)], _Engine(), {"A": "A", "B": "B"}, {1: 4.5, 2: 4.5})
+    by_pos = {r["position"]: r for r in recs}
+    gk = by_pos["GK"]["breakdown"]
+    x_saves = 1.1 * config.SAVES_PER_EXPECTED_GOAL * (by_pos["GK"]["x_minutes"] / 90.0)
+    assert gk["x_saves"] == pytest.approx(x_saves)
+    assert gk["save_points"] == pytest.approx(expected_save_points(x_saves, by_pos["GK"]["x_minutes"]))
+    assert gk["save_points"] < x_saves / config.SAVES_PER_POINT - 0.2
+    assert by_pos["DEF"]["breakdown"]["save_points"] == 0.0
